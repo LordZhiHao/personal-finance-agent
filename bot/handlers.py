@@ -3,23 +3,24 @@ import os
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from bot.extractor import extract_from_image
+from bot.extractor import extract_from_image, extract_from_text
 from db.supabase import get_accounts, insert_portfolio_events, insert_transactions
-from utils.pdf_converter import pdf_to_images
+from utils.pdf_text import extract_text_from_pdf
 
 ALLOWED_USER_IDS = {int(os.getenv("YOUR_TELEGRAM_CHAT_ID"))}
 
 # In-memory pending store: user_id → extracted data awaiting confirmation
 pending = {}
 
+TELEGRAM_MESSAGE_LIMIT = 4000  # headroom under Telegram's hard 4096-char cap
+
 
 def is_authorized(update: Update) -> bool:
     return update.effective_user.id in ALLOWED_USER_IDS
 
 
-def format_confirmation(data: dict) -> str:
-    lines = [f"📄 *{data['document_type']}* — {data.get('currency', '')}"]
-    lines.append("")
+def build_confirmation_lines(data: dict) -> list[str]:
+    lines = [f"📄 *{data['document_type']}* — {data.get('currency', '')}", ""]
     for i, t in enumerate(data.get("transactions", []), 1):
         flag = "⚠️" if t["confidence"] < 0.7 else "✅"
         sign = "+" if t["amount"] > 0 else ""
@@ -34,7 +35,28 @@ def format_confirmation(data: dict) -> str:
         )
     lines.append("")
     lines.append("Reply `confirm` to save, `cancel` to discard, or `edit 3` to fix a row.")
-    return "\n".join(lines)
+    return lines
+
+
+def chunk_lines(lines: list[str], limit: int = TELEGRAM_MESSAGE_LIMIT) -> list[str]:
+    """Groups lines into chunks under Telegram's message length limit. Splitting on
+    line boundaries keeps each line's Markdown formatting self-contained per chunk."""
+    chunks, current, current_len = [], [], 0
+    for line in lines:
+        line_len = len(line) + 1
+        if current and current_len + line_len > limit:
+            chunks.append("\n".join(current))
+            current, current_len = [], 0
+        current.append(line)
+        current_len += line_len
+    if current:
+        chunks.append("\n".join(current))
+    return chunks
+
+
+async def send_confirmation(update: Update, data: dict):
+    for chunk in chunk_lines(build_confirmation_lines(data)):
+        await update.message.reply_text(chunk, parse_mode="Markdown")
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -45,10 +67,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     image_bytes = await photo.download_as_bytearray()
     data = extract_from_image(bytes(image_bytes))
     data["raw_text"] = str(data)
+    data["source"] = "telegram_image"
     pending[update.effective_user.id] = data
-    await update.message.reply_text(
-        format_confirmation(data), parse_mode="Markdown"
-    )
+    await send_confirmation(update, data)
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -61,28 +82,16 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Processing document...")
 
     if doc.mime_type == "application/pdf":
-        pages = pdf_to_images(bytes(file_bytes))
-        all_txns = []
-        all_trades = []
-        result = {}
-        for page_bytes in pages:
-            result = extract_from_image(page_bytes)
-            all_txns.extend(result.get("transactions", []))
-            all_trades.extend(result.get("portfolio_events", []))
-        data = {
-            "document_type": "bank_statement",
-            "currency": result.get("currency", "SGD"),
-            "transactions": all_txns,
-            "portfolio_events": all_trades,
-        }
+        text = extract_text_from_pdf(bytes(file_bytes))
+        data = extract_from_text(text)
+        data["source"] = "telegram_pdf"
     else:
         data = extract_from_image(bytes(file_bytes))
+        data["source"] = "telegram_image"
 
     data["raw_text"] = str(data)
     pending[update.effective_user.id] = data
-    await update.message.reply_text(
-        format_confirmation(data), parse_mode="Markdown"
-    )
+    await send_confirmation(update, data)
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -108,7 +117,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "category": t["category"],
                 "currency": data.get("currency", "SGD"),
                 "raw_text": data.get("raw_text"),
-                "source": "telegram_image",
+                "source": data.get("source", "manual"),
             }
             for t in data.get("transactions", [])
         ]

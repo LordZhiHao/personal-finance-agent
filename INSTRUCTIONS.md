@@ -432,6 +432,8 @@ def get_accounts():
 
 #### Step 4: PDF → image converter
 
+**Update:** for born-digital bank statement PDFs (the common case — check if you can select/copy text in a PDF viewer), `utils/pdf_text.py` extracts the text layer directly via `pdfplumber` instead of rasterizing pages. This is cheaper (text tokens, not image tokens) and more accurate (no OCR step). `pdf2image`/`pdf_to_images` below is kept only as an unused fallback for scanned/image-only PDFs.
+
 **`utils/pdf_converter.py`**
 ```python
 from pdf2image import convert_from_bytes
@@ -554,6 +556,8 @@ python -m bot.extractor /path/to/your/dbs_screenshot.jpg
 ### Phase 3 — Telegram Bot
 
 #### Step 6: Handlers
+
+**Update:** the real `bot/handlers.py` has since diverged from the skeleton below — PDFs go through `extract_from_text()` (text-layer extraction, one Gemini call per document) instead of looping `extract_from_image()` per rasterized page, and confirmation messages are sent via `send_confirmation()`/`chunk_lines()` rather than a single `reply_text()` call, since statements with 90+ rows exceed Telegram's 4096-char message limit. See the real file for the current version.
 
 **`bot/handlers.py`**
 ```python

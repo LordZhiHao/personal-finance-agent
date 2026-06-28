@@ -15,7 +15,7 @@ MODEL = "gemini-3.5-flash"
 
 SYSTEM_PROMPT = f"""
 You are a financial document parser for a user based in Singapore.
-Extract ALL transactions visible in the provided image.
+Extract ALL transactions visible in the provided document (image or text).
 
 Return ONLY a valid JSON object — no explanation, no markdown, no backticks.
 
@@ -54,6 +54,19 @@ Rules:
 """
 
 
+def _parse_response(raw: str) -> dict:
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    # Gemini occasionally appends trailing content after the JSON object on
+    # very large outputs; raw_decode parses just the first valid JSON value
+    # instead of erroring on that trailing data.
+    obj, _ = json.JSONDecoder().raw_decode(raw.strip())
+    return obj
+
+
 def extract_from_image(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
     response = client.models.generate_content(
         model=MODEL,
@@ -66,12 +79,19 @@ def extract_from_image(image_bytes: bytes, mime_type: str = "image/jpeg") -> dic
             response_mime_type="application/json",
         ),
     )
-    raw = response.text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    return json.loads(raw.strip())
+    return _parse_response(response.text)
+
+
+def extract_from_text(text: str) -> dict:
+    response = client.models.generate_content(
+        model=MODEL,
+        contents=[f"Extract all transactions from this financial document:\n\n{text}"],
+        config=types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
+            response_mime_type="application/json",
+        ),
+    )
+    return _parse_response(response.text)
 
 
 # Run: python -m bot.extractor <path_to_image>

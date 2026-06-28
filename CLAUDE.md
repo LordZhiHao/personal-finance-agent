@@ -19,7 +19,7 @@ The bot and scheduler run together on Railway. The dashboard runs on Streamlit C
 |---|---|
 | Bot framework | python-telegram-bot v20+ (async) |
 | VLM extraction | Gemini API (`gemini-3.5-flash`), `google-genai` SDK |
-| PDF handling | pdf2image (converts pages → JPEG before sending to Gemini) |
+| PDF handling | `pdfplumber` extracts the PDF's text layer directly (no OCR/rasterization) for bank statements; `pdf2image` remains available as a fallback for image-only/scanned PDFs but isn't on the default path |
 | Database | Supabase (Postgres) via `supabase-py` |
 | Dashboard | Streamlit + Plotly |
 | Scheduler | APScheduler (AsyncIOScheduler, runs in-process with bot) |
@@ -37,7 +37,7 @@ expense-tracker/
 ├── bot/
 │   ├── main.py              # Bot entry point + APScheduler wired here
 │   ├── handlers.py          # Telegram handlers: photo, document, text
-│   └── extractor.py         # Gemini VLM API calls + JSON parsing
+│   └── extractor.py         # Gemini API calls (image + text) + JSON parsing
 ├── db/
 │   └── supabase.py          # All Supabase read/write functions
 ├── dashboard/
@@ -48,7 +48,9 @@ expense-tracker/
 │   └── emailer.py           # Gmail HTML email sender
 ├── utils/
 │   ├── constants.py         # CATEGORIES, CURRENCIES, ACCOUNT_TYPES
-│   ├── pdf_converter.py     # pdf2image helper
+│   ├── pdf_text.py          # pdfplumber text-layer extraction (PDF default path)
+│   ├── pdf_converter.py     # pdf2image fallback helper (scanned/image-only PDFs)
+│   ├── fx.py                # Currency conversion via Frankfurter API
 │   └── formatters.py        # Shared number/date formatting
 ├── .env                     # All secrets — never commit
 ├── .env.example             # Template with keys but no values
@@ -114,14 +116,15 @@ CATEGORIES = [
 
 ---
 
-## Gemini VLM Extraction
+## Gemini Extraction
 
 - Model: `gemini-3.5-flash`
 - Use the `google-genai` SDK (`google.genai.Client`), not the OpenAI SDK
-- Images are sent via `types.Part.from_bytes(data=image_bytes, mime_type=...)`, not base64 data URLs
-- For PDFs: convert each page to JPEG via `utils/pdf_converter.py` first, then send each page separately
+- `bot/extractor.py` has two entry points sharing one `SYSTEM_PROMPT`/JSON schema:
+  - `extract_from_image(image_bytes, mime_type)` — for `handle_photo` and non-PDF documents. Images are sent via `types.Part.from_bytes(data=image_bytes, mime_type=...)`, not base64 data URLs.
+  - `extract_from_text(text)` — for PDFs. `utils/pdf_text.py` (`pdfplumber`) extracts the PDF's text layer directly; the whole document's text goes in a single text-only Gemini call. Cheaper than per-page image calls (text tokens cost far less than image tokens) and more accurate for born-digital bank statements (no OCR/rasterization step at all). `utils/pdf_converter.py` (`pdf2image`) is kept as an unused fallback for scanned/image-only PDFs, not currently wired in.
 - The system prompt instructs Gemini to return **only valid JSON**, no markdown, no explanation
-- `response_mime_type="application/json"` is set in `GenerateContentConfig`, but still strip markdown fences defensively before `json.loads()`
+- `response_mime_type="application/json"` is set in `GenerateContentConfig`, but still strip markdown fences defensively, and parse with `json.JSONDecoder().raw_decode()` rather than `json.loads()` — Gemini occasionally appends trailing content after the JSON object on very large outputs (e.g. consolidated statements with 90+ transactions), and `raw_decode` recovers the first valid JSON value instead of erroring on `Extra data`
 - Store the raw Gemini response text in `transactions.raw_text` for every insert
 
 **Expected Gemini output schema:**
@@ -165,6 +168,8 @@ CATEGORIES = [
 - After `confirm`: write to Supabase, clear from `pending`, reply with count of saved entries
 - After `cancel`: clear from `pending`, reply with cancellation message
 - Handlers: `handle_photo`, `handle_document`, `handle_text` in `bot/handlers.py`
+- **Confirmation messages are chunked**: `send_confirmation()` splits the row list across multiple Telegram messages via `chunk_lines()`, staying under Telegram's 4096-char limit per message (headroom of 4000). Required once PDF statements with 90+ transactions became routine — a single message would silently fail to send (`Message is too long`). Splits happen on line boundaries so each line's Markdown formatting stays self-contained per chunk.
+- `source` on each transaction row is set per-handler (`telegram_image` / `telegram_pdf`), not hardcoded — read from `data["source"]` when building rows in the `confirm` branch of `handle_text`.
 
 ---
 
