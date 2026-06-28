@@ -1,3 +1,4 @@
+import os
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -5,14 +6,37 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+load_dotenv()
 
 from db.supabase import get_accounts, get_latest_snapshots, get_transactions
 from utils.constants import CURRENCIES
 from utils.fx import convert
 
 st.set_page_config(page_title="Finance Tracker", layout="wide")
+
+
+def require_login():
+    if st.session_state.get("authenticated"):
+        return
+    st.title("🔒 Personal Finance Dashboard")
+    with st.form("login_form"):
+        email = st.text_input("Email")
+        password = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Log in")
+    if submitted:
+        if email == os.getenv("DASHBOARD_EMAIL") and password == os.getenv("DASHBOARD_PASSWORD"):
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.error("Invalid email or password")
+    st.stop()
+
+
+require_login()
+
 st.title("💰 Personal Finance Dashboard")
 
 # ── Sidebar ───────────────────────────────────────────────

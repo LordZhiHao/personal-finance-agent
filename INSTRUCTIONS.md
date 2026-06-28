@@ -55,7 +55,7 @@ A fully personal, Telegram-native finance tracker. Drop bank statement screensho
 - Raw OCR output stored alongside every transaction for debugging
 
 ### 2.3 Streamlit Dashboard
-- Protected via Cloudflare Access (email OTP — no code changes needed)
+- Protected via a simple email/password login form built into the app, checked against `DASHBOARD_EMAIL`/`DASHBOARD_PASSWORD` env vars (originally planned as Cloudflare Access, but that requires a domain you control as a Cloudflare DNS zone — doesn't work for a `*.streamlit.app` URL)
 - Date range picker + account filter in sidebar
 - **KPI row**: Net Worth, Monthly Income, Monthly Spend, Savings Rate
 - **Line chart**: Net worth over time
@@ -104,7 +104,7 @@ A fully personal, Telegram-native finance tracker. Drop bank statement screensho
                                      ┌─────────────────────┐
                                      │  STREAMLIT DASHBOARD │
                                      │  (Streamlit Cloud)   │
-                                     │  + Cloudflare Access │
+                                     │  + login form        │
                                      └─────────────────────┘
                                                 │
                                      ┌─────────────────────┐
@@ -130,9 +130,7 @@ A fully personal, Telegram-native finance tracker. Drop bank statement screensho
 
 ### 4.2 Required — Auth
 
-| Service | Purpose | How to Get Access | Free Tier |
-|---|---|---|---|
-| **Cloudflare** | Protect dashboard URL via Zero Trust Access | [cloudflare.com](https://cloudflare.com) → Add site / Zero Trust | ✅ Free tier |
+No external service needed. The dashboard has a built-in email/password login form checked against `DASHBOARD_EMAIL`/`DASHBOARD_PASSWORD` env vars (set in Streamlit Cloud's Secrets in production). Originally planned as Cloudflare Zero Trust Access, but that requires a domain you control as a Cloudflare DNS zone — it can't front a `*.streamlit.app` URL you don't own.
 
 ### 4.3 Optional — Email Reports
 
@@ -157,12 +155,10 @@ A fully personal, Telegram-native finance tracker. Drop bank statement screensho
 - `anon` public key (for reading from dashboard)
 - `service_role` key (for bot writes — keep this secret)
 
-**Cloudflare Access — setup steps:**
-1. Add your domain/subdomain to Cloudflare (or use the Streamlit `*.streamlit.app` URL)
-2. Go to Zero Trust → Access → Applications → Add
-3. Set policy: allow only your email address
-4. Authentication method: One-time PIN (email)
-5. Done — no code changes to your app needed
+**Dashboard login — setup steps:**
+1. Set `DASHBOARD_EMAIL`/`DASHBOARD_PASSWORD` in `.env` locally and in Streamlit Cloud's Secrets in production
+2. `dashboard/app.py` gates the whole app behind `require_login()`, which checks a login form against those two env vars and persists the result in `st.session_state`
+3. No external service needed — this replaced an earlier Cloudflare Access plan, which doesn't work because Cloudflare's Access "Public Hostname" apps require a domain you control as a Cloudflare DNS zone, and `*.streamlit.app` isn't one
 
 ---
 
@@ -298,6 +294,10 @@ SUPABASE_SERVICE_KEY=your_service_key    # for bot (read + write, keep secret)
 GMAIL_USER=yourname@gmail.com
 GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx  # Gmail App Password, not your login password
 NOTIFY_EMAIL=yourname@gmail.com
+
+# ── Dashboard login ────────────────────────────────────────
+DASHBOARD_EMAIL=yourname@gmail.com
+DASHBOARD_PASSWORD=choose_a_password
 ```
 
 `.env.example` (commit this):
@@ -311,6 +311,8 @@ SUPABASE_SERVICE_KEY=
 GMAIL_USER=
 GMAIL_APP_PASSWORD=
 NOTIFY_EMAIL=
+DASHBOARD_EMAIL=
+DASHBOARD_PASSWORD=
 ```
 
 ---
@@ -922,6 +924,8 @@ def send_email(data: dict):
 
 #### Step 11: Streamlit dashboard
 
+The actual `dashboard/app.py` has since grown a `require_login()` gate (email/password against `DASHBOARD_EMAIL`/`DASHBOARD_PASSWORD`), a `sys.path` fix for running under Streamlit, and currency-converted Net Worth/Asset Allocation via `utils/fx.py` — see the real file for the current version. The sample below is the original Phase 5 skeleton before those additions.
+
 **`dashboard/app.py`**
 ```python
 import streamlit as st
@@ -1101,12 +1105,18 @@ st.dataframe(display_df, use_container_width=True, height=400)
 
 1. Push repo to GitHub
 2. Go to [railway.app](https://railway.app) → New Project → Deploy from GitHub
-3. Add all env vars from `.env` in Railway dashboard → Variables
+3. Add all env vars from `.env` in Railway dashboard → Variables (skip `DASHBOARD_EMAIL`/`DASHBOARD_PASSWORD` — those are dashboard-only)
 4. Create `Procfile` at project root:
    ```
    worker: python -m bot.main
    ```
-5. Railway detects `Procfile` and runs it — bot stays alive 24/7
+5. Create `nixpacks.toml` at project root so the Linux build includes poppler for `pdf2image`:
+   ```toml
+   [phases.setup]
+   nixPkgs = ["poppler_utils"]
+   ```
+6. Railway detects `Procfile` and runs it — bot stays alive 24/7
+7. Watch the deploy logs for a brief `telegram.error.Conflict` right after restart — that's expected (Telegram's old long-poll session taking a moment to time out) and clears on its own within ~30–60s. If it persists, check for a second instance polling the same `BOT_TOKEN` (e.g. a local `bot/main.py` still running).
 
 ### Dashboard → Streamlit Community Cloud
 
@@ -1117,17 +1127,14 @@ st.dataframe(display_df, use_container_width=True, height=400)
    ```toml
    SUPABASE_URL = "..."
    SUPABASE_ANON_KEY = "..."
+   DASHBOARD_EMAIL = "..."
+   DASHBOARD_PASSWORD = "..."
    ```
 5. Deploy — you get a `*.streamlit.app` URL
 
-### Auth → Cloudflare Access
+### Auth → built-in login form
 
-1. Log in to [cloudflare.com](https://cloudflare.com) → Zero Trust
-2. Access → Applications → Add an application → Self-hosted
-3. Application domain: your `*.streamlit.app` URL
-4. Policy: Allow → Email → your personal email
-5. Authentication: One-time PIN
-6. Save — your dashboard now requires email OTP to access
+No external service. `dashboard/app.py` gates the app behind a `require_login()` form that checks the submitted email/password against `DASHBOARD_EMAIL`/`DASHBOARD_PASSWORD`. This replaced an earlier Cloudflare Zero Trust Access plan — Cloudflare's Access "Public Hostname" apps require a domain you control as a Cloudflare DNS zone, which a `*.streamlit.app` URL isn't, so Cloudflare can't front it.
 
 ---
 
@@ -1172,8 +1179,8 @@ PHASE 6 — DEPLOY & SECURE
 [ ] 23. Push to GitHub
 [ ] 24. Deploy bot to Railway, set env vars, verify still running
 [ ] 25. Deploy dashboard to Streamlit Community Cloud
-[ ] 26. Set up Cloudflare Access in front of Streamlit URL
-[ ] 27. Confirm email OTP works and blocks unauthenticated access
+[ ] 26. Set DASHBOARD_EMAIL/DASHBOARD_PASSWORD in Streamlit Cloud Secrets
+[ ] 27. Confirm wrong credentials are rejected and correct credentials let you in
 [ ] 28. Send one final test screenshot end-to-end in production
 
 DONE ✅
@@ -1181,4 +1188,4 @@ DONE ✅
 
 ---
 
-*Built for personal use. Stack: python-telegram-bot · Qwen VLM · Supabase · Streamlit · APScheduler · Railway · Cloudflare Access*
+*Built for personal use. Stack: python-telegram-bot · Gemini VLM · Supabase · Streamlit · APScheduler · Railway*

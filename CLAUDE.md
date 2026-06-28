@@ -9,7 +9,7 @@ This is a personal finance tracker built for one user (me). It has four componen
 4. A Streamlit dashboard for visualisation
 5. An APScheduler job that sends weekly reports via Telegram and email
 
-The bot and scheduler run together on Railway. The dashboard runs on Streamlit Community Cloud behind Cloudflare Access.
+The bot and scheduler run together on Railway. The dashboard runs on Streamlit Community Cloud behind a simple email/password login form built into the Streamlit app itself.
 
 ---
 
@@ -26,7 +26,7 @@ The bot and scheduler run together on Railway. The dashboard runs on Streamlit C
 | Email | Gmail SMTP via smtplib |
 | Hosting (bot) | Railway |
 | Hosting (dashboard) | Streamlit Community Cloud |
-| Auth | Cloudflare Zero Trust Access (email OTP in front of dashboard URL) |
+| Auth | Email/password login form inside `dashboard/app.py`, checked against env vars |
 
 ---
 
@@ -92,6 +92,8 @@ SUPABASE_SERVICE_KEY
 GMAIL_USER
 GMAIL_APP_PASSWORD
 NOTIFY_EMAIL
+DASHBOARD_EMAIL
+DASHBOARD_PASSWORD
 ```
 
 Never hardcode any of these. Never print them in logs.
@@ -181,6 +183,8 @@ CATEGORIES = [
 
 File: `dashboard/app.py`. Runs with `streamlit run dashboard/app.py`.
 
+**Auth:** Gated by `require_login()` at the top of the file — a simple form comparing the submitted email/password against `DASHBOARD_EMAIL`/`DASHBOARD_PASSWORD` env vars, using `st.session_state` to persist the authenticated flag for the session. This replaced an earlier Cloudflare Access plan: Cloudflare's "Public Hostname" Access apps require a domain you control as a Cloudflare DNS zone, which doesn't work for a `*.streamlit.app` URL you don't own.
+
 **Layout (in order):**
 1. Sidebar: date range picker, account filter
 2. KPI row: Net Worth, Monthly Income, Monthly Spend, Savings Rate
@@ -214,7 +218,7 @@ Use Plotly for all charts (`plotly.express`). Use `st.columns()` for side-by-sid
 - Do not expose `SUPABASE_SERVICE_KEY` in dashboard code — dashboard uses `SUPABASE_ANON_KEY` only
 - Do not use synchronous Telegram bot patterns (use async throughout)
 - Do not put business logic in `bot/main.py` — keep it as a thin entry point only
-- Do not add a login screen to the Streamlit app — auth is handled entirely by Cloudflare Access at the network level
+- Do not commit `DASHBOARD_EMAIL`/`DASHBOARD_PASSWORD` values — set them only in `.env` locally and in Streamlit Cloud's Secrets in production
 - Do not change the `amount` sign convention — negative = expense is used throughout the codebase and dashboard logic depends on it
 
 ---
