@@ -4,7 +4,7 @@
 
 This is a personal finance tracker built for one user (me). It has four components:
 1. A Telegram bot for data ingestion (images, PDFs, text)
-2. Qwen VLM for extracting structured transaction data from screenshots/statements
+2. Gemini VLM for extracting structured transaction data from screenshots/statements
 3. A Supabase Postgres database as the single source of truth
 4. A Streamlit dashboard for visualisation
 5. An APScheduler job that sends weekly reports via Telegram and email
@@ -18,8 +18,8 @@ The bot and scheduler run together on Railway. The dashboard runs on Streamlit C
 | Layer | Technology |
 |---|---|
 | Bot framework | python-telegram-bot v20+ (async) |
-| VLM extraction | Qwen VLM API (`qwen-vl-max`), OpenAI-compatible SDK |
-| PDF handling | pdf2image (converts pages → JPEG before sending to Qwen) |
+| VLM extraction | Gemini API (`gemini-3.5-flash`), `google-genai` SDK |
+| PDF handling | pdf2image (converts pages → JPEG before sending to Gemini) |
 | Database | Supabase (Postgres) via `supabase-py` |
 | Dashboard | Streamlit + Plotly |
 | Scheduler | APScheduler (AsyncIOScheduler, runs in-process with bot) |
@@ -37,7 +37,7 @@ expense-tracker/
 ├── bot/
 │   ├── main.py              # Bot entry point + APScheduler wired here
 │   ├── handlers.py          # Telegram handlers: photo, document, text
-│   └── extractor.py         # Qwen VLM API calls + JSON parsing
+│   └── extractor.py         # Gemini VLM API calls + JSON parsing
 ├── db/
 │   └── supabase.py          # All Supabase read/write functions
 ├── dashboard/
@@ -85,7 +85,7 @@ All secrets are in `.env`. Reference them via `os.getenv()` with `load_dotenv()`
 ```
 BOT_TOKEN
 YOUR_TELEGRAM_CHAT_ID
-QWEN_API_KEY
+GEMINI_API_KEY
 SUPABASE_URL
 SUPABASE_ANON_KEY
 SUPABASE_SERVICE_KEY
@@ -100,7 +100,7 @@ Never hardcode any of these. Never print them in logs.
 
 ## Categories
 
-Always use this exact list for the `category` field in transactions and in the Qwen extraction prompt. Defined in `utils/constants.py`:
+Always use this exact list for the `category` field in transactions and in the Gemini extraction prompt. Defined in `utils/constants.py`:
 
 ```python
 CATEGORIES = [
@@ -112,18 +112,17 @@ CATEGORIES = [
 
 ---
 
-## Qwen VLM Extraction
+## Gemini VLM Extraction
 
-- Model: `qwen-vl-max`
-- Base URL: `https://dashscope.aliyuncs.com/compatible-mode/v1`
-- Use the `openai` Python SDK (Qwen is OpenAI-compatible)
-- Always send images as base64: `data:image/jpeg;base64,<b64>`
+- Model: `gemini-3.5-flash`
+- Use the `google-genai` SDK (`google.genai.Client`), not the OpenAI SDK
+- Images are sent via `types.Part.from_bytes(data=image_bytes, mime_type=...)`, not base64 data URLs
 - For PDFs: convert each page to JPEG via `utils/pdf_converter.py` first, then send each page separately
-- The system prompt instructs Qwen to return **only valid JSON**, no markdown, no explanation
-- Always strip markdown fences from the response before `json.loads()`
-- Store the raw Qwen response text in `transactions.raw_text` for every insert
+- The system prompt instructs Gemini to return **only valid JSON**, no markdown, no explanation
+- `response_mime_type="application/json"` is set in `GenerateContentConfig`, but still strip markdown fences defensively before `json.loads()`
+- Store the raw Gemini response text in `transactions.raw_text` for every insert
 
-**Expected Qwen output schema:**
+**Expected Gemini output schema:**
 ```json
 {
   "document_type": "bank_statement | trade_screenshot | receipt | unknown",
@@ -225,7 +224,7 @@ Use Plotly for all charts (`plotly.express`). Use `st.columns()` for side-by-sid
 **Add a new expense category:**
 → Update `CATEGORIES` in `utils/constants.py` only. The extraction prompt imports from there.
 
-**Test Qwen extraction without running the bot:**
+**Test Gemini extraction without running the bot:**
 ```bash
 python -m bot.extractor /path/to/screenshot.jpg
 ```

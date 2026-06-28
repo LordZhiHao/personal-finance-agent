@@ -123,7 +123,7 @@ A fully personal, Telegram-native finance tracker. Drop bank statement screensho
 | Service | Purpose | How to Get Access | Free Tier |
 |---|---|---|---|
 | **Telegram Bot** | Bot token for ingestion + reports | @BotFather → `/newbot` | ✅ Free |
-| **Qwen VLM API** | Image/PDF understanding + extraction | [dashscope.aliyuncs.com](https://dashscope.aliyuncs.com) → API Key | ✅ Free credits |
+| **Gemini API** | Image/PDF understanding + extraction | [aistudio.google.com](https://aistudio.google.com) → API Key | ✅ Free tier |
 | **Supabase** | Postgres database + REST API | [supabase.com](https://supabase.com) → New project | ✅ Free tier |
 | **Railway** | Host the Telegram bot + scheduler | [railway.app](https://railway.app) → New project | ✅ $5 free/month |
 | **Streamlit Community Cloud** | Host the dashboard | [streamlit.io/cloud](https://streamlit.io/cloud) → Connect GitHub | ✅ Free |
@@ -147,10 +147,10 @@ A fully personal, Telegram-native finance tracker. Drop bank statement screensho
 2. Visit: `https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates`
 3. Find `"chat": {"id": XXXXXXXXX}` — that is your `YOUR_TELEGRAM_CHAT_ID`
 
-**Qwen API — endpoint:**
-- Base URL: `https://dashscope.aliyuncs.com/compatible-mode/v1`
-- Model: `qwen-vl-max` (best accuracy for financial docs)
-- It is OpenAI SDK-compatible — use `openai` Python library, just swap the base URL
+**Gemini API:**
+- Model: `gemini-3.5-flash`
+- Use the `google-genai` Python library (`google.genai.Client(api_key=...)`)
+- Images are passed via `types.Part.from_bytes(data=..., mime_type=...)`, not base64 data URLs
 
 **Supabase — what you need:**
 - Project URL (e.g. `https://xxxx.supabase.co`)
@@ -286,8 +286,8 @@ Create a `.env` file at project root. Never commit this file.
 BOT_TOKEN=your_telegram_bot_token_here
 YOUR_TELEGRAM_CHAT_ID=123456789          # your personal chat ID with the bot
 
-# ── Qwen VLM ─────────────────────────────────────────────
-QWEN_API_KEY=your_qwen_api_key_here
+# ── Gemini VLM ───────────────────────────────────────────
+GEMINI_API_KEY=your_gemini_api_key_here
 
 # ── Supabase ─────────────────────────────────────────────
 SUPABASE_URL=https://xxxx.supabase.co
@@ -304,7 +304,7 @@ NOTIFY_EMAIL=yourname@gmail.com
 ```bash
 BOT_TOKEN=
 YOUR_TELEGRAM_CHAT_ID=
-QWEN_API_KEY=
+GEMINI_API_KEY=
 SUPABASE_URL=
 SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_KEY=
@@ -324,8 +324,8 @@ NOTIFY_EMAIL=
 ```bash
 mkdir expense-tracker && cd expense-tracker
 python -m venv venv && source venv/bin/activate
-pip install python-telegram-bot[job-queue] openai supabase streamlit \
-            plotly pandas python-dotenv APScheduler pdf2image Pillow
+pip install python-telegram-bot[job-queue] google-genai supabase streamlit \
+            plotly pandas python-dotenv APScheduler pdf2image Pillow pytz
 pip freeze > requirements.txt
 ```
 
@@ -448,23 +448,24 @@ def pdf_to_images(pdf_bytes: bytes) -> list[bytes]:
 
 ---
 
-#### Step 5: Qwen extractor — test this standalone first
+#### Step 5: Gemini extractor — test this standalone first
 
 **`bot/extractor.py`**
 ```python
-import openai
-import base64
 import json
 import os
+
 from dotenv import load_dotenv
+from google import genai
+from google.genai import types
+
 from utils.constants import CATEGORIES
 
 load_dotenv()
 
-client = openai.OpenAI(
-    api_key=os.getenv("QWEN_API_KEY"),
-    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
-)
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+MODEL = "gemini-3.5-flash"
 
 SYSTEM_PROMPT = f"""
 You are a financial document parser for a user based in Singapore.
@@ -506,23 +507,20 @@ Rules:
 - confidence reflects how clearly you can read each field
 """
 
-def extract_from_image(image_bytes: bytes) -> dict:
-    b64 = base64.b64encode(image_bytes).decode()
-    response = client.chat.completions.create(
-        model="qwen-vl-max",
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": [
-                {"type": "image_url",
-                 "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
-                {"type": "text",
-                 "text": "Extract all transactions from this financial document."}
-            ]}
+def extract_from_image(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
+    response = client.models.generate_content(
+        model=MODEL,
+        contents=[
+            types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+            "Extract all transactions from this financial document.",
         ],
-        max_tokens=2000
+        config=types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
+            response_mime_type="application/json",
+        ),
     )
-    raw = response.choices[0].message.content.strip()
-    # Strip markdown fences if Qwen wraps in them
+    raw = response.text.strip()
+    # Strip markdown fences defensively, even though response_mime_type is set
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
@@ -531,14 +529,16 @@ def extract_from_image(image_bytes: bytes) -> dict:
 
 
 # ── Quick standalone test ──────────────────────────────────
-# Run: python -m bot.extractor
+# Run: python -m bot.extractor <path_to_image>
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 2:
         print("Usage: python -m bot.extractor <path_to_image>")
         sys.exit(1)
-    with open(sys.argv[1], "rb") as f:
-        result = extract_from_image(f.read())
+    path = sys.argv[1]
+    mime = "image/png" if path.lower().endswith(".png") else "image/jpeg"
+    with open(path, "rb") as f:
+        result = extract_from_image(f.read(), mime_type=mime)
     print(json.dumps(result, indent=2))
 ```
 
