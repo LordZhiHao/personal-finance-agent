@@ -2,6 +2,9 @@ import os
 
 from scheduler.emailer import send_email
 from scheduler.report_builder import get_weekly_data
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def format_telegram_message(data: dict) -> str:
@@ -37,6 +40,7 @@ _Next update: Sunday 8pm SGT_
 
 
 async def send_weekly_report(bot):
+    logger.info("send_weekly_report: building report")
     data = get_weekly_data()
     msg = format_telegram_message(data)
     await bot.send_message(
@@ -44,8 +48,12 @@ async def send_weekly_report(bot):
         text=msg,
         parse_mode="Markdown",
     )
+    logger.info(
+        "send_weekly_report: telegram sent — income=%.2f expenses=%.2f net=%.2f",
+        data["income"], data["expenses"], data["net"],
+    )
     try:
         send_email(data)
-    except Exception as e:
-        print(f"Email send failed: {e}")
-    print("✅ Weekly report sent")
+    except Exception:
+        logger.exception("send_weekly_report: email send failed")
+    logger.info("send_weekly_report: complete")

@@ -1,5 +1,9 @@
 import yfinance as yf
 
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
+
 
 def fetch_prices(symbols: list[str]) -> dict[str, dict]:
     """Fetches the latest price for each Yahoo Finance symbol.
@@ -15,8 +19,8 @@ def fetch_prices(symbols: list[str]) -> dict[str, dict]:
             info = yf.Ticker(symbol).fast_info
             price = info["lastPrice"]
             currency = info["currency"]
-        except Exception as e:
-            print(f"⚠️ Could not fetch price for {symbol}: {e}")
+        except Exception:
+            logger.warning("fetch_prices: could not fetch price for %s", symbol, exc_info=True)
             continue
 
         if currency == "GBp":

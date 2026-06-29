@@ -8,8 +8,10 @@ from telegram.ext import ApplicationBuilder, MessageHandler, filters
 from bot.handlers import handle_document, handle_photo, handle_text
 from scheduler.equity_price_updater import update_equity_prices
 from scheduler.weekly_report import send_weekly_report
+from utils.logger import get_logger
 
 load_dotenv()
+logger = get_logger(__name__)
 
 
 async def post_init(app):
@@ -28,7 +30,7 @@ async def post_init(app):
         hours=1,
     )
     scheduler.start()
-    print("✅ Scheduler started — weekly report every Sunday 8pm SGT, equity prices hourly")
+    logger.info("Scheduler started — weekly report every Sunday 8pm SGT, equity prices hourly")
 
 
 def main():
@@ -41,7 +43,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    print("🤖 Bot is running...")
+    logger.info("Bot is running...")
     app.run_polling()
 
 

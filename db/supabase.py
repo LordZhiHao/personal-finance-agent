@@ -2,7 +2,10 @@ import os
 from dotenv import load_dotenv
 from supabase import create_client
 
+from utils.logger import get_logger
+
 load_dotenv()
+logger = get_logger(__name__)
 
 
 def get_client(use_service_key: bool = False):
@@ -14,15 +17,28 @@ def get_client(use_service_key: bool = False):
 
 def insert_transactions(rows: list[dict]):
     db = get_client(use_service_key=True)
-    return db.table("transactions").insert(rows).execute()
+    try:
+        result = db.table("transactions").insert(rows).execute()
+    except Exception:
+        logger.exception("insert_transactions failed for %d row(s)", len(rows))
+        raise
+    logger.info("insert_transactions: saved %d row(s)", len(rows))
+    return result
 
 
 def insert_portfolio_events(rows: list[dict]):
     db = get_client(use_service_key=True)
-    return db.table("portfolio_events").insert(rows).execute()
+    try:
+        result = db.table("portfolio_events").insert(rows).execute()
+    except Exception:
+        logger.exception("insert_portfolio_events failed for %d row(s)", len(rows))
+        raise
+    logger.info("insert_portfolio_events: saved %d row(s)", len(rows))
+    return result
 
 
 def get_transactions(start_date: str, end_date: str):
+    logger.debug("get_transactions: %s to %s", start_date, end_date)
     db = get_client()
     return (
         db.table("transactions")
@@ -36,6 +52,7 @@ def get_transactions(start_date: str, end_date: str):
 
 
 def get_latest_snapshots():
+    logger.debug("get_latest_snapshots")
     db = get_client()
     snapshots = (
         db.table("asset_snapshots")
@@ -53,6 +70,7 @@ def get_latest_snapshots():
 
 
 def get_accounts(account_type: str | list[str] | None = None):
+    logger.debug("get_accounts: type=%s", account_type)
     db = get_client()
     query = db.table("accounts").select("*").eq("is_active", True)
     if account_type:
@@ -62,6 +80,7 @@ def get_accounts(account_type: str | list[str] | None = None):
 
 
 def get_portfolio_events(start_date: str, end_date: str):
+    logger.debug("get_portfolio_events: %s to %s", start_date, end_date)
     db = get_client()
     return (
         db.table("portfolio_events")
@@ -77,6 +96,7 @@ def get_portfolio_events(start_date: str, end_date: str):
 def get_held_positions() -> list[dict]:
     """Net quantity per (account_id, ticker), derived from BUY/SELL portfolio_events.
     Positions that have been fully sold off (net quantity <= 0) are excluded."""
+    logger.debug("get_held_positions")
     db = get_client()
     events = (
         db.table("portfolio_events")
@@ -99,22 +119,37 @@ def get_held_positions() -> list[dict]:
 
 def insert_equity_prices(rows: list[dict]):
     db = get_client(use_service_key=True)
-    return db.table("equity_prices").insert(rows).execute()
+    try:
+        result = db.table("equity_prices").insert(rows).execute()
+    except Exception:
+        logger.exception("insert_equity_prices failed for %d row(s)", len(rows))
+        raise
+    logger.info("insert_equity_prices: saved %d row(s)", len(rows))
+    return result
 
 
 def upsert_asset_snapshot(account_id: str, snapshot_date: str, total_value: float, currency: str, notes: str = None):
     db = get_client(use_service_key=True)
-    return (
-        db.table("asset_snapshots")
-        .upsert(
-            {
-                "account_id": account_id,
-                "snapshot_date": snapshot_date,
-                "total_value": total_value,
-                "currency": currency,
-                "notes": notes,
-            },
-            on_conflict="account_id,snapshot_date",
+    try:
+        result = (
+            db.table("asset_snapshots")
+            .upsert(
+                {
+                    "account_id": account_id,
+                    "snapshot_date": snapshot_date,
+                    "total_value": total_value,
+                    "currency": currency,
+                    "notes": notes,
+                },
+                on_conflict="account_id,snapshot_date",
+            )
+            .execute()
         )
-        .execute()
+    except Exception:
+        logger.exception("upsert_asset_snapshot failed for account_id=%s date=%s", account_id, snapshot_date)
+        raise
+    logger.info(
+        "upsert_asset_snapshot: account_id=%s date=%s total_value=%.2f %s",
+        account_id, snapshot_date, total_value, currency,
     )
+    return result

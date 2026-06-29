@@ -5,7 +5,10 @@ from telegram.ext import ContextTypes
 
 from bot.extractor import extract_from_image, extract_from_text
 from db.supabase import get_accounts, insert_portfolio_events, insert_transactions
+from utils.logger import get_logger
 from utils.pdf_text import extract_text_from_pdf
+
+logger = get_logger(__name__)
 
 ALLOWED_USER_IDS = {int(os.getenv("YOUR_TELEGRAM_CHAT_ID"))}
 
@@ -16,7 +19,10 @@ TELEGRAM_MESSAGE_LIMIT = 4000  # headroom under Telegram's hard 4096-char cap
 
 
 def is_authorized(update: Update) -> bool:
-    return update.effective_user.id in ALLOWED_USER_IDS
+    authorized = update.effective_user.id in ALLOWED_USER_IDS
+    if not authorized:
+        logger.warning("Unauthorized access attempt from user_id=%s", update.effective_user.id)
+    return authorized
 
 
 def build_confirmation_lines(data: dict) -> list[str]:
@@ -62,20 +68,28 @@ async def send_confirmation(update: Update, data: dict):
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
         return
+    uid = update.effective_user.id
+    logger.info("handle_photo: received photo from user_id=%s", uid)
     await update.message.reply_text("⏳ Extracting transactions...")
     photo = await update.message.photo[-1].get_file()
     image_bytes = await photo.download_as_bytearray()
     data = extract_from_image(bytes(image_bytes))
     data["raw_text"] = str(data)
     data["source"] = "telegram_image"
-    pending[update.effective_user.id] = data
+    pending[uid] = data
+    logger.info(
+        "handle_photo: extracted %d transaction(s), %d portfolio event(s) for user_id=%s",
+        len(data.get("transactions", [])), len(data.get("portfolio_events", [])), uid,
+    )
     await send_confirmation(update, data)
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
         return
+    uid = update.effective_user.id
     doc = update.message.document
+    logger.info("handle_document: received %s from user_id=%s", doc.mime_type, uid)
     file = await doc.get_file()
     file_bytes = await file.download_as_bytearray()
 
@@ -90,19 +104,25 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data["source"] = "telegram_image"
 
     data["raw_text"] = str(data)
-    pending[update.effective_user.id] = data
+    pending[uid] = data
+    logger.info(
+        "handle_document: extracted %d transaction(s), %d portfolio event(s) for user_id=%s",
+        len(data.get("transactions", [])), len(data.get("portfolio_events", [])), uid,
+    )
     await send_confirmation(update, data)
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
         return
-    text = update.message.text.strip().lower()
+    raw_text = update.message.text.strip()
+    text = raw_text.lower()
     uid = update.effective_user.id
 
     if text == "confirm":
         data = pending.pop(uid, None)
         if not data:
+            logger.info("handle_text: confirm with nothing pending for user_id=%s", uid)
             await update.message.reply_text("Nothing pending to confirm.")
             return
         accounts = get_accounts()
@@ -139,17 +159,38 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if trade_rows:
             insert_portfolio_events(trade_rows)
         total = len(txn_rows) + len(trade_rows)
+        logger.info(
+            "handle_text: confirmed by user_id=%s — saved %d transaction(s), %d portfolio event(s)",
+            uid, len(txn_rows), len(trade_rows),
+        )
         await update.message.reply_text(f"✅ Saved {total} entries to database.")
 
     elif text == "cancel":
+        had_pending = uid in pending
         pending.pop(uid, None)
+        logger.info("handle_text: cancelled by user_id=%s (had_pending=%s)", uid, had_pending)
         await update.message.reply_text("❌ Cancelled. Nothing was saved.")
 
     elif text.startswith("edit"):
+        logger.info("handle_text: edit requested by user_id=%s", uid)
         await update.message.reply_text(
             "To edit, resend the image with corrections, or manually fix in the dashboard."
         )
     else:
-        await update.message.reply_text(
-            "Send me a bank statement screenshot, trade screenshot, or PDF to get started."
+        logger.info("handle_text: parsing free-text entry from user_id=%s", uid)
+        data = extract_from_text(raw_text)
+        if not data.get("transactions") and not data.get("portfolio_events"):
+            logger.info("handle_text: no transaction found in free-text from user_id=%s", uid)
+            await update.message.reply_text(
+                "I couldn't find a transaction in that. Try something like "
+                "'Spent 0.5+3.5 on meals today', or send a screenshot/PDF."
+            )
+            return
+        data["raw_text"] = str(data)
+        data["source"] = "telegram_text"
+        pending[uid] = data
+        logger.info(
+            "handle_text: extracted %d transaction(s), %d portfolio event(s) for user_id=%s",
+            len(data.get("transactions", [])), len(data.get("portfolio_events", [])), uid,
         )
+        await send_confirmation(update, data)

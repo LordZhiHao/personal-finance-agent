@@ -9,12 +9,16 @@ from db.supabase import (
 from utils.constants import TICKER_YFINANCE_MAP
 from utils.equity_pricing import fetch_prices
 from utils.fx import convert
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def update_equity_prices():
+    logger.info("update_equity_prices: starting")
     positions = get_held_positions()
     if not positions:
-        print("No equity positions held — skipping price update")
+        logger.info("update_equity_prices: no equity positions held — skipping")
         return
 
     accounts = {a["id"]: a["currency"] for a in get_accounts()}
@@ -34,7 +38,7 @@ def update_equity_prices():
         symbol = TICKER_YFINANCE_MAP.get(p["ticker"], p["ticker"])
         quote = prices.get(symbol)
         if not quote:
-            print(f"⚠️ No price for {p['ticker']} ({symbol}) — excluded from snapshot")
+            logger.warning("update_equity_prices: no price for %s (%s) — excluded from snapshot", p["ticker"], symbol)
             continue
         account_currency = accounts.get(p["account_id"], quote["currency"])
         value = p["quantity"] * convert(quote["price"], quote["currency"], account_currency)
@@ -50,4 +54,7 @@ def update_equity_prices():
             notes="auto: hourly equity price update",
         )
 
-    print(f"✅ Equity prices updated — {len(price_rows)} symbols priced, {len(totals)} account snapshots refreshed")
+    logger.info(
+        "update_equity_prices: complete — %d symbol(s) priced, %d account snapshot(s) refreshed",
+        len(price_rows), len(totals),
+    )

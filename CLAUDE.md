@@ -85,7 +85,7 @@ equity_prices     id, ticker, price, currency, fetched_at, created_at
 **Key conventions:**
 - `amount` in `transactions` is **negative for expenses, positive for income**
 - `action` in `portfolio_events` is one of: `BUY | SELL | DIVIDEND`
-- `source` in `transactions` is one of: `telegram_image | telegram_pdf | manual`
+- `source` in `transactions` is one of: `telegram_image | telegram_pdf | telegram_text | manual`
 - Always use `SUPABASE_SERVICE_KEY` for bot writes, `SUPABASE_ANON_KEY` for dashboard reads
 - `asset_snapshots` has a unique constraint on `(account_id, snapshot_date)` — required for the hourly equity price job to upsert rather than duplicate a snapshot per run. `ticker` in `equity_prices` stores the Yahoo Finance symbol (post-`TICKER_YFINANCE_MAP` lookup), not the raw broker ticker
 
@@ -133,8 +133,8 @@ CATEGORIES = [
 - Use the `google-genai` SDK (`google.genai.Client`), not the OpenAI SDK
 - `bot/extractor.py` has two entry points sharing one `SYSTEM_PROMPT`/JSON schema:
   - `extract_from_image(image_bytes, mime_type)` — for `handle_photo` and non-PDF documents. Images are sent via `types.Part.from_bytes(data=image_bytes, mime_type=...)`, not base64 data URLs.
-  - `extract_from_text(text)` — for PDFs. `utils/pdf_text.py` (`pdfplumber`) extracts the PDF's text layer directly; the whole document's text goes in a single text-only Gemini call. Cheaper than per-page image calls (text tokens cost far less than image tokens) and more accurate for born-digital bank statements (no OCR/rasterization step at all). `utils/pdf_converter.py` (`pdf2image`) is kept as an unused fallback for scanned/image-only PDFs, not currently wired in.
-- The system prompt instructs Gemini to return **only valid JSON**, no markdown, no explanation
+  - `extract_from_text(text)` — for PDFs and free-typed Telegram messages (`handle_text`'s fallback branch, e.g. "Spent 0.5+3.5 on meals today"). For PDFs, `utils/pdf_text.py` (`pdfplumber`) extracts the text layer directly; the whole document's text goes in a single text-only Gemini call — cheaper than per-page image calls (text tokens cost far less than image tokens) and more accurate for born-digital bank statements (no OCR/rasterization step at all). `utils/pdf_converter.py` (`pdf2image`) is kept as an unused fallback for scanned/image-only PDFs, not currently wired in. The call is always prefixed with the actual current date (`date.today()`) so Gemini can resolve relative dates like "today"/"yesterday" in typed messages — the model has no other way to know the real date.
+- The system prompt instructs Gemini to return **only valid JSON**, no markdown, no explanation; for short natural-language input it's told to evaluate arithmetic in the amount (e.g. `0.5+3.5` → `4.00`) and set `confidence: 1.0` since the user typed it themselves
 - `response_mime_type="application/json"` is set in `GenerateContentConfig`, but still strip markdown fences defensively, and parse with `json.JSONDecoder().raw_decode()` rather than `json.loads()` — Gemini occasionally appends trailing content after the JSON object on very large outputs (e.g. consolidated statements with 90+ transactions), and `raw_decode` recovers the first valid JSON value instead of erroring on `Extra data`
 - Store the raw Gemini response text in `transactions.raw_text` for every insert
 
@@ -180,7 +180,8 @@ CATEGORIES = [
 - After `cancel`: clear from `pending`, reply with cancellation message
 - Handlers: `handle_photo`, `handle_document`, `handle_text` in `bot/handlers.py`
 - **Confirmation messages are chunked**: `send_confirmation()` splits the row list across multiple Telegram messages via `chunk_lines()`, staying under Telegram's 4096-char limit per message (headroom of 4000). Required once PDF statements with 90+ transactions became routine — a single message would silently fail to send (`Message is too long`). Splits happen on line boundaries so each line's Markdown formatting stays self-contained per chunk.
-- `source` on each transaction row is set per-handler (`telegram_image` / `telegram_pdf`), not hardcoded — read from `data["source"]` when building rows in the `confirm` branch of `handle_text`.
+- `source` on each transaction row is set per-handler (`telegram_image` / `telegram_pdf` / `telegram_text`), not hardcoded — read from `data["source"]` when building rows in the `confirm` branch of `handle_text`.
+- **Free-text expense entry**: any message in `handle_text` that isn't `confirm`/`cancel`/`edit <n>` falls through to `extract_from_text(raw_text)` (e.g. "Spent 0.5+3.5 on meals today") and joins the same pending/confirmation flow as photos and PDFs — no separate code path, no auto-commit. `raw_text` (original casing) is passed to Gemini, not the lowercased `text` used for command matching, so descriptions keep their natural casing. If Gemini returns no transactions and no portfolio_events (e.g. the message wasn't actually about a transaction), the bot replies with a hint instead of opening a confirmation with nothing in it. Saved rows get `source="telegram_text"`.
 
 ---
 

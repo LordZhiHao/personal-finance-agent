@@ -3,6 +3,10 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
+
 
 def build_html(data: dict) -> str:
     cat_rows = "".join(
@@ -48,3 +52,4 @@ def send_email(data: dict):
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(os.getenv("GMAIL_USER"), os.getenv("GMAIL_APP_PASSWORD"))
         server.send_message(msg)
+    logger.info("send_email: sent to %s", os.getenv("NOTIFY_EMAIL"))

@@ -2,6 +2,10 @@ import time
 
 import requests
 
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
+
 FRANKFURTER_URL = "https://api.frankfurter.app/latest"
 _CACHE_TTL_SECONDS = 24 * 60 * 60
 
@@ -24,7 +28,9 @@ def get_rates(base: str) -> dict[str, float]:
         return rates
     except requests.RequestException:
         if cached:
+            logger.warning("get_rates: Frankfurter unreachable for base=%s — using stale cached rates", base)
             return cached["rates"]
+        logger.exception("get_rates: Frankfurter unreachable for base=%s and no cache available", base)
         raise
 
 
@@ -36,5 +42,6 @@ def convert(amount: float, from_currency: str, to_currency: str) -> float:
     rates = get_rates(to_currency)
     rate = rates.get(from_currency)
     if rate is None:
+        logger.warning("convert: no rate for %s -> %s, returning amount unconverted", from_currency, to_currency)
         return amount
     return amount / rate
