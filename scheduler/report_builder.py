@@ -3,6 +3,30 @@ from datetime import date, timedelta
 from db.supabase import get_client
 
 
+def summarize_transactions(txns: list[dict]) -> dict:
+    """Income/expense/category aggregation shared by the weekly report and
+    the /expense command — only the date range differs between callers."""
+    income = sum(t["amount"] for t in txns if t["amount"] > 0)
+    expenses = abs(sum(t["amount"] for t in txns if t["amount"] < 0))
+    net = income - expenses
+    savings_rate = round((net / income * 100), 1) if income else 0
+
+    by_category = {}
+    for t in txns:
+        if t["amount"] < 0:
+            cat = t.get("category") or "Other"
+            by_category[cat] = by_category.get(cat, 0) + abs(t["amount"])
+    by_category = dict(sorted(by_category.items(), key=lambda x: x[1], reverse=True))
+
+    return {
+        "income": income,
+        "expenses": expenses,
+        "net": net,
+        "savings_rate": savings_rate,
+        "by_category": by_category,
+    }
+
+
 def get_weekly_data() -> dict:
     db = get_client()
     today = date.today()
@@ -20,17 +44,7 @@ def get_weekly_data() -> dict:
         .data
     )
 
-    income = sum(t["amount"] for t in txns if t["amount"] > 0)
-    expenses = abs(sum(t["amount"] for t in txns if t["amount"] < 0))
-    net = income - expenses
-    savings_rate = round((net / income * 100), 1) if income else 0
-
-    by_category = {}
-    for t in txns:
-        if t["amount"] < 0:
-            cat = t.get("category") or "Other"
-            by_category[cat] = by_category.get(cat, 0) + abs(t["amount"])
-    by_category = dict(sorted(by_category.items(), key=lambda x: x[1], reverse=True))
+    summary = summarize_transactions(txns)
 
     snapshots = (
         db.table("asset_snapshots")
@@ -50,11 +64,7 @@ def get_weekly_data() -> dict:
     return {
         "week_start": week_start,
         "week_end": week_end,
-        "income": income,
-        "expenses": expenses,
-        "net": net,
-        "savings_rate": savings_rate,
-        "by_category": by_category,
+        **summary,
         "snapshots": latest_snapshots,
         "total_assets": total_assets,
     }

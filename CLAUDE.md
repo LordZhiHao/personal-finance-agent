@@ -51,7 +51,7 @@ expense-tracker/
 │       └── investments.py           # explicit st.Page/st.navigation calls in app.py
 ├── scheduler/
 │   ├── weekly_report.py     # Scheduler trigger + Telegram send
-│   ├── report_builder.py    # Supabase queries for weekly summary
+│   ├── report_builder.py    # Supabase queries for weekly summary + summarize_transactions()
 │   ├── emailer.py           # Gmail HTML email sender
 │   └── equity_price_updater.py  # Hourly yfinance price pull + asset_snapshots refresh
 ├── utils/
@@ -60,7 +60,9 @@ expense-tracker/
 │   ├── pdf_converter.py     # pdf2image fallback helper (scanned/image-only PDFs)
 │   ├── fx.py                # Currency conversion via Frankfurter API
 │   ├── equity_pricing.py    # yfinance price lookups
-│   └── formatters.py        # Shared number/date formatting
+│   ├── portfolio.py         # Holdings + average-cost basis + unrealized gain/loss (for /portfolio)
+│   ├── period.py            # parse_period(): day|week|month|year -> trailing date window
+│   └── formatters.py        # Shared number/date formatting (format_money, format_pct)
 ├── .env                     # All secrets — never commit
 ├── .env.example             # Template with keys but no values
 ├── requirements.txt
@@ -185,6 +187,20 @@ CATEGORIES = [
 
 ---
 
+## Telegram Commands
+
+Registered via `CommandHandler` in `bot/main.py`, all implemented as `handle_*_command` functions in `bot/handlers.py`. Every command checks `is_authorized()` first, same as the media/text handlers. All money figures are reported in `DEFAULT_CURRENCY` (`"SGD"`) — like the weekly report, amounts are summed/displayed without per-transaction currency conversion (a pre-existing simplification; only `/assets`, `/balance`, and `/portfolio` convert, since those read from already-currency-tagged snapshots/prices via `utils/fx.convert`).
+
+- **`/expense [day|week|month|year]`** — `utils/period.py` (`parse_period`) resolves the arg to a trailing window ending today (default `week`); queries `get_transactions` for that range and reuses `scheduler/report_builder.summarize_transactions()` (extracted from `get_weekly_data` so the weekly cron report and this command share one aggregation, not two copies) for income/expenses/net/savings rate/by-category.
+- **`/portfolio`** — `utils/portfolio.py` (`compute_holdings_summary`) computes per-ticker **average-cost basis** from full `portfolio_events` history (BUYs roll a running weighted average; SELLs reduce quantity without changing the average — standard average-cost method, not FIFO), prices each holding from the latest `equity_prices` row per ticker, and reports unrealized gain/loss. A ticker with no price available is shown with a ⚠️ rather than silently dropped.
+- **`/assets`** — sums the latest `asset_snapshots` per account (reuses `get_latest_snapshots`), converted to `DEFAULT_CURRENCY`.
+- **`/balance [account]`** — no arg lists every account; an arg does a case-insensitive substring match on account name. **Balance differs by account type**: `bank`/`ewallet` sum `transactions.amount` for that account (`get_account_cash_totals`); `brokerage` uses the latest `asset_snapshots` market value instead, since brokerage cash flow isn't tracked separately from invested value anywhere in this codebase.
+- **`/recent [n]`** — last *n* transactions by `created_at` (default 10, capped at 30 to stay within a couple of chunked messages).
+- **`/undo`** — reverts the most recently confirmed `confirm` batch only (one level, not a history). The `confirm` branch of `handle_text` now captures the inserted row IDs (Supabase insert returns generated rows) into a second in-memory dict, `last_saved = {}` (keyed by user ID, same pattern as `pending`), and `/undo` deletes exactly those rows via `delete_transactions`/`delete_portfolio_events`.
+- **`/help`** — static list of the above.
+
+---
+
 ## Scheduler
 
 - Uses `APScheduler` `AsyncIOScheduler` with `Asia/Singapore` timezone
@@ -231,7 +247,7 @@ Use Plotly for all charts (`plotly.express`). Use `st.columns()` for side-by-sid
 - All formatting helpers (currency, date strings) go in `utils/formatters.py`
 - No f-string SQL — all queries go through the Supabase Python client
 - Use type hints where practical
-- Do not use global state outside of the `pending` dict in `handlers.py`
+- Do not use global state outside of the `pending` and `last_saved` dicts in `handlers.py`
 
 ---
 

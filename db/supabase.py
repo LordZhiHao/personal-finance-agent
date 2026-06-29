@@ -93,6 +93,20 @@ def get_portfolio_events(start_date: str, end_date: str):
     )
 
 
+def get_all_portfolio_events() -> list[dict]:
+    """Full trade history ordered chronologically, needed to roll an average-cost
+    basis from scratch (unlike get_portfolio_events, not bounded to a date range)."""
+    logger.debug("get_all_portfolio_events")
+    db = get_client()
+    return (
+        db.table("portfolio_events")
+        .select("*")
+        .order("date")
+        .execute()
+        .data
+    )
+
+
 def get_held_positions() -> list[dict]:
     """Net quantity per (account_id, ticker), derived from BUY/SELL portfolio_events.
     Positions that have been fully sold off (net quantity <= 0) are excluded."""
@@ -115,6 +129,80 @@ def get_held_positions() -> list[dict]:
         for (account_id, ticker), qty in positions.items()
         if qty > 0
     ]
+
+
+def get_latest_equity_prices(tickers: list[str]) -> dict[str, dict]:
+    """Most recent equity_prices row per ticker. Python-side "latest per group"
+    since supabase-py has no group-by — fine at this table's size."""
+    logger.debug("get_latest_equity_prices: tickers=%s", tickers)
+    if not tickers:
+        return {}
+    db = get_client()
+    rows = (
+        db.table("equity_prices")
+        .select("*")
+        .in_("ticker", tickers)
+        .order("fetched_at", desc=True)
+        .execute()
+        .data
+    )
+    latest: dict[str, dict] = {}
+    for r in rows:
+        if r["ticker"] not in latest:
+            latest[r["ticker"]] = r
+    return latest
+
+
+def get_recent_transactions(limit: int) -> list[dict]:
+    logger.debug("get_recent_transactions: limit=%d", limit)
+    db = get_client()
+    return (
+        db.table("transactions")
+        .select("*, accounts(name, currency)")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+        .data
+    )
+
+
+def get_account_cash_totals() -> dict[str, float]:
+    """Sums transactions.amount grouped by account_id (Python-side, no group-by
+    in supabase-py). Reflects only cash-type activity recorded in `transactions`
+    — brokerage accounts' invested value is tracked separately via asset_snapshots."""
+    logger.debug("get_account_cash_totals")
+    db = get_client()
+    rows = db.table("transactions").select("account_id, amount").execute().data
+    totals: dict[str, float] = {}
+    for r in rows:
+        totals[r["account_id"]] = totals.get(r["account_id"], 0) + r["amount"]
+    return totals
+
+
+def delete_transactions(ids: list[str]):
+    if not ids:
+        return
+    db = get_client(use_service_key=True)
+    try:
+        result = db.table("transactions").delete().in_("id", ids).execute()
+    except Exception:
+        logger.exception("delete_transactions failed for ids=%s", ids)
+        raise
+    logger.info("delete_transactions: removed %d row(s)", len(ids))
+    return result
+
+
+def delete_portfolio_events(ids: list[str]):
+    if not ids:
+        return
+    db = get_client(use_service_key=True)
+    try:
+        result = db.table("portfolio_events").delete().in_("id", ids).execute()
+    except Exception:
+        logger.exception("delete_portfolio_events failed for ids=%s", ids)
+        raise
+    logger.info("delete_portfolio_events: removed %d row(s)", len(ids))
+    return result
 
 
 def insert_equity_prices(rows: list[dict]):

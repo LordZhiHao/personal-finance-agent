@@ -3,9 +3,20 @@ import os
 import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
-from telegram.ext import ApplicationBuilder, MessageHandler, filters
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 
-from bot.handlers import handle_document, handle_photo, handle_text
+from bot.handlers import (
+    handle_assets_command,
+    handle_balance_command,
+    handle_document,
+    handle_expense_command,
+    handle_help_command,
+    handle_photo,
+    handle_portfolio_command,
+    handle_recent_command,
+    handle_text,
+    handle_undo_command,
+)
 from scheduler.equity_price_updater import update_equity_prices
 from scheduler.weekly_report import send_weekly_report
 from utils.logger import get_logger
@@ -42,6 +53,13 @@ def main():
     )
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    app.add_handler(CommandHandler("expense", handle_expense_command))
+    app.add_handler(CommandHandler("portfolio", handle_portfolio_command))
+    app.add_handler(CommandHandler("assets", handle_assets_command))
+    app.add_handler(CommandHandler("balance", handle_balance_command))
+    app.add_handler(CommandHandler("recent", handle_recent_command))
+    app.add_handler(CommandHandler("undo", handle_undo_command))
+    app.add_handler(CommandHandler("help", handle_help_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     logger.info("Bot is running...")
     app.run_polling()
