@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from telegram.ext import ApplicationBuilder, MessageHandler, filters
 
 from bot.handlers import handle_document, handle_photo, handle_text
+from scheduler.equity_price_updater import update_equity_prices
 from scheduler.weekly_report import send_weekly_report
 
 load_dotenv()
@@ -21,8 +22,13 @@ async def post_init(app):
         minute=0,
         args=[app.bot],
     )
+    scheduler.add_job(
+        update_equity_prices,
+        trigger="interval",
+        hours=1,
+    )
     scheduler.start()
-    print("✅ Scheduler started — weekly report every Sunday 8pm SGT")
+    print("✅ Scheduler started — weekly report every Sunday 8pm SGT, equity prices hourly")
 
 
 def main():

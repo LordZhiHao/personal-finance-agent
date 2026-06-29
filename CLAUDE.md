@@ -21,6 +21,7 @@ The bot and scheduler run together on Railway. The dashboard runs on Streamlit C
 | VLM extraction | Gemini API (`gemini-3.5-flash`), `google-genai` SDK |
 | PDF handling | `pdfplumber` extracts the PDF's text layer directly (no OCR/rasterization) for bank statements; `pdf2image` remains available as a fallback for image-only/scanned PDFs but isn't on the default path |
 | Database | Supabase (Postgres) via `supabase-py` |
+| Equity prices | `yfinance`, polled hourly by APScheduler |
 | Dashboard | Streamlit + Plotly |
 | Scheduler | APScheduler (AsyncIOScheduler, runs in-process with bot) |
 | Email | Gmail SMTP via smtplib |
@@ -41,16 +42,24 @@ expense-tracker/
 ├── db/
 │   └── supabase.py          # All Supabase read/write functions
 ├── dashboard/
-│   └── app.py               # Streamlit dashboard
+│   ├── app.py               # Thin entrypoint: login gate + st.navigation between pages
+│   ├── auth.py              # require_login()
+│   ├── components/
+│   │   └── filters.py       # Sidebar filter form shared by both pages (Apply-button pattern)
+│   └── views/                       # NOT named "pages" — that name triggers Streamlit's
+│       ├── spending.py              # legacy auto-page-discovery, which conflicts with the
+│       └── investments.py           # explicit st.Page/st.navigation calls in app.py
 ├── scheduler/
 │   ├── weekly_report.py     # Scheduler trigger + Telegram send
 │   ├── report_builder.py    # Supabase queries for weekly summary
-│   └── emailer.py           # Gmail HTML email sender
+│   ├── emailer.py           # Gmail HTML email sender
+│   └── equity_price_updater.py  # Hourly yfinance price pull + asset_snapshots refresh
 ├── utils/
-│   ├── constants.py         # CATEGORIES, CURRENCIES, ACCOUNT_TYPES
+│   ├── constants.py         # CATEGORIES, CURRENCIES, ACCOUNT_TYPES, TICKER_YFINANCE_MAP
 │   ├── pdf_text.py          # pdfplumber text-layer extraction (PDF default path)
 │   ├── pdf_converter.py     # pdf2image fallback helper (scanned/image-only PDFs)
 │   ├── fx.py                # Currency conversion via Frankfurter API
+│   ├── equity_pricing.py    # yfinance price lookups
 │   └── formatters.py        # Shared number/date formatting
 ├── .env                     # All secrets — never commit
 ├── .env.example             # Template with keys but no values
@@ -63,13 +72,14 @@ expense-tracker/
 
 ## Database Schema
 
-Four tables in Supabase. Always use these exact column names.
+Five tables in Supabase. Always use these exact column names.
 
 ```
 accounts          id, name, type, currency, is_active, created_at
 transactions      id, account_id, date, description, amount, category, currency, raw_text, source, created_at
 portfolio_events  id, account_id, date, ticker, action, quantity, price, currency, fees, created_at
 asset_snapshots   id, account_id, snapshot_date, total_value, currency, notes, created_at
+equity_prices     id, ticker, price, currency, fetched_at, created_at
 ```
 
 **Key conventions:**
@@ -77,6 +87,7 @@ asset_snapshots   id, account_id, snapshot_date, total_value, currency, notes, c
 - `action` in `portfolio_events` is one of: `BUY | SELL | DIVIDEND`
 - `source` in `transactions` is one of: `telegram_image | telegram_pdf | manual`
 - Always use `SUPABASE_SERVICE_KEY` for bot writes, `SUPABASE_ANON_KEY` for dashboard reads
+- `asset_snapshots` has a unique constraint on `(account_id, snapshot_date)` — required for the hourly equity price job to upsert rather than duplicate a snapshot per run. `ticker` in `equity_prices` stores the Yahoo Finance symbol (post-`TICKER_YFINANCE_MAP` lookup), not the raw broker ticker
 
 ---
 
@@ -184,24 +195,30 @@ CATEGORIES = [
 
 ---
 
+## Equity Price Updates
+
+- `scheduler/equity_price_updater.py` (`update_equity_prices`) runs hourly via APScheduler `interval` trigger (wired in `bot/main.py` `post_init`, alongside the weekly report job)
+- Held tickers are derived from `portfolio_events`, not a manual watchlist: `db.get_held_positions()` nets `BUY` minus `SELL` quantity per `(account_id, ticker)`, excluding positions fully sold off
+- Raw tickers (as extracted by Gemini, e.g. `"CSPX"`) are mapped to Yahoo Finance symbols via `TICKER_YFINANCE_MAP` in `utils/constants.py` before calling `yfinance` — needed for non-US listings (SGX → `.SI`, Bursa Malaysia → `.KL`, LSE → `.L`). Add new entries there as new exchanges/tickers are traded; tickers with no mapping fall through unchanged (assumes a plain US listing)
+- `utils/equity_pricing.py` (`fetch_prices`) calls `yfinance` and corrects for LSE listings being quoted in GBX/pence (`currency == "GBp"`) — divides by 100 and reports `GBP`
+- Every fetch is recorded as a row in `equity_prices` (price history), then holdings are revalued (`quantity × price`, converted to the account's currency via `utils/fx.convert`) and **upserted into `asset_snapshots`** for that account/day via `db.upsert_asset_snapshot()` — this means brokerage accounts with tracked tickers no longer need a manual snapshot; manual snapshots are still expected for accounts holding assets `yfinance` can't price
+- If a ticker has no price (`yfinance` lookup failed or unmapped), it's logged and excluded from that account's snapshot total for the run rather than blocking the whole job
+
+---
+
 ## Dashboard
 
-File: `dashboard/app.py`. Runs with `streamlit run dashboard/app.py`.
+Entrypoint: `dashboard/app.py`. Runs with `streamlit run dashboard/app.py`. Multipage via `st.navigation`/`st.Page` (Streamlit 1.36+) — `app.py` itself only does the login gate and declares the two pages; it has no charts or queries of its own.
 
-**Auth:** Gated by `require_login()` at the top of the file — a simple form comparing the submitted email/password against `DASHBOARD_EMAIL`/`DASHBOARD_PASSWORD` env vars, using `st.session_state` to persist the authenticated flag for the session. This replaced an earlier Cloudflare Access plan: Cloudflare's "Public Hostname" Access apps require a domain you control as a Cloudflare DNS zone, which doesn't work for a `*.streamlit.app` URL you don't own.
+**Auth:** Gated by `require_login()` in `dashboard/auth.py`, called once at the top of `app.py` before `st.navigation(...).run()` — since every page switch reruns `app.py` from the top, this single check protects every page without each page needing its own login call. The form compares submitted email/password against `DASHBOARD_EMAIL`/`DASHBOARD_PASSWORD` env vars, using `st.session_state` to persist the authenticated flag for the session. This replaced an earlier Cloudflare Access plan: Cloudflare's "Public Hostname" Access apps require a domain you control as a Cloudflare DNS zone, which doesn't work for a `*.streamlit.app` URL you don't own.
 
-**Layout (in order):**
-1. Sidebar: date range picker, account filter
-2. KPI row: Net Worth, Monthly Income, Monthly Spend, Savings Rate
-3. Line chart: Net Worth Over Time (from `asset_snapshots`)
-4. Stacked bar chart: Monthly Spend by Category
-5. Dual line chart: Monthly Income vs Monthly Spend
-6. Line chart: Savings Rate (%) over time — with 50% dashed target line
-7. Donut chart: Spend by Category (selected period)
-8. Donut chart: Asset Allocation by Account
-9. Transactions table: sortable, all columns
+**Filters:** `dashboard/components/filters.py` (`render_sidebar_filters(key_prefix, account_types, show_currency=False)`) draws the sidebar widgets inside an `st.sidebar.form(...)` with an "Apply Filters" submit button — widget changes alone do **not** trigger a rerun/requery; only clicking Apply commits new values, which are cached in `st.session_state[f"{key_prefix}_filters"]` so they persist across reruns. Each page calls this with its own `account_types` (so the Account dropdown only lists relevant accounts) and a distinct `key_prefix` (so the two pages' filter state and form keys don't collide).
 
-Use Plotly for all charts (`plotly.express`). Use `st.columns()` for side-by-side layout. Use `st.divider()` between sections.
+**Pages:**
+- **Spending** (`dashboard/views/spending.py`, accounts: `bank`, `ewallet`) — KPI row (Monthly Income, Monthly Spend, Savings Rate), stacked bar (Monthly Spend by Category), donut (Spend by Category), dual line (Income vs Spend), line (Savings Rate % with 50% dashed target), transactions table
+- **Investments** (`dashboard/views/investments.py`, accounts: `brokerage`, includes currency selector) — Net Worth KPI, line chart (Net Worth Over Time from `asset_snapshots`), donut (Asset Allocation by Account), trade history table (from `portfolio_events`, previously not surfaced anywhere in the dashboard)
+
+Use Plotly for all charts (`plotly.express`). Use `st.columns()` for side-by-side layout. Use `st.divider()` between sections. Any new chart/page-level code goes in the relevant file under `dashboard/views/`, not in `app.py`.
 
 ---
 
@@ -252,5 +269,15 @@ asyncio.run(send_weekly_report(bot))
 **Add a new Supabase query:**
 → Add a function to `db/supabase.py`. Import it where needed. Never write inline Supabase calls.
 
+**Trigger the equity price update manually for testing:**
+```python
+# In a scratch script
+from scheduler.equity_price_updater import update_equity_prices
+update_equity_prices()
+```
+
+**Add a ticker on a new exchange:**
+→ Add the raw ticker → Yahoo Finance symbol mapping to `TICKER_YFINANCE_MAP` in `utils/constants.py`.
+
 **Add a new chart to the dashboard:**
-→ Add after the existing sections in `dashboard/app.py`. Use `plotly.express`. Follow the existing column layout pattern.
+→ Add after the existing sections in `dashboard/views/spending.py` or `dashboard/views/investments.py` (whichever it belongs to). Use `plotly.express`. Follow the existing column layout pattern.
