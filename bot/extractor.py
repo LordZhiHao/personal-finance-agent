@@ -79,6 +79,31 @@ def _parse_response(raw: str) -> dict:
     return obj
 
 
+def extract_from_pdf_images(pdf_bytes: bytes) -> dict:
+    from utils.pdf_converter import pdf_to_images
+
+    page_images = pdf_to_images(pdf_bytes)
+    logger.info("extract_from_pdf_images: calling %s with %d page(s)", MODEL, len(page_images))
+    parts: list = [
+        types.Part.from_bytes(data=img, mime_type="image/jpeg") for img in page_images
+    ]
+    parts.append("Extract all transactions from this multi-page financial document.")
+    response = client.models.generate_content(
+        model=MODEL,
+        contents=parts,
+        config=types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
+            response_mime_type="application/json",
+        ),
+    )
+    data = _parse_response(response.text)
+    logger.info(
+        "extract_from_pdf_images: document_type=%s, %d transaction(s), %d portfolio event(s)",
+        data.get("document_type"), len(data.get("transactions", [])), len(data.get("portfolio_events", [])),
+    )
+    return data
+
+
 def extract_from_image(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
     logger.info("extract_from_image: calling %s (%d bytes, %s)", MODEL, len(image_bytes), mime_type)
     response = client.models.generate_content(

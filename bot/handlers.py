@@ -3,7 +3,7 @@ import os
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from bot.extractor import extract_from_image, extract_from_text
+from bot.extractor import extract_from_image, extract_from_pdf_images, extract_from_text
 from db.supabase import (
     delete_portfolio_events,
     delete_transactions,
@@ -116,7 +116,12 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if doc.mime_type == "application/pdf":
         text = extract_text_from_pdf(bytes(file_bytes))
-        data = extract_from_text(text)
+        if text:
+            data = extract_from_text(text)
+        else:
+            logger.info("handle_document: no text layer in PDF, falling back to image extraction for user_id=%s", uid)
+            await update.message.reply_text("⏳ No text layer found — trying image extraction...")
+            data = extract_from_pdf_images(bytes(file_bytes))
         data["source"] = "telegram_pdf"
     else:
         data = extract_from_image(bytes(file_bytes))
