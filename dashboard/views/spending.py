@@ -29,6 +29,7 @@ if df.empty:
 
 df["date"] = pd.to_datetime(df["date"])
 df["month"] = df["date"].dt.to_period("M").astype(str)
+df["month_date"] = df["date"].dt.to_period("M").dt.to_timestamp()
 df["account_name"] = df["accounts"].apply(lambda x: x["name"] if x else "Unknown")
 
 if filters["account"] != "All":
@@ -39,13 +40,14 @@ expense_df = df[df["amount"] < 0].copy()
 expense_df["amount"] = expense_df["amount"].abs()
 
 # ── KPI Row ───────────────────────────────────────────────
-monthly_income = income_df[income_df["month"] == date.today().strftime("%Y-%m")]["amount"].sum()
-monthly_spend = expense_df[expense_df["month"] == date.today().strftime("%Y-%m")]["amount"].sum()
-savings_rate = round((monthly_income - monthly_spend) / monthly_income * 100, 1) if monthly_income else 0
+latest_month = df["month"].max()
+monthly_income = income_df[income_df["month"] == latest_month]["amount"].sum()
+monthly_spend = expense_df[expense_df["month"] == latest_month]["amount"].sum()
+savings_rate = round((monthly_income - monthly_spend) / monthly_income * 100, 2) if monthly_income else 0
 
 col1, col2, col3 = st.columns(3)
-col1.metric("Monthly Income", f"SGD {monthly_income:,.0f}")
-col2.metric("Monthly Spend", f"SGD {monthly_spend:,.0f}")
+col1.metric("Monthly Income", f"SGD {monthly_income:,.2f}")
+col2.metric("Monthly Spend", f"SGD {monthly_spend:,.2f}")
 col3.metric("Savings Rate", f"{savings_rate}%")
 
 st.divider()
@@ -71,23 +73,25 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("Income vs Spend Over Time")
-    inc_monthly = income_df.groupby("month")["amount"].sum().reset_index()
+    inc_monthly = income_df.groupby("month_date")["amount"].sum().reset_index()
     inc_monthly["type"] = "Income"
-    exp_monthly = expense_df.groupby("month")["amount"].sum().reset_index()
+    exp_monthly = expense_df.groupby("month_date")["amount"].sum().reset_index()
     exp_monthly["type"] = "Spend"
     combined = pd.concat([inc_monthly, exp_monthly])
-    fig = px.line(combined, x="month", y="amount", color="type",
-                  labels={"amount": "SGD", "month": "Month"})
+    fig = px.line(combined, x="month_date", y="amount", color="type",
+                  markers=True, labels={"amount": "SGD", "month_date": "Month"})
+    fig.update_xaxes(dtick="M1", tickformat="%b %Y")
     st.plotly_chart(fig, use_container_width=True)
 
 with col2:
     st.subheader("Savings Rate Over Time (%)")
-    inc_m = income_df.groupby("month")["amount"].sum()
-    exp_m = expense_df.groupby("month")["amount"].sum()
+    inc_m = income_df.groupby("month_date")["amount"].sum()
+    exp_m = expense_df.groupby("month_date")["amount"].sum()
     rate_df = ((inc_m - exp_m) / inc_m * 100).reset_index()
-    rate_df.columns = ["month", "savings_rate"]
-    fig = px.line(rate_df, x="month", y="savings_rate",
-                  labels={"savings_rate": "%", "month": "Month"})
+    rate_df.columns = ["month_date", "savings_rate"]
+    fig = px.line(rate_df, x="month_date", y="savings_rate",
+                  markers=True, labels={"savings_rate": "%", "month_date": "Month"})
+    fig.update_xaxes(dtick="M1", tickformat="%b %Y")
     fig.add_hline(y=50, line_dash="dot", line_color="green",
                   annotation_text="50% target")
     st.plotly_chart(fig, use_container_width=True)
