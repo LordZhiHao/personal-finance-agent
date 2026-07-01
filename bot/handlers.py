@@ -19,7 +19,6 @@ from scheduler.report_builder import summarize_transactions
 from utils.fx import convert
 from utils.formatters import format_money, format_pct
 from utils.logger import get_logger
-from utils.pdf_text import extract_text_from_pdf
 from utils.period import parse_period
 from utils.portfolio import compute_holdings_summary
 
@@ -121,13 +120,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Processing document...")
 
     if doc.mime_type == "application/pdf":
-        text = extract_text_from_pdf(bytes(file_bytes))
-        if text:
-            data = extract_from_text(text)
-        else:
-            logger.info("handle_document: no text layer in PDF, falling back to image extraction for user_id=%s", uid)
-            await update.message.reply_text("⏳ No text layer found — trying image extraction...")
-            data = extract_from_pdf_images(bytes(file_bytes))
+        data = extract_from_pdf_images(bytes(file_bytes))
         data["source"] = "telegram_pdf"
     else:
         data = extract_from_image(bytes(file_bytes))
