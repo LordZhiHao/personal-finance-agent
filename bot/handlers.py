@@ -44,13 +44,19 @@ def is_authorized(update: Update) -> bool:
     return authorized
 
 
+def _escape_md(text: str) -> str:
+    for ch in ("_", "*", "`", "["):
+        text = str(text).replace(ch, f"\\{ch}")
+    return text
+
+
 def build_confirmation_lines(data: dict) -> list[str]:
-    lines = [f"📄 *{data['document_type']}* — {data.get('currency', '')}", ""]
+    lines = [f"📄 *{_escape_md(data['document_type'])}* — {_escape_md(data.get('currency', ''))}", ""]
     for i, t in enumerate(data.get("transactions", []), 1):
         flag = "⚠️" if t["confidence"] < 0.7 else "✅"
         sign = "+" if t["amount"] > 0 else ""
         lines.append(
-            f"{flag} {i}. {t['date']} | {t['description']} | "
+            f"{flag} {i}. {t['date']} | {_escape_md(t['description'])} | "
             f"{sign}{t['amount']:.2f} | _{t['category']}_"
         )
     for t in data.get("portfolio_events", []):

@@ -83,25 +83,23 @@ def extract_from_pdf_images(pdf_bytes: bytes) -> dict:
     from utils.pdf_converter import pdf_to_images
 
     page_images = pdf_to_images(pdf_bytes)
-    logger.info("extract_from_pdf_images: calling %s with %d page(s)", MODEL, len(page_images))
-    parts: list = [
-        types.Part.from_bytes(data=img, mime_type="image/jpeg") for img in page_images
-    ]
-    parts.append("Extract all transactions from this multi-page financial document.")
-    response = client.models.generate_content(
-        model=MODEL,
-        contents=parts,
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            response_mime_type="application/json",
-        ),
-    )
-    data = _parse_response(response.text)
+    logger.info("extract_from_pdf_images: %d page(s) to process with %s", len(page_images), MODEL)
+
+    merged: dict = {"document_type": None, "account_hint": None, "currency": None, "transactions": [], "portfolio_events": []}
+    for i, img in enumerate(page_images, 1):
+        page_data = extract_from_image(img, mime_type="image/jpeg")
+        logger.info("extract_from_pdf_images: page %d — %d txn(s), %d event(s)", i, len(page_data.get("transactions", [])), len(page_data.get("portfolio_events", [])))
+        for key in ("document_type", "account_hint", "currency"):
+            if merged[key] is None and page_data.get(key):
+                merged[key] = page_data[key]
+        merged["transactions"].extend(page_data.get("transactions", []))
+        merged["portfolio_events"].extend(page_data.get("portfolio_events", []))
+
     logger.info(
-        "extract_from_pdf_images: document_type=%s, %d transaction(s), %d portfolio event(s)",
-        data.get("document_type"), len(data.get("transactions", [])), len(data.get("portfolio_events", [])),
+        "extract_from_pdf_images: merged total — %d transaction(s), %d portfolio event(s)",
+        len(merged["transactions"]), len(merged["portfolio_events"]),
     )
-    return data
+    return merged
 
 
 def extract_from_image(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
