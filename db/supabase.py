@@ -51,6 +51,12 @@ def get_transactions(start_date: str, end_date: str):
     )
 
 
+def update_transaction(transaction_id: str, fields: dict):
+    logger.info("update_transaction: id=%s fields=%s", transaction_id, list(fields.keys()))
+    db = get_client()
+    db.table("transactions").update(fields).eq("id", transaction_id).execute()
+
+
 def get_latest_snapshots():
     logger.debug("get_latest_snapshots")
     db = get_client()

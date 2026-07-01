@@ -12,7 +12,8 @@ load_dotenv()
 
 from dashboard.auth import require_login
 from dashboard.components.filters import render_sidebar_filters
-from db.supabase import get_transactions
+from db.supabase import get_transactions, update_transaction
+from utils.constants import CATEGORIES
 
 require_login()
 
@@ -102,4 +103,30 @@ st.divider()
 st.subheader("Recent Transactions")
 display_cols = ["date", "description", "amount", "category", "account_name"]
 display_df = df[display_cols].sort_values("date", ascending=False)
-st.dataframe(display_df, use_container_width=True, height=400)
+
+edited_df = st.data_editor(
+    display_df,
+    column_config={
+        "date": st.column_config.DatetimeColumn("Date", disabled=True),
+        "description": st.column_config.TextColumn("Description"),
+        "amount": st.column_config.NumberColumn("Amount", disabled=True, format="%.2f"),
+        "account_name": st.column_config.TextColumn("Account", disabled=True),
+        "category": st.column_config.SelectboxColumn("Category", options=CATEGORIES, required=True),
+    },
+    use_container_width=True,
+    height=400,
+    hide_index=True,
+)
+
+changed_mask = (edited_df["category"] != display_df["category"]) | (edited_df["description"] != display_df["description"])
+if changed_mask.any():
+    if st.button(f"Save {changed_mask.sum()} change(s)"):
+        for idx in edited_df[changed_mask].index:
+            fields = {}
+            if edited_df.loc[idx, "category"] != display_df.loc[idx, "category"]:
+                fields["category"] = edited_df.loc[idx, "category"]
+            if edited_df.loc[idx, "description"] != display_df.loc[idx, "description"]:
+                fields["description"] = edited_df.loc[idx, "description"]
+            update_transaction(df.loc[idx, "id"], fields)
+        st.success("Transactions updated.")
+        st.rerun()
