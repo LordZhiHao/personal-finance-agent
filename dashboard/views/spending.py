@@ -108,7 +108,13 @@ with col2:
 st.divider()
 
 # ── Row 4: Transactions ────────────────────────────────────
-st.subheader("Recent Transactions")
+col_title, col_btn = st.columns([4, 1])
+with col_title:
+    st.subheader("Recent Transactions")
+with col_btn:
+    st.write("")  # vertical alignment
+    if st.button("🔄 Refresh", use_container_width=True):
+        st.rerun()
 display_cols = ["date", "description", "amount", "category", "account_name"]
 display_df = df[display_cols].sort_values("date", ascending=False)
 
