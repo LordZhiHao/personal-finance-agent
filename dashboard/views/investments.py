@@ -1,4 +1,5 @@
 import sys
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -11,7 +12,8 @@ load_dotenv()
 
 from dashboard.auth import require_login
 from dashboard.components.filters import render_sidebar_filters
-from db.supabase import get_latest_snapshots, get_portfolio_events
+from db.supabase import get_accounts, get_latest_snapshots, get_portfolio_events, insert_portfolio_events
+from utils.constants import CURRENCIES, PORTFOLIO_ACTIONS
 from utils.fx import convert
 
 require_login()
@@ -67,7 +69,79 @@ with col2:
 st.divider()
 
 # ── Row 3: Trade History ──────────────────────────────────
-st.subheader("Trade History")
+@st.dialog("Add Investment Entry")
+def add_investment_dialog():
+    brokerage_accounts = get_accounts(account_type="brokerage")
+    if not brokerage_accounts:
+        st.warning("No brokerage accounts found. Please add one first.")
+        return
+
+    account_map = {a["name"]: a["id"] for a in brokerage_accounts}
+
+    with st.form("add_investment_form"):
+        st.markdown("**Trade Details**")
+        col1, col2 = st.columns(2)
+        with col1:
+            company_name = st.text_input("Company Name", placeholder="e.g. Apple Inc")
+            ticker = st.text_input("Ticker Symbol *", placeholder="e.g. AAPL, CSPX")
+            action = st.selectbox("Action *", PORTFOLIO_ACTIONS)
+        with col2:
+            trade_date = st.date_input("Date *", value=date.today())
+            currency = st.selectbox("Currency *", CURRENCIES)
+            account_name = st.selectbox("Account *", list(account_map.keys()))
+
+        st.markdown("**Price & Quantity**")
+        col3, col4, col5 = st.columns(3)
+        with col3:
+            quantity = st.number_input("Quantity *", min_value=0.0, step=0.0001, format="%.4f")
+        with col4:
+            price = st.number_input("Price per Unit *", min_value=0.0, step=0.01, format="%.4f")
+        with col5:
+            fees = st.number_input("Fees", min_value=0.0, step=0.01, format="%.2f", value=0.0)
+
+        description = st.text_input("Description / Notes", placeholder="Optional notes about this trade")
+
+        submitted = st.form_submit_button("Save Entry", type="primary")
+
+    if submitted:
+        if not ticker.strip():
+            st.error("Ticker Symbol is required.")
+            return
+        if quantity <= 0:
+            st.error("Quantity must be greater than 0.")
+            return
+        if price <= 0 and action != "DIVIDEND":
+            st.error("Price must be greater than 0.")
+            return
+
+        row = {
+            "account_id": account_map[account_name],
+            "date": trade_date.isoformat(),
+            "ticker": ticker.strip().upper(),
+            "action": action,
+            "quantity": quantity,
+            "price": price,
+            "currency": currency,
+            "fees": fees if fees > 0 else None,
+            "notes": description.strip() if description.strip() else None,
+        }
+        try:
+            insert_portfolio_events([row])
+            label = company_name.strip() if company_name.strip() else ticker.strip().upper()
+            st.success(f"Saved {action} {quantity:.4f} × {ticker.upper()} ({label}) on {trade_date}.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Failed to save: {e}")
+
+
+col_title, col_btn = st.columns([5, 1])
+with col_title:
+    st.subheader("Trade History")
+with col_btn:
+    st.write("")
+    if st.button("＋ Add Entry", type="primary", use_container_width=True):
+        add_investment_dialog()
+
 events = get_portfolio_events(filters["start_date"].isoformat(), filters["end_date"].isoformat())
 events_df = pd.DataFrame(events)
 
@@ -77,6 +151,6 @@ else:
     events_df["account_name"] = events_df["accounts"].apply(lambda x: x["name"] if x else "Unknown")
     if filters["account"] != "All":
         events_df = events_df[events_df["account_name"] == filters["account"]]
-    display_cols = ["date", "ticker", "action", "quantity", "price", "currency", "fees", "account_name"]
+    display_cols = ["date", "ticker", "action", "quantity", "price", "currency", "fees", "notes", "account_name"]
     display_df = events_df[display_cols].sort_values("date", ascending=False)
     st.dataframe(display_df, use_container_width=True, height=400)
