@@ -57,6 +57,17 @@ def update_transaction(transaction_id: str, fields: dict):
     db.table("transactions").update(fields).eq("id", transaction_id).execute()
 
 
+def dashboard_insert_portfolio_event(row: dict):
+    db = get_client()
+    try:
+        result = db.table("portfolio_events").insert(row).execute()
+    except Exception:
+        logger.exception("dashboard_insert_portfolio_event failed for ticker=%s", row.get("ticker"))
+        raise
+    logger.info("dashboard_insert_portfolio_event: saved ticker=%s action=%s", row.get("ticker"), row.get("action"))
+    return result
+
+
 def get_latest_snapshots():
     logger.debug("get_latest_snapshots")
     db = get_client()

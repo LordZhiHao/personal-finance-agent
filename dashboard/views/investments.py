@@ -12,7 +12,7 @@ load_dotenv()
 
 from dashboard.auth import require_login
 from dashboard.components.filters import render_sidebar_filters
-from db.supabase import get_accounts, get_latest_snapshots, get_portfolio_events, insert_portfolio_events
+from db.supabase import dashboard_insert_portfolio_event, get_accounts, get_latest_snapshots, get_portfolio_events
 from utils.constants import CURRENCIES, PORTFOLIO_ACTIONS
 from utils.fx import convert
 
@@ -126,7 +126,7 @@ def add_investment_dialog():
             "notes": description.strip() if description.strip() else None,
         }
         try:
-            insert_portfolio_events([row])
+            dashboard_insert_portfolio_event(row)
             label = company_name.strip() if company_name.strip() else ticker.strip().upper()
             st.success(f"Saved {action} {quantity:.4f} × {ticker.upper()} ({label}) on {trade_date}.")
             st.rerun()
