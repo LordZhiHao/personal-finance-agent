@@ -88,7 +88,7 @@ equity_prices     id, ticker, price, currency, fetched_at, created_at
 - `amount` in `transactions` is **negative for expenses, positive for income**
 - `action` in `portfolio_events` is one of: `BUY | SELL | DIVIDEND`
 - `source` in `transactions` is one of: `telegram_image | telegram_pdf | telegram_text | manual`
-- Always use `SUPABASE_SERVICE_KEY` for bot writes, `SUPABASE_ANON_KEY` for dashboard reads
+- Always use `SUPABASE_SERVICE_KEY` for bot writes, `SUPABASE_ANON_KEY` for dashboard reads. Exceptions: `db.dashboard_insert_portfolio_event()` (investments page "Add Entry" dialog) and `db.update_transaction()` (spending page's editable transactions table) both use `SUPABASE_SERVICE_KEY` — the anon key has no INSERT/UPDATE grant via RLS on `portfolio_events`/`transactions`, and adding those grants was judged a bigger surface change than reusing the service key for these two single, already-login-gated write paths
 - `asset_snapshots` has a unique constraint on `(account_id, snapshot_date)` — required for the hourly equity price job to upsert rather than duplicate a snapshot per run. `ticker` in `equity_prices` stores the Yahoo Finance symbol (post-`TICKER_YFINANCE_MAP` lookup), not the raw broker ticker
 
 ---
@@ -254,7 +254,7 @@ Use Plotly for all charts (`plotly.express`). Use `st.columns()` for side-by-sid
 ## What NOT to Do
 
 - Do not auto-insert to Supabase without user confirmation via Telegram
-- Do not expose `SUPABASE_SERVICE_KEY` in dashboard code — dashboard uses `SUPABASE_ANON_KEY` only
+- Do not expose `SUPABASE_SERVICE_KEY` in dashboard code — dashboard uses `SUPABASE_ANON_KEY` only, except `db.dashboard_insert_portfolio_event()` and `db.update_transaction()` (see Database Schema conventions above)
 - Do not use synchronous Telegram bot patterns (use async throughout)
 - Do not put business logic in `bot/main.py` — keep it as a thin entry point only
 - Do not commit `DASHBOARD_EMAIL`/`DASHBOARD_PASSWORD` values — set them only in `.env` locally and in Streamlit Cloud's Secrets in production

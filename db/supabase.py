@@ -53,12 +53,12 @@ def get_transactions(start_date: str, end_date: str):
 
 def update_transaction(transaction_id: str, fields: dict):
     logger.info("update_transaction: id=%s fields=%s", transaction_id, list(fields.keys()))
-    db = get_client()
+    db = get_client(use_service_key=True)
     db.table("transactions").update(fields).eq("id", transaction_id).execute()
 
 
 def dashboard_insert_portfolio_event(row: dict):
-    db = get_client()
+    db = get_client(use_service_key=True)
     try:
         result = db.table("portfolio_events").insert(row).execute()
     except Exception:

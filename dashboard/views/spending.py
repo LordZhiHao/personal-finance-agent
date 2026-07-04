@@ -12,16 +12,8 @@ load_dotenv()
 
 from dashboard.auth import require_login
 from dashboard.components.filters import render_sidebar_filters
+from db.supabase import get_transactions, update_transaction
 from utils.constants import CATEGORIES
-
-try:
-    from db.supabase import get_transactions, update_transaction
-except ImportError:
-    from db.supabase import get_client, get_transactions
-
-    def update_transaction(transaction_id: str, fields: dict):
-        db = get_client()
-        db.table("transactions").update(fields).eq("id", transaction_id).execute()
 
 require_login()
 
