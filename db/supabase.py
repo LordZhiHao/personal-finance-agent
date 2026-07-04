@@ -96,18 +96,17 @@ def get_accounts(account_type: str | list[str] | None = None):
     return query.execute().data
 
 
-def get_portfolio_events(start_date: str, end_date: str):
+def get_portfolio_events(start_date: str | None = None, end_date: str | None = None):
+    """Trade history with account info joined in, for dashboard display.
+    Date bounds are optional — omit both to fetch full history unfiltered."""
     logger.debug("get_portfolio_events: %s to %s", start_date, end_date)
     db = get_client()
-    return (
-        db.table("portfolio_events")
-        .select("*, accounts(name, currency)")
-        .gte("date", start_date)
-        .lte("date", end_date)
-        .order("date", desc=True)
-        .execute()
-        .data
-    )
+    query = db.table("portfolio_events").select("*, accounts(name, currency)")
+    if start_date:
+        query = query.gte("date", start_date)
+    if end_date:
+        query = query.lte("date", end_date)
+    return query.order("date", desc=True).execute().data
 
 
 def get_all_portfolio_events() -> list[dict]:

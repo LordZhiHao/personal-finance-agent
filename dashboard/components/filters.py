@@ -18,6 +18,7 @@ def render_sidebar_filters(key_prefix: str, account_types: list[str], show_curre
     }
     if show_currency:
         defaults["currency"] = CURRENCIES[0]
+    has_applied = state_key in st.session_state
     applied = st.session_state.get(state_key, defaults)
 
     accounts = get_accounts(account_type=account_types)
@@ -43,5 +44,6 @@ def render_sidebar_filters(key_prefix: str, account_types: list[str], show_curre
         if show_currency:
             applied["currency"] = display_currency
         st.session_state[state_key] = applied
+        has_applied = True
 
-    return applied
+    return {**applied, "has_applied": has_applied}

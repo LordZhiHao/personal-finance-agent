@@ -142,7 +142,10 @@ with col_btn:
     if st.button("＋ Add Entry", type="primary", use_container_width=True):
         add_investment_dialog()
 
-events = get_portfolio_events(filters["start_date"].isoformat(), filters["end_date"].isoformat())
+if filters["has_applied"]:
+    events = get_portfolio_events(filters["start_date"].isoformat(), filters["end_date"].isoformat())
+else:
+    events = get_portfolio_events()
 events_df = pd.DataFrame(events)
 
 if events_df.empty:
