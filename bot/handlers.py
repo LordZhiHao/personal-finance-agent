@@ -1,3 +1,4 @@
+import json
 import os
 
 from telegram import Update
@@ -97,7 +98,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Extracting transactions...")
     photo = await update.message.photo[-1].get_file()
     image_bytes = await photo.download_as_bytearray()
-    data = extract_from_image(bytes(image_bytes))
+    try:
+        data = extract_from_image(bytes(image_bytes))
+    except (json.JSONDecodeError, ValueError):
+        logger.exception("handle_photo: extraction failed for user_id=%s", uid)
+        await update.message.reply_text(
+            "⚠️ Couldn't parse that image — try again, or type the expense manually, "
+            "e.g. 'spent 12 on lunch'."
+        )
+        return
     data["raw_text"] = str(data)
     data["source"] = "telegram_image"
     pending[uid] = data
@@ -119,12 +128,20 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("⏳ Processing document...")
 
-    if doc.mime_type == "application/pdf":
-        data = extract_from_pdf_images(bytes(file_bytes))
-        data["source"] = "telegram_pdf"
-    else:
-        data = extract_from_image(bytes(file_bytes))
-        data["source"] = "telegram_image"
+    try:
+        if doc.mime_type == "application/pdf":
+            data = extract_from_pdf_images(bytes(file_bytes))
+            data["source"] = "telegram_pdf"
+        else:
+            data = extract_from_image(bytes(file_bytes))
+            data["source"] = "telegram_image"
+    except (json.JSONDecodeError, ValueError):
+        logger.exception("handle_document: extraction failed for user_id=%s", uid)
+        await update.message.reply_text(
+            "⚠️ Couldn't parse that document — try again, or type the expense manually, "
+            "e.g. 'spent 12 on lunch'."
+        )
+        return
 
     data["raw_text"] = str(data)
     pending[uid] = data
@@ -203,7 +220,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         logger.info("handle_text: parsing free-text entry from user_id=%s", uid)
-        data = extract_from_text(raw_text)
+        try:
+            data = extract_from_text(raw_text)
+        except (json.JSONDecodeError, ValueError):
+            logger.exception("handle_text: extraction failed for user_id=%s", uid)
+            await update.message.reply_text(
+                "⚠️ Couldn't parse that — try rephrasing, e.g. 'spent 12 on lunch'."
+            )
+            return
         if not data.get("transactions") and not data.get("portfolio_events"):
             logger.info("handle_text: no transaction found in free-text from user_id=%s", uid)
             await update.message.reply_text(
@@ -385,6 +409,18 @@ async def handle_undo_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     logger.info("handle_undo_command: user_id=%s reverted %d entries", uid, total)
     await update.message.reply_text(f"↩️ Reverted {total} entries from your last confirm.")
+
+
+async def handle_error(update: object, context: ContextTypes.DEFAULT_TYPE):
+    """Catch-all for exceptions raised anywhere in a handler. python-telegram-bot swallows
+    unhandled exceptions into its own logger and never replies — this is the safety net so
+    the bot can't go silent, even for failures not covered by the try/excepts above (e.g. a
+    Supabase write failing on confirm, or a Gemini network/rate-limit error)."""
+    logger.error("handle_error: unhandled exception", exc_info=context.error)
+    if isinstance(update, Update) and update.effective_message:
+        await update.effective_message.reply_text(
+            "⚠️ Something went wrong handling that — please try again."
+        )
 
 
 async def handle_help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

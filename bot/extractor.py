@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-from utils.constants import CATEGORIES
+from utils.constants import CATEGORIES, PORTFOLIO_ACTIONS
 from utils.logger import get_logger
 
 load_dotenv()
@@ -62,6 +62,42 @@ Rules:
 """
 
 
+REQUIRED_TXN_FIELDS = {"date", "description", "amount", "category", "confidence"}
+REQUIRED_EVENT_FIELDS = {"ticker", "action", "quantity", "price", "currency", "date"}
+
+
+def _validate_schema(obj: dict) -> None:
+    """Raises ValueError with a specific message if Gemini's JSON doesn't match the
+    expected schema — catching this here, right after the call, avoids a bare KeyError
+    surfacing later in unrelated formatting code (or a bad row reaching Supabase)."""
+    txns = obj.get("transactions", [])
+    events = obj.get("portfolio_events", [])
+    if not isinstance(txns, list):
+        raise ValueError("'transactions' must be a list")
+    if not isinstance(events, list):
+        raise ValueError("'portfolio_events' must be a list")
+
+    for i, t in enumerate(txns):
+        if not isinstance(t, dict):
+            raise ValueError(f"transactions[{i}] is not an object")
+        missing = REQUIRED_TXN_FIELDS - t.keys()
+        if missing:
+            raise ValueError(f"transactions[{i}] missing field(s): {missing}")
+        if not isinstance(t["amount"], (int, float)):
+            raise ValueError(f"transactions[{i}].amount is not numeric: {t['amount']!r}")
+        if t["category"] not in CATEGORIES:
+            raise ValueError(f"transactions[{i}].category {t['category']!r} not in CATEGORIES")
+
+    for i, e in enumerate(events):
+        if not isinstance(e, dict):
+            raise ValueError(f"portfolio_events[{i}] is not an object")
+        missing = REQUIRED_EVENT_FIELDS - e.keys()
+        if missing:
+            raise ValueError(f"portfolio_events[{i}] missing field(s): {missing}")
+        if e["action"] not in PORTFOLIO_ACTIONS:
+            raise ValueError(f"portfolio_events[{i}].action {e['action']!r} not in {PORTFOLIO_ACTIONS}")
+
+
 def _parse_response(raw: str) -> dict:
     raw = raw.strip()
     if raw.startswith("```"):
@@ -76,6 +112,7 @@ def _parse_response(raw: str) -> dict:
     except json.JSONDecodeError:
         logger.exception("Gemini response could not be parsed as JSON (length=%d)", len(raw))
         raise
+    _validate_schema(obj)
     return obj
 
 

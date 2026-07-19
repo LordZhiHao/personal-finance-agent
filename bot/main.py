@@ -9,6 +9,7 @@ from bot.handlers import (
     handle_assets_command,
     handle_balance_command,
     handle_document,
+    handle_error,
     handle_expense_command,
     handle_help_command,
     handle_photo,
@@ -72,6 +73,7 @@ def main():
     app.add_handler(CommandHandler("undo", handle_undo_command))
     app.add_handler(CommandHandler("help", handle_help_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_error_handler(handle_error)
     logger.info("Bot is running...")
     app.run_polling()
 

@@ -19,7 +19,7 @@ The bot and scheduler run together on Railway. The dashboard runs on Streamlit C
 |---|---|
 | Bot framework | python-telegram-bot v20+ (async) |
 | VLM extraction | Gemini API (`gemini-3.5-flash`), `google-genai` SDK |
-| PDF handling | `pdfplumber` extracts the PDF's text layer directly (no OCR/rasterization) for bank statements; `pdf2image` remains available as a fallback for image-only/scanned PDFs but isn't on the default path |
+| PDF handling | `pdf2image` (+ poppler) rasterizes each PDF page to JPEG (`utils/pdf_converter.py`); each page is sent through the same Gemini image-extraction call as photos and the results are merged (`extract_from_pdf_images` in `bot/extractor.py`). `pdfplumber` is listed in `requirements.txt` but is not currently wired into any code path |
 | Database | Supabase (Postgres) via `supabase-py` |
 | Equity prices | `yfinance`, polled hourly by APScheduler |
 | Dashboard | Streamlit + Plotly |
@@ -56,8 +56,7 @@ expense-tracker/
 │   └── equity_price_updater.py  # Hourly yfinance price pull + asset_snapshots refresh
 ├── utils/
 │   ├── constants.py         # CATEGORIES, CURRENCIES, ACCOUNT_TYPES, TICKER_YFINANCE_MAP
-│   ├── pdf_text.py          # pdfplumber text-layer extraction (PDF default path)
-│   ├── pdf_converter.py     # pdf2image fallback helper (scanned/image-only PDFs)
+│   ├── pdf_converter.py     # pdf2image: rasterizes PDF pages to JPEG for Gemini (PDF default path, see extract_from_pdf_images in bot/extractor.py)
 │   ├── fx.py                # Currency conversion via Frankfurter API
 │   ├── equity_pricing.py    # yfinance price lookups
 │   ├── portfolio.py         # Holdings + average-cost basis + unrealized gain/loss (for /portfolio)
@@ -133,9 +132,10 @@ CATEGORIES = [
 
 - Model: `gemini-3.5-flash`
 - Use the `google-genai` SDK (`google.genai.Client`), not the OpenAI SDK
-- `bot/extractor.py` has two entry points sharing one `SYSTEM_PROMPT`/JSON schema:
-  - `extract_from_image(image_bytes, mime_type)` — for `handle_photo` and non-PDF documents. Images are sent via `types.Part.from_bytes(data=image_bytes, mime_type=...)`, not base64 data URLs.
-  - `extract_from_text(text)` — for PDFs and free-typed Telegram messages (`handle_text`'s fallback branch, e.g. "Spent 0.5+3.5 on meals today"). For PDFs, `utils/pdf_text.py` (`pdfplumber`) extracts the text layer directly; the whole document's text goes in a single text-only Gemini call — cheaper than per-page image calls (text tokens cost far less than image tokens) and more accurate for born-digital bank statements (no OCR/rasterization step at all). `utils/pdf_converter.py` (`pdf2image`) is kept as an unused fallback for scanned/image-only PDFs, not currently wired in. The call is always prefixed with the actual current date (`date.today()`) so Gemini can resolve relative dates like "today"/"yesterday" in typed messages — the model has no other way to know the real date.
+- `bot/extractor.py` has three entry points sharing one `SYSTEM_PROMPT`/JSON schema:
+  - `extract_from_image(image_bytes, mime_type)` — for `handle_photo`, non-PDF documents, and each rasterized PDF page (see `extract_from_pdf_images` below). Images are sent via `types.Part.from_bytes(data=image_bytes, mime_type=...)`, not base64 data URLs.
+  - `extract_from_pdf_images(pdf_bytes)` — for PDFs in `handle_document`. `utils/pdf_converter.py` (`pdf2image`, requires poppler) rasterizes each page to a JPEG; each page is run through `extract_from_image()` individually and the resulting `transactions`/`portfolio_events` lists are concatenated, with `document_type`/`account_hint`/`currency` taken from the first page that reports them. An N-page PDF means N separate Gemini image calls, not one text call.
+  - `extract_from_text(text)` — for free-typed Telegram messages only (`handle_text`'s fallback branch, e.g. "Spent 0.5+3.5 on meals today"). The call is always prefixed with the actual current date (`date.today()`) so Gemini can resolve relative dates like "today"/"yesterday" — the model has no other way to know the real date.
 - The system prompt instructs Gemini to return **only valid JSON**, no markdown, no explanation; for short natural-language input it's told to evaluate arithmetic in the amount (e.g. `0.5+3.5` → `4.00`) and set `confidence: 1.0` since the user typed it themselves
 - `response_mime_type="application/json"` is set in `GenerateContentConfig`, but still strip markdown fences defensively, and parse with `json.JSONDecoder().raw_decode()` rather than `json.loads()` — Gemini occasionally appends trailing content after the JSON object on very large outputs (e.g. consolidated statements with 90+ transactions), and `raw_decode` recovers the first valid JSON value instead of erroring on `Extra data`
 - Store the raw Gemini response text in `transactions.raw_text` for every insert
