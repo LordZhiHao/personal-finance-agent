@@ -17,6 +17,7 @@ from bot.handlers import (
     handle_text,
     handle_undo_command,
 )
+from scheduler.daily_checkin import send_daily_checkin
 from scheduler.equity_price_updater import update_equity_prices
 from scheduler.weekly_report import send_weekly_report
 from utils.logger import get_logger
@@ -40,8 +41,18 @@ async def post_init(app):
         trigger="interval",
         hours=1,
     )
+    scheduler.add_job(
+        send_daily_checkin,
+        trigger="cron",
+        hour=22,
+        minute=30,
+        args=[app.bot],
+    )
     scheduler.start()
-    logger.info("Scheduler started — weekly report every Sunday 8pm SGT, equity prices hourly")
+    logger.info(
+        "Scheduler started — weekly report every Sunday 8pm SGT, "
+        "daily check-in 10:30pm SGT, equity prices hourly"
+    )
 
 
 def main():
