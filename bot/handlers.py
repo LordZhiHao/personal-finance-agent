@@ -8,7 +8,6 @@ from bot.extractor import extract_from_image, extract_from_pdf_images, extract_f
 from db.supabase import (
     delete_portfolio_events,
     delete_transactions,
-    get_account_cash_totals,
     get_accounts,
     get_latest_snapshots,
     get_recent_transactions,
@@ -17,6 +16,7 @@ from db.supabase import (
     insert_transactions,
 )
 from scheduler.report_builder import summarize_transactions
+from utils.balances import compute_account_balances
 from utils.fx import convert
 from utils.formatters import format_money, format_pct
 from utils.logger import get_logger
@@ -338,25 +338,16 @@ async def handle_balance_command(update: Update, context: ContextTypes.DEFAULT_T
             await update.message.reply_text(f"No account matching '{query}'.")
             return
 
-    cash_totals = get_account_cash_totals()
-    snapshots_by_account = {s["account_id"]: s for s in get_latest_snapshots()}
+    result = compute_account_balances(DEFAULT_CURRENCY, accounts=accounts)
 
     lines = [f"💳 *Balances* — {DEFAULT_CURRENCY}", ""]
-    total = 0.0
-    for a in accounts:
-        if a["type"] == "brokerage":
-            snap = snapshots_by_account.get(a["id"])
-            balance = convert(snap["total_value"], snap["currency"], DEFAULT_CURRENCY) if snap else None
+    for b in result["balances"]:
+        if b["balance"] is None:
+            lines.append(f"▪️ {b['account_name']}: no snapshot yet")
         else:
-            balance = convert(cash_totals.get(a["id"], 0.0), a["currency"], DEFAULT_CURRENCY)
-
-        if balance is None:
-            lines.append(f"▪️ {a['name']}: no snapshot yet")
-        else:
-            lines.append(f"▪️ {a['name']}: {format_money(balance, DEFAULT_CURRENCY)}")
-            total += balance
+            lines.append(f"▪️ {b['account_name']}: {format_money(b['balance'], DEFAULT_CURRENCY)}")
     lines.append("")
-    lines.append(f"Total: {format_money(total, DEFAULT_CURRENCY)}")
+    lines.append(f"Total: {format_money(result['total'], DEFAULT_CURRENCY)}")
 
     logger.info("handle_balance_command: user_id=%s query=%s accounts=%d", uid, query, len(accounts))
     for chunk in chunk_lines(lines):

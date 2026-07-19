@@ -2,14 +2,15 @@
 
 ## Project Overview
 
-This is a personal finance tracker built for one user (me). It has four components:
+This is a personal finance tracker built for one user (me). It has these components:
 1. A Telegram bot for data ingestion (images, PDFs, text)
 2. Gemini VLM for extracting structured transaction data from screenshots/statements
 3. A Supabase Postgres database as the single source of truth
-4. A Streamlit dashboard for visualisation
-5. An APScheduler job that sends weekly reports via Telegram and email
+4. A FastAPI backend (`backend/`) exposing that data over a JSON API with JWT auth
+5. A React dashboard (`frontend/`) for visualisation — the primary web UI, replacing the legacy Streamlit dashboard (`dashboard/`, kept until the React app is confirmed as a full replacement, then removed)
+6. An APScheduler job that sends weekly reports via Telegram and email
 
-The bot and scheduler run together on Railway. The dashboard runs on Streamlit Community Cloud behind a simple email/password login form built into the Streamlit app itself.
+The bot and scheduler run together on Railway. The backend (`backend/`) runs as a second Railway service in the same project (`web: python -m uvicorn backend.main:app ...` in the `Procfile`). The React frontend is deployed on Vercel and talks only to the backend API — it never touches Supabase directly. The legacy Streamlit dashboard, while still present, runs on Streamlit Community Cloud behind a simple email/password login form built into the Streamlit app itself.
 
 ---
 
@@ -22,12 +23,16 @@ The bot and scheduler run together on Railway. The dashboard runs on Streamlit C
 | PDF handling | `pdf2image` (+ poppler) rasterizes each PDF page to JPEG (`utils/pdf_converter.py`); each page is sent through the same Gemini image-extraction call as photos and the results are merged (`extract_from_pdf_images` in `bot/extractor.py`). `pdfplumber` is listed in `requirements.txt` but is not currently wired into any code path |
 | Database | Supabase (Postgres) via `supabase-py` |
 | Equity prices | `yfinance`, polled hourly by APScheduler |
-| Dashboard | Streamlit + Plotly |
+| Backend API | FastAPI (`backend/`), wraps `db/supabase.py` + `utils/` — the only thing that talks to Supabase for the React frontend |
+| Frontend | React + TypeScript (Vite SPA), Tailwind CSS, TanStack Query, Recharts, react-router-dom, react-hook-form + zod (`frontend/`) |
+| Dashboard (legacy) | Streamlit + Plotly (`dashboard/`) — being replaced by `frontend/` |
 | Scheduler | APScheduler (AsyncIOScheduler, runs in-process with bot) |
 | Email | Gmail SMTP via smtplib |
-| Hosting (bot) | Railway |
-| Hosting (dashboard) | Streamlit Community Cloud |
-| Auth | Email/password login form inside `dashboard/app.py`, checked against env vars |
+| Hosting (bot + backend) | Railway (two services in one project: `worker` = bot, `web` = backend API) |
+| Hosting (frontend) | Vercel |
+| Hosting (dashboard, legacy) | Streamlit Community Cloud |
+| Auth (backend/frontend) | `POST /api/auth/login` in `backend/routers/auth_routes.py` checks email/password against env vars and issues a JWT (`backend/auth.py`); frontend sends it as `Authorization: Bearer <token>` |
+| Auth (legacy dashboard) | Email/password login form inside `dashboard/app.py`, checked against env vars, session-only (no token) |
 
 ---
 
@@ -41,7 +46,26 @@ expense-tracker/
 │   └── extractor.py         # Gemini API calls (image + text) + JSON parsing
 ├── db/
 │   └── supabase.py          # All Supabase read/write functions
-├── dashboard/
+├── backend/                 # FastAPI API — the only thing frontend/ talks to
+│   ├── main.py               # FastAPI app, CORS, router registration — thin, like bot/main.py
+│   ├── config.py              # env var loading (JWT_SECRET, CORS_ALLOWED_ORIGIN, ...)
+│   ├── auth.py                 # create_access_token / get_current_user (JWT, PyJWT)
+│   ├── schemas.py                # Pydantic request models (login, transaction update, portfolio event)
+│   └── routers/
+│       ├── auth_routes.py         # POST /api/auth/login
+│       ├── meta.py                 # GET /api/meta — CATEGORIES/CURRENCIES/etc. from utils/constants.py
+│       ├── spending.py               # GET/PATCH /api/transactions, GET /api/transactions/summary
+│       ├── investments.py             # GET/POST /api/portfolio-events, GET /api/snapshots, GET /api/holdings
+│       └── accounts.py                 # GET /api/accounts, GET /api/accounts/balances
+├── frontend/                 # React SPA (Vite + TS) — deployed to Vercel
+│   └── src/
+│       ├── api/client.ts       # fetch wrapper: attaches JWT, base URL from VITE_API_URL
+│       ├── auth/                # AuthContext, LoginPage, ProtectedRoute
+│       ├── hooks/api.ts          # useQuery hooks per backend endpoint
+│       ├── pages/                  # SpendingPage, InvestmentsPage, PortfolioPage, BalancesPage
+│       ├── components/               # FilterBar, TransactionsTable, AddTradeDialog, Layout, charts/
+│       └── lib/                        # format.ts, dates.ts (month/heatmap aggregation), palette.ts
+├── dashboard/                # Legacy Streamlit dashboard — being replaced by frontend/, kept until confirmed redundant
 │   ├── app.py               # Thin entrypoint: login gate + st.navigation between pages
 │   ├── auth.py              # require_login()
 │   ├── components/
@@ -59,13 +83,14 @@ expense-tracker/
 │   ├── pdf_converter.py     # pdf2image: rasterizes PDF pages to JPEG for Gemini (PDF default path, see extract_from_pdf_images in bot/extractor.py)
 │   ├── fx.py                # Currency conversion via Frankfurter API
 │   ├── equity_pricing.py    # yfinance price lookups
-│   ├── portfolio.py         # Holdings + average-cost basis + unrealized gain/loss (for /portfolio)
+│   ├── portfolio.py         # Holdings + average-cost basis + unrealized gain/loss (for /portfolio, GET /api/holdings)
+│   ├── balances.py          # compute_account_balances(): unified cash+brokerage balance per account (for /balance, GET /api/accounts/balances)
 │   ├── period.py            # parse_period(): day|week|month|year -> trailing date window
 │   └── formatters.py        # Shared number/date formatting (format_money, format_pct)
 ├── .env                     # All secrets — never commit
 ├── .env.example             # Template with keys but no values
-├── requirements.txt
-├── Procfile                 # Railway: `worker: python -m bot.main`
+├── requirements.txt          # Shared by bot, scheduler, backend, and the legacy dashboard
+├── Procfile                 # Railway: `worker: python -m bot.main` + `web: python -m uvicorn backend.main:app ...`
 └── CLAUDE.md                # This file
 ```
 
@@ -87,7 +112,7 @@ equity_prices     id, ticker, price, currency, fetched_at, created_at
 - `amount` in `transactions` is **negative for expenses, positive for income**
 - `action` in `portfolio_events` is one of: `BUY | SELL | DIVIDEND`
 - `source` in `transactions` is one of: `telegram_image | telegram_pdf | telegram_text | manual`
-- Always use `SUPABASE_SERVICE_KEY` for bot writes, `SUPABASE_ANON_KEY` for dashboard reads. Exceptions: `db.dashboard_insert_portfolio_event()` (investments page "Add Entry" dialog) and `db.update_transaction()` (spending page's editable transactions table) both use `SUPABASE_SERVICE_KEY` — the anon key has no INSERT/UPDATE grant via RLS on `portfolio_events`/`transactions`, and adding those grants was judged a bigger surface change than reusing the service key for these two single, already-login-gated write paths
+- Always use `SUPABASE_SERVICE_KEY` for bot writes, `SUPABASE_ANON_KEY` for dashboard reads. Exceptions: `db.dashboard_insert_portfolio_event()` (investments page "Add Entry" dialog, and `backend/routers/investments.py`'s `POST /api/portfolio-events`) and `db.update_transaction()` (spending page's editable transactions table, and `backend/routers/spending.py`'s `PATCH /api/transactions/{id}`) both use `SUPABASE_SERVICE_KEY` — the anon key has no INSERT/UPDATE grant via RLS on `portfolio_events`/`transactions`, and adding those grants was judged a bigger surface change than reusing the service key for these single, already-login-gated write paths. The browser never holds a Supabase key at all — `backend/` is the only thing that calls `db/supabase.py`, so `SUPABASE_SERVICE_KEY` stays server-side by construction for the React frontend
 - `asset_snapshots` has a unique constraint on `(account_id, snapshot_date)` — required for the hourly equity price job to upsert rather than duplicate a snapshot per run. `ticker` in `equity_prices` stores the Yahoo Finance symbol (post-`TICKER_YFINANCE_MAP` lookup), not the raw broker ticker
 
 ---
@@ -108,7 +133,11 @@ GMAIL_APP_PASSWORD
 NOTIFY_EMAIL
 DASHBOARD_EMAIL
 DASHBOARD_PASSWORD
+JWT_SECRET
+CORS_ALLOWED_ORIGIN
 ```
+
+`JWT_SECRET` and `CORS_ALLOWED_ORIGIN` (comma-separated allowed frontend origins) are used only by `backend/`. The React frontend has its own env var, set in `frontend/.env.local` / Vercel project settings, not `.env`: `VITE_API_URL` — the backend's base URL.
 
 Never hardcode any of these. Never print them in logs.
 
@@ -194,7 +223,7 @@ Registered via `CommandHandler` in `bot/main.py`, all implemented as `handle_*_c
 - **`/expense [day|week|month|year]`** — `utils/period.py` (`parse_period`) resolves the arg to a trailing window ending today (default `week`); queries `get_transactions` for that range and reuses `scheduler/report_builder.summarize_transactions()` (extracted from `get_weekly_data` so the weekly cron report and this command share one aggregation, not two copies) for income/expenses/net/savings rate/by-category.
 - **`/portfolio`** — `utils/portfolio.py` (`compute_holdings_summary`) computes per-ticker **average-cost basis** from full `portfolio_events` history (BUYs roll a running weighted average; SELLs reduce quantity without changing the average — standard average-cost method, not FIFO), prices each holding from the latest `equity_prices` row per ticker, and reports unrealized gain/loss. A ticker with no price available is shown with a ⚠️ rather than silently dropped.
 - **`/assets`** — sums the latest `asset_snapshots` per account (reuses `get_latest_snapshots`), converted to `DEFAULT_CURRENCY`.
-- **`/balance [account]`** — no arg lists every account; an arg does a case-insensitive substring match on account name. **Balance differs by account type**: `bank`/`ewallet` sum `transactions.amount` for that account (`get_account_cash_totals`); `brokerage` uses the latest `asset_snapshots` market value instead, since brokerage cash flow isn't tracked separately from invested value anywhere in this codebase.
+- **`/balance [account]`** — no arg lists every account; an arg does a case-insensitive substring match on account name. Delegates the actual balance computation to `utils/balances.py::compute_account_balances()`, shared with `GET /api/accounts/balances`. **Balance differs by account type**: `bank`/`ewallet` sum `transactions.amount` for that account (`get_account_cash_totals`); `brokerage` uses the latest `asset_snapshots` market value instead, since brokerage cash flow isn't tracked separately from invested value anywhere in this codebase.
 - **`/recent [n]`** — last *n* transactions by `created_at` (default 10, capped at 30 to stay within a couple of chunked messages).
 - **`/undo`** — reverts the most recently confirmed `confirm` batch only (one level, not a history). The `confirm` branch of `handle_text` now captures the inserted row IDs (Supabase insert returns generated rows) into a second in-memory dict, `last_saved = {}` (keyed by user ID, same pattern as `pending`), and `/undo` deletes exactly those rows via `delete_transactions`/`delete_portfolio_events`.
 - **`/help`** — static list of the above.
@@ -223,7 +252,37 @@ Registered via `CommandHandler` in `bot/main.py`, all implemented as `handle_*_c
 
 ---
 
-## Dashboard
+## Backend API
+
+Entrypoint: `backend/main.py`, run with `python -m uvicorn backend.main:app --reload` locally (`--host 0.0.0.0 --port $PORT` in production). Interactive docs at `/docs`. Every route except `/health` and `POST /api/auth/login` requires `Authorization: Bearer <token>`, enforced via the `get_current_user` FastAPI dependency (`backend/auth.py`) — there's a single shared user, same as the bot/dashboard, so this just validates the JWT rather than looking up a per-user account.
+
+**Auth:** `POST /api/auth/login` checks the submitted email/password against `DASHBOARD_EMAIL`/`DASHBOARD_PASSWORD` (same env vars the legacy dashboard uses) and returns a JWT signed with `JWT_SECRET`, 7-day expiry. No refresh flow — the frontend just re-shows the login form once a request 401s (see `frontend/src/api/client.ts`).
+
+**Routers** (`backend/routers/`), all thin wrappers around `db/supabase.py` / `utils/` — no business logic lives in the routers themselves:
+- `meta.py` — `GET /api/meta` returns `CATEGORIES`/`CURRENCIES`/`ACCOUNT_TYPES`/`PORTFOLIO_ACTIONS` from `utils/constants.py`, so the frontend never hardcodes its own copy of these lists.
+- `spending.py` — `GET /api/transactions`, `GET /api/transactions/summary` (wraps `scheduler/report_builder.summarize_transactions()`), `PATCH /api/transactions/{id}` (category/description only, same restriction as the dashboard's editable table).
+- `investments.py` — `GET /api/snapshots` (adds a `converted_value` field per row via `utils/fx.convert`, since the frontend has no FX calls of its own — pass `?currency=`), `GET`/`POST /api/portfolio-events`, `GET /api/holdings` (wraps `utils/portfolio.py::compute_holdings_summary()` — the `/portfolio` bot command's math, first surfaced outside Telegram here).
+- `accounts.py` — `GET /api/accounts` (optional `?type=` comma-separated filter), `GET /api/accounts/balances` (wraps `utils/balances.py::compute_account_balances()` — the `/balance` bot command's math).
+
+Add a new endpoint by adding a route to the relevant router (or a new router registered in `main.py`) that calls an existing `db/supabase.py` / `utils/` function — don't duplicate query logic that already exists for the bot.
+
+---
+
+## Frontend (React)
+
+`frontend/` — Vite + React + TypeScript SPA, deployed to Vercel. Run locally with `npm run dev` (from `frontend/`); needs `VITE_API_URL` pointing at a running `backend/` (see `frontend/.env.example`).
+
+- **Auth:** `src/auth/AuthContext.tsx` holds the JWT (persisted in `localStorage`), `ProtectedRoute` renders `LoginPage` when unauthenticated. `src/api/client.ts` attaches the token to every request and clears it on a 401.
+- **Data fetching:** TanStack Query hooks in `src/hooks/api.ts`, one per backend endpoint. Filters are **live** (no Streamlit-style "Apply" button — that pattern existed only to limit Streamlit reruns, which don't apply here).
+- **Pages** (`src/pages/`): `SpendingPage` and `InvestmentsPage` mirror the legacy Streamlit pages' charts; `PortfolioPage` (holdings/avg-cost/unrealized P&L) and `BalancesPage` (unified cash+brokerage balances) are new — they surface `/api/holdings` and `/api/accounts/balances`, which the Streamlit dashboard never called even though the underlying bot commands (`/portfolio`, `/balance`) already existed.
+- **Charts** (`src/components/charts/`): Recharts, colored via `src/lib/palette.ts`'s fixed categorical order (`CATEGORICAL`) — category colors specifically go through `colorForCategory()`, which maps the 8 expense-relevant categories (`EXPENSE_CATEGORY_COLOR_ORDER`) to the 8 validated hues and folds everything else (income-only categories, "Other") to a neutral rather than wrapping/reusing a hue — a wrapped 9th+ category previously collided with an earlier one (e.g. "Transfer" and "Transport" rendered identically). Two chart-only additions beyond the Streamlit set: `SpendingHeatmap` (daily spend calendar) and `MonthComparisonBarChart` (this month vs previous vs same month last year per category), both pure client-side aggregations over already-fetched transactions (`src/lib/dates.ts`) — no dedicated backend endpoint.
+- **Writes:** `TransactionsTable` (category/description edits) and `AddTradeDialog` (new portfolio events, react-hook-form + zod, same validation rules as the Streamlit dialog: ticker required, quantity > 0, price > 0 unless `DIVIDEND`) both call the backend then invalidate the relevant TanStack Query key to refetch. `AddTradeDialog` is only mounted while its dialog is open (not kept alive and hidden) — mounting fresh each open avoids react-hook-form's `defaultValues` (e.g. the default selected account) going stale from an earlier render where the accounts list hadn't loaded yet.
+
+---
+
+## Dashboard (legacy Streamlit)
+
+Being replaced by `frontend/` — kept until the React app is confirmed as a full replacement, then this section and `dashboard/` will be removed. Do not add new functionality here; add it to `frontend/`/`backend/` instead.
 
 Entrypoint: `dashboard/app.py`. Runs with `streamlit run dashboard/app.py`. Multipage via `st.navigation`/`st.Page` (Streamlit 1.36+) — `app.py` itself only does the login gate and declares the two pages; it has no charts or queries of its own.
 
@@ -248,17 +307,19 @@ Use Plotly for all charts (`plotly.express`). Use `st.columns()` for side-by-sid
 - No f-string SQL — all queries go through the Supabase Python client
 - Use type hints where practical
 - Do not use global state outside of the `pending` and `last_saved` dicts in `handlers.py`
+- `backend/` routers are thin — validate with Pydantic (`backend/schemas.py`), call `db/supabase.py`/`utils/`, return. No Supabase calls inline in a router.
+- `frontend/` never imports `@supabase/*` or holds a Supabase key — all data access goes through `src/api/client.ts` to `backend/`. New charts go in `src/components/charts/`, colored via `src/lib/palette.ts` (categorical order is fixed — see Frontend section above), not ad-hoc hex values.
 
 ---
 
 ## What NOT to Do
 
 - Do not auto-insert to Supabase without user confirmation via Telegram
-- Do not expose `SUPABASE_SERVICE_KEY` in dashboard code — dashboard uses `SUPABASE_ANON_KEY` only, except `db.dashboard_insert_portfolio_event()` and `db.update_transaction()` (see Database Schema conventions above)
+- Do not expose `SUPABASE_SERVICE_KEY` in dashboard or frontend code — dashboard uses `SUPABASE_ANON_KEY` only, `frontend/` never talks to Supabase directly (only `backend/` does), except `db.dashboard_insert_portfolio_event()` and `db.update_transaction()` (see Database Schema conventions above)
 - Do not use synchronous Telegram bot patterns (use async throughout)
-- Do not put business logic in `bot/main.py` — keep it as a thin entry point only
-- Do not commit `DASHBOARD_EMAIL`/`DASHBOARD_PASSWORD` values — set them only in `.env` locally and in Streamlit Cloud's Secrets in production
-- Do not change the `amount` sign convention — negative = expense is used throughout the codebase and dashboard logic depends on it
+- Do not put business logic in `bot/main.py` or `backend/main.py` — keep both as thin entry points only
+- Do not commit `DASHBOARD_EMAIL`/`DASHBOARD_PASSWORD`/`JWT_SECRET` values — set them only in `.env` locally and in Railway/Streamlit Cloud's secrets in production
+- Do not change the `amount` sign convention — negative = expense is used throughout the codebase (bot, backend, both dashboards) and depends on it
 
 ---
 
@@ -296,5 +357,20 @@ update_equity_prices()
 **Add a ticker on a new exchange:**
 → Add the raw ticker → Yahoo Finance symbol mapping to `TICKER_YFINANCE_MAP` in `utils/constants.py`.
 
-**Add a new chart to the dashboard:**
-→ Add after the existing sections in `dashboard/views/spending.py` or `dashboard/views/investments.py` (whichever it belongs to). Use `plotly.express`. Follow the existing column layout pattern.
+**Add a new chart to the dashboard (legacy Streamlit):**
+→ Add after the existing sections in `dashboard/views/spending.py` or `dashboard/views/investments.py` (whichever it belongs to). Use `plotly.express`. Follow the existing column layout pattern. Prefer adding new charts to `frontend/` instead — see below.
+
+**Run the backend + frontend locally:**
+```bash
+# Terminal 1 — backend (from repo root, needs SUPABASE_*/DASHBOARD_*/JWT_SECRET/CORS_ALLOWED_ORIGIN in .env)
+python -m uvicorn backend.main:app --reload --port 8000
+
+# Terminal 2 — frontend (from frontend/, needs VITE_API_URL=http://localhost:8000 in .env.local)
+cd frontend && npm run dev
+```
+
+**Add a new chart to the frontend:**
+→ Add a component in `frontend/src/components/charts/`, color it via `src/lib/palette.ts` (`colorForCategory`/`colorForKey`/`categoricalColor` — never a raw hex), and drop it into the relevant page under `frontend/src/pages/`. Add a `useQuery` hook in `src/hooks/api.ts` first if it needs new data from the backend.
+
+**Add a new backend endpoint:**
+→ Add a route to the relevant file in `backend/routers/` (or a new router registered in `backend/main.py`), backed by an existing (or new) `db/supabase.py`/`utils/` function. Validate the request body with a Pydantic model in `backend/schemas.py` if it's a write.

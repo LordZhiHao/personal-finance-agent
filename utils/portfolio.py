@@ -19,7 +19,7 @@ def _build_cost_basis_state(events: list[dict]) -> dict[tuple, dict]:
         if e["action"] == "BUY":
             cost_before = s["qty"] * s["avg_cost"]
             new_qty = s["qty"] + e["quantity"]
-            cost_after = cost_before + e["quantity"] * e["price"] + e.get("fees", 0)
+            cost_after = cost_before + e["quantity"] * e["price"] + (e.get("fees") or 0)
             s["qty"] = new_qty
             s["avg_cost"] = cost_after / new_qty if new_qty > 0 else 0.0
         else:

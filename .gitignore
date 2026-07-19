@@ -4,3 +4,8 @@ __pycache__/
 *.pyc
 .DS_Store
 DBS_POSB Consolidated Statement_May2026.pdf
+
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/.env.*.local
