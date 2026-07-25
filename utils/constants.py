@@ -14,6 +14,8 @@ CATEGORIES = [
 
 CURRENCIES = ["SGD", "MYR", "USD"]
 
+DEFAULT_CURRENCY = "SGD"
+
 ACCOUNT_TYPES = ["bank", "brokerage", "ewallet"]
 
 PORTFOLIO_ACTIONS = ["BUY", "SELL", "DIVIDEND"]

@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
+from bot.deepseek_client import client as deepseek_client
 from utils.constants import CATEGORIES, PORTFOLIO_ACTIONS
 from utils.logger import get_logger
 
@@ -14,7 +15,8 @@ logger = get_logger(__name__)
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-MODEL = "gemini-3.5-flash"
+MODEL = "gemini-3.5-flash"  # multimodal extraction (extract_from_image / extract_from_pdf_images)
+DEEPSEEK_EXTRACTOR_MODEL = os.getenv("DEEPSEEK_EXTRACTOR_MODEL", "deepseek-v4-pro")  # text-only extraction
 
 SYSTEM_PROMPT = f"""
 You are a financial document parser for a user based in Singapore.
@@ -110,7 +112,7 @@ def _parse_response(raw: str) -> dict:
     try:
         obj, _ = json.JSONDecoder().raw_decode(raw.strip())
     except json.JSONDecodeError:
-        logger.exception("Gemini response could not be parsed as JSON (length=%d)", len(raw))
+        logger.exception("LLM response could not be parsed as JSON (length=%d)", len(raw))
         raise
     _validate_schema(obj)
     return obj
@@ -161,17 +163,17 @@ def extract_from_image(image_bytes: bytes, mime_type: str = "image/jpeg") -> dic
 
 
 def extract_from_text(text: str) -> dict:
-    logger.info("extract_from_text: calling %s (%d chars)", MODEL, len(text))
+    logger.info("extract_from_text: calling %s (%d chars)", DEEPSEEK_EXTRACTOR_MODEL, len(text))
     today = date.today().isoformat()
-    response = client.models.generate_content(
-        model=MODEL,
-        contents=[f"Today's date is {today}. Extract all transactions from this text:\n\n{text}"],
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            response_mime_type="application/json",
-        ),
+    response = deepseek_client.chat.completions.create(
+        model=DEEPSEEK_EXTRACTOR_MODEL,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": f"Today's date is {today}. Extract all transactions from this text:\n\n{text}"},
+        ],
+        response_format={"type": "json_object"},
     )
-    data = _parse_response(response.text)
+    data = _parse_response(response.choices[0].message.content)
     logger.info(
         "extract_from_text: document_type=%s, %d transaction(s), %d portfolio event(s)",
         data.get("document_type"), len(data.get("transactions", [])), len(data.get("portfolio_events", [])),

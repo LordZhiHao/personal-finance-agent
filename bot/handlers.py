@@ -5,6 +5,8 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.extractor import extract_from_image, extract_from_pdf_images, extract_from_text
+from bot.finance_agent import answer_question
+from bot.router import classify_intent
 from db.supabase import (
     delete_portfolio_events,
     delete_transactions,
@@ -17,6 +19,7 @@ from db.supabase import (
 )
 from scheduler.report_builder import summarize_transactions
 from utils.balances import compute_account_balances
+from utils.constants import DEFAULT_CURRENCY
 from utils.fx import convert
 from utils.formatters import format_money, format_pct
 from utils.logger import get_logger
@@ -26,7 +29,6 @@ from utils.portfolio import compute_holdings_summary
 logger = get_logger(__name__)
 
 ALLOWED_USER_IDS = {int(os.getenv("YOUR_TELEGRAM_CHAT_ID"))}
-DEFAULT_CURRENCY = "SGD"
 
 # In-memory pending store: user_id → extracted data awaiting confirmation
 pending = {}
@@ -219,6 +221,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "To edit, resend the image with corrections, or manually fix in the dashboard."
         )
     else:
+        intent = classify_intent(raw_text)
+        logger.info("handle_text: intent=%s for user_id=%s", intent, uid)
+
+        if intent == "chat":
+            reply = answer_question(uid, raw_text)
+            for chunk in chunk_lines(reply.split("\n")):
+                await update.message.reply_text(chunk)
+            return
+
         logger.info("handle_text: parsing free-text entry from user_id=%s", uid)
         try:
             data = extract_from_text(raw_text)

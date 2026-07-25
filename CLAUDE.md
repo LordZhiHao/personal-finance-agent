@@ -3,8 +3,8 @@
 ## Project Overview
 
 This is a personal finance tracker built for one user (me). It has these components:
-1. A Telegram bot for data ingestion (images, PDFs, text)
-2. Gemini VLM for extracting structured transaction data from screenshots/statements
+1. A Telegram bot for data ingestion (images, PDFs, text) and conversational finance Q&A
+2. Gemini VLM for extracting structured transaction data from screenshots/statements (multimodal); DeepSeek for text-only work — free-typed extraction, intent routing, and the finance Q&A agent
 3. A Supabase Postgres database as the single source of truth
 4. A FastAPI backend (`backend/`) exposing that data over a JSON API with JWT auth
 5. A React dashboard (`frontend/`) for visualisation — the primary web UI, replacing the legacy Streamlit dashboard (`dashboard/`, kept until the React app is confirmed as a full replacement, then removed)
@@ -19,7 +19,8 @@ The bot and scheduler run together on Railway. The backend (`backend/`) runs as 
 | Layer | Technology |
 |---|---|
 | Bot framework | python-telegram-bot v20+ (async) |
-| VLM extraction | Gemini API (`gemini-3.5-flash`), `google-genai` SDK |
+| VLM extraction (multimodal) | Gemini API (`gemini-3.5-flash`), `google-genai` SDK — image/PDF only |
+| Text-only LLM (extraction, intent routing, Q&A) | DeepSeek API (`deepseek-v4-pro` by default), via the OpenAI-compatible `openai` SDK pointed at `https://api.deepseek.com` (`bot/deepseek_client.py`). Model id is independently overridable per component via `DEEPSEEK_ROUTER_MODEL`/`DEEPSEEK_EXTRACTOR_MODEL`/`DEEPSEEK_AGENT_MODEL` |
 | PDF handling | `pdf2image` (+ poppler) rasterizes each PDF page to JPEG (`utils/pdf_converter.py`); each page is sent through the same Gemini image-extraction call as photos and the results are merged (`extract_from_pdf_images` in `bot/extractor.py`). `pdfplumber` is listed in `requirements.txt` but is not currently wired into any code path |
 | Database | Supabase (Postgres) via `supabase-py` |
 | Equity prices | `yfinance`, polled hourly by APScheduler |
@@ -43,7 +44,10 @@ expense-tracker/
 ├── bot/
 │   ├── main.py              # Bot entry point + APScheduler wired here
 │   ├── handlers.py          # Telegram handlers: photo, document, text
-│   └── extractor.py         # Gemini API calls (image + text) + JSON parsing
+│   ├── extractor.py         # Gemini (image/PDF) + DeepSeek (extract_from_text) calls + JSON parsing
+│   ├── router.py            # classify_intent(): DeepSeek call deciding chat vs. record for free text
+│   ├── finance_agent.py     # answer_question(): DeepSeek tool-calling Q&A agent over spending/holdings/balances
+│   └── deepseek_client.py   # Shared DeepSeek (OpenAI-compatible) client, used by extractor/router/finance_agent
 ├── db/
 │   └── supabase.py          # All Supabase read/write functions
 ├── backend/                 # FastAPI API — the only thing frontend/ talks to
@@ -125,6 +129,10 @@ All secrets are in `.env`. Reference them via `os.getenv()` with `load_dotenv()`
 BOT_TOKEN
 YOUR_TELEGRAM_CHAT_ID
 GEMINI_API_KEY
+DEEPSEEK_API_KEY
+DEEPSEEK_ROUTER_MODEL
+DEEPSEEK_EXTRACTOR_MODEL
+DEEPSEEK_AGENT_MODEL
 SUPABASE_URL
 SUPABASE_ANON_KEY
 SUPABASE_SERVICE_KEY
@@ -137,6 +145,8 @@ JWT_SECRET
 CORS_ALLOWED_ORIGIN
 ```
 
+`DEEPSEEK_ROUTER_MODEL`/`DEEPSEEK_EXTRACTOR_MODEL`/`DEEPSEEK_AGENT_MODEL` are optional per-component model overrides — each defaults to `"deepseek-v4-pro"` in code if unset, so they only need to be set in `.env` to pin a component to a different model.
+
 `JWT_SECRET` and `CORS_ALLOWED_ORIGIN` (comma-separated allowed frontend origins) are used only by `backend/`. The React frontend has its own env var, set in `frontend/.env.local` / Vercel project settings, not `.env`: `VITE_API_URL` — the backend's base URL.
 
 Never hardcode any of these. Never print them in logs.
@@ -145,7 +155,7 @@ Never hardcode any of these. Never print them in logs.
 
 ## Categories
 
-Always use this exact list for the `category` field in transactions and in the Gemini extraction prompt. Defined in `utils/constants.py`:
+Always use this exact list for the `category` field in transactions and in the extraction prompt (shared by both the Gemini and DeepSeek extraction paths — see below). Defined in `utils/constants.py`:
 
 ```python
 CATEGORIES = [
@@ -157,19 +167,26 @@ CATEGORIES = [
 
 ---
 
-## Gemini Extraction
+## LLM Extraction, Routing & Q&A
 
-- Model: `gemini-3.5-flash`
-- Use the `google-genai` SDK (`google.genai.Client`), not the OpenAI SDK
-- `bot/extractor.py` has three entry points sharing one `SYSTEM_PROMPT`/JSON schema:
-  - `extract_from_image(image_bytes, mime_type)` — for `handle_photo`, non-PDF documents, and each rasterized PDF page (see `extract_from_pdf_images` below). Images are sent via `types.Part.from_bytes(data=image_bytes, mime_type=...)`, not base64 data URLs.
-  - `extract_from_pdf_images(pdf_bytes)` — for PDFs in `handle_document`. `utils/pdf_converter.py` (`pdf2image`, requires poppler) rasterizes each page to a JPEG; each page is run through `extract_from_image()` individually and the resulting `transactions`/`portfolio_events` lists are concatenated, with `document_type`/`account_hint`/`currency` taken from the first page that reports them. An N-page PDF means N separate Gemini image calls, not one text call.
-  - `extract_from_text(text)` — for free-typed Telegram messages only (`handle_text`'s fallback branch, e.g. "Spent 0.5+3.5 on meals today"). The call is always prefixed with the actual current date (`date.today()`) so Gemini can resolve relative dates like "today"/"yesterday" — the model has no other way to know the real date.
-- The system prompt instructs Gemini to return **only valid JSON**, no markdown, no explanation; for short natural-language input it's told to evaluate arithmetic in the amount (e.g. `0.5+3.5` → `4.00`) and set `confidence: 1.0` since the user typed it themselves
-- `response_mime_type="application/json"` is set in `GenerateContentConfig`, but still strip markdown fences defensively, and parse with `json.JSONDecoder().raw_decode()` rather than `json.loads()` — Gemini occasionally appends trailing content after the JSON object on very large outputs (e.g. consolidated statements with 90+ transactions), and `raw_decode` recovers the first valid JSON value instead of erroring on `Extra data`
-- Store the raw Gemini response text in `transactions.raw_text` for every insert
+`bot/extractor.py` has three extraction entry points sharing one `SYSTEM_PROMPT`/JSON schema, split across two providers:
 
-**Expected Gemini output schema:**
+**Gemini (multimodal, image/PDF only):**
+- Model: `gemini-3.5-flash`, via the `google-genai` SDK (`google.genai.Client`), not the OpenAI SDK
+- `extract_from_image(image_bytes, mime_type)` — for `handle_photo`, non-PDF documents, and each rasterized PDF page (see `extract_from_pdf_images` below). Images are sent via `types.Part.from_bytes(data=image_bytes, mime_type=...)`, not base64 data URLs.
+- `extract_from_pdf_images(pdf_bytes)` — for PDFs in `handle_document`. `utils/pdf_converter.py` (`pdf2image`, requires poppler) rasterizes each page to a JPEG; each page is run through `extract_from_image()` individually and the resulting `transactions`/`portfolio_events` lists are concatenated, with `document_type`/`account_hint`/`currency` taken from the first page that reports them. An N-page PDF means N separate Gemini image calls, not one text call.
+
+**DeepSeek (text-only):**
+- `extract_from_text(text)` — for free-typed Telegram messages that the router (`bot/router.py`) classified as a record attempt (e.g. "Spent 0.5+3.5 on meals today"). Uses the shared client in `bot/deepseek_client.py`, model `DEEPSEEK_EXTRACTOR_MODEL` (env override, defaults to `deepseek-v4-pro`). Calls `deepseek_client.chat.completions.create(..., response_format={"type": "json_object"})` with `SYSTEM_PROMPT` as the system message. The call is always prefixed with the actual current date (`date.today()`) so the model can resolve relative dates like "today"/"yesterday" — it has no other way to know the real date.
+- `bot/router.py`'s `classify_intent(raw_text)` — a separate, cheap DeepSeek call (model `DEEPSEEK_ROUTER_MODEL`, defaults to `deepseek-v4-pro`) that decides whether a free-text message is `"chat"` (a question) or `"record"` (an expense/trade to log), before `handle_text` decides which path to take. See "Telegram Bot Behaviour" below.
+- `bot/finance_agent.py`'s `answer_question(uid, raw_text)` — the conversational finance Q&A agent (model `DEEPSEEK_AGENT_MODEL`, defaults to `deepseek-v4-pro`). See its own subsection below.
+
+**Shared across both providers:**
+- The system prompt instructs the model to return **only valid JSON**, no markdown, no explanation; for short natural-language input it's told to evaluate arithmetic in the amount (e.g. `0.5+3.5` → `4.00`) and set `confidence: 1.0` since the user typed it themselves
+- JSON mode is requested from both providers (`response_mime_type="application/json"` for Gemini, `response_format={"type": "json_object"}` for DeepSeek), but responses are still parsed defensively: strip markdown fences, then use `json.JSONDecoder().raw_decode()` rather than `json.loads()` — large outputs (e.g. consolidated statements with 90+ transactions) occasionally have trailing content after the JSON object, and `raw_decode` recovers the first valid JSON value instead of erroring on `Extra data`. `_parse_response()`/`_validate_schema()` in `bot/extractor.py` are provider-agnostic and shared by every extraction call.
+- Store the raw response text in `transactions.raw_text` for every insert
+
+**Expected output schema (both providers):**
 ```json
 {
   "document_type": "bank_statement | trade_screenshot | receipt | unknown",
@@ -198,6 +215,20 @@ CATEGORIES = [
 }
 ```
 
+### Finance Q&A Agent (`bot/finance_agent.py`)
+
+- `answer_question(uid, raw_text) -> str` runs a bounded DeepSeek tool-calling loop (`MAX_TOOL_ROUNDS = 4`) so the bot can answer questions like "how much did I spend on food this month" or "what's my portfolio doing" using real Supabase-backed data rather than guessing.
+- Five tools, all thin wrappers around existing query functions — no new Supabase queries were added:
+  - `get_spending_summary(period)` → `utils/period.py::parse_period` + `db.supabase.get_transactions` + `scheduler/report_builder.py::summarize_transactions`
+  - `get_holdings()` → `utils/portfolio.py::compute_holdings_summary(DEFAULT_CURRENCY)`
+  - `get_balances()` → `utils/balances.py::compute_account_balances(DEFAULT_CURRENCY)`
+  - `get_recent_transactions_tool(limit)` → `db.supabase.get_recent_transactions`, capped 1–30 like `/recent`
+  - `get_portfolio_trades(period)` → `db.supabase.get_portfolio_events`, optionally bounded via `parse_period`
+- One agent, not three separate ones — it naturally covers general enquiry, transaction questions, and investment questions through tool selection, since a message can pull from any combination of tools.
+- Maintains a small per-user rolling chat history (`chat_history: dict[int, list[dict]]`, capped at `MAX_HISTORY_TURNS = 6` turns) for multi-turn context — same dict-keyed-by-`user_id` pattern as `pending`/`last_saved` in `handlers.py`.
+- Any exception during the loop (network failure, malformed tool call, etc.) is caught and turned into an apology string — this path never raises into `handle_text`.
+- Replies are sent as **plain text**, not `parse_mode="Markdown"` — unlike the confirmation messages (built from escaped, controlled strings via `_escape_md`), the agent's reply is arbitrary LLM-generated prose that could contain unescaped `_`/`*`/`` ` ``/`[` and break Telegram's legacy Markdown parser. Still chunked via `chunk_lines()` for the 4096-char limit.
+
 ---
 
 ## Telegram Bot Behaviour
@@ -212,7 +243,9 @@ CATEGORIES = [
 - Handlers: `handle_photo`, `handle_document`, `handle_text` in `bot/handlers.py`
 - **Confirmation messages are chunked**: `send_confirmation()` splits the row list across multiple Telegram messages via `chunk_lines()`, staying under Telegram's 4096-char limit per message (headroom of 4000). Required once PDF statements with 90+ transactions became routine — a single message would silently fail to send (`Message is too long`). Splits happen on line boundaries so each line's Markdown formatting stays self-contained per chunk.
 - `source` on each transaction row is set per-handler (`telegram_image` / `telegram_pdf` / `telegram_text`), not hardcoded — read from `data["source"]` when building rows in the `confirm` branch of `handle_text`.
-- **Free-text expense entry**: any message in `handle_text` that isn't `confirm`/`cancel`/`edit <n>` falls through to `extract_from_text(raw_text)` (e.g. "Spent 0.5+3.5 on meals today") and joins the same pending/confirmation flow as photos and PDFs — no separate code path, no auto-commit. `raw_text` (original casing) is passed to Gemini, not the lowercased `text` used for command matching, so descriptions keep their natural casing. If Gemini returns no transactions and no portfolio_events (e.g. the message wasn't actually about a transaction), the bot replies with a hint instead of opening a confirmation with nothing in it. Saved rows get `source="telegram_text"`.
+- **Free-text routing**: any message in `handle_text` that isn't `confirm`/`cancel`/`edit <n>` first goes through `bot/router.py::classify_intent(raw_text)` (a cheap DeepSeek call) to decide `"chat"` vs. `"record"`. Any classification failure defaults to `"record"` — the older, fully-tested path — rather than the narrower exception handling used elsewhere in this file.
+- **Chat path**: if intent is `"chat"`, `bot/finance_agent.py::answer_question(uid, raw_text)` answers directly using real account data (see "Finance Q&A Agent" above) and replies in plain text — no `pending` state, no confirmation, no DB write.
+- **Record path (free-text expense entry)**: if intent is `"record"`, the message falls through to `extract_from_text(raw_text)` (e.g. "Spent 0.5+3.5 on meals today", now DeepSeek-backed) and joins the same pending/confirmation flow as photos and PDFs — no separate code path, no auto-commit. `raw_text` (original casing) is passed to the model, not the lowercased `text` used for command matching, so descriptions keep their natural casing. If extraction returns no transactions and no portfolio_events (e.g. the message wasn't actually about a transaction), the bot replies with a hint instead of opening a confirmation with nothing in it. Saved rows get `source="telegram_text"`.
 
 ---
 
@@ -306,7 +339,7 @@ Use Plotly for all charts (`plotly.express`). Use `st.columns()` for side-by-sid
 - All formatting helpers (currency, date strings) go in `utils/formatters.py`
 - No f-string SQL — all queries go through the Supabase Python client
 - Use type hints where practical
-- Do not use global state outside of the `pending` and `last_saved` dicts in `handlers.py`
+- Do not use global state outside of the `pending` and `last_saved` dicts in `handlers.py`, and `chat_history` in `bot/finance_agent.py` (bounded rolling per-user chat history for multi-turn Q&A — same dict-keyed-by-`user_id` pattern, justified since this is a single-tenant app with no isolation concerns)
 - `backend/` routers are thin — validate with Pydantic (`backend/schemas.py`), call `db/supabase.py`/`utils/`, return. No Supabase calls inline in a router.
 - `frontend/` never imports `@supabase/*` or holds a Supabase key — all data access goes through `src/api/client.ts` to `backend/`. New charts go in `src/components/charts/`, colored via `src/lib/palette.ts` (categorical order is fixed — see Frontend section above), not ad-hoc hex values.
 
@@ -331,6 +364,19 @@ Use Plotly for all charts (`plotly.express`). Use `st.columns()` for side-by-sid
 **Test Gemini extraction without running the bot:**
 ```bash
 python -m bot.extractor /path/to/screenshot.jpg
+```
+
+**Test DeepSeek intent routing, text extraction, or the Q&A agent without running the bot:**
+```python
+# In a scratch script
+from bot.router import classify_intent
+from bot.extractor import extract_from_text
+from bot.finance_agent import answer_question
+
+print(classify_intent("how much did I spend on food this month"))  # "chat"
+print(classify_intent("spent 12 on lunch"))                          # "record"
+print(extract_from_text("Spent 0.5+3.5 on meals today"))
+print(answer_question(uid=0, raw_text="what's my portfolio doing"))
 ```
 
 **Trigger the weekly report manually for testing:**
