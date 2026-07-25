@@ -47,6 +47,17 @@ export function TransactionsTable({
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/api/transactions/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: refetchKey }),
+  });
+
+  function handleDelete(t: Transaction) {
+    if (window.confirm(`Delete "${t.description}" (${formatMoney(t.amount, t.currency)})?`)) {
+      deleteMutation.mutate(t.id);
+    }
+  }
+
   function fieldFor(t: Transaction): EditState {
     return edits[t.id] ?? { description: t.description, category: t.category };
   }
@@ -70,6 +81,7 @@ export function TransactionsTable({
             <Th align="right">Amount</Th>
             <Th>Category</Th>
             <Th>Account</Th>
+            <Th />
           </Thead>
           <Tbody>
             {sorted.map((t) => {
@@ -104,6 +116,17 @@ export function TransactionsTable({
                     </Select>
                   </Td>
                   <Td style={{ color: "var(--text-secondary)" }}>{t.accounts?.name ?? "Unknown"}</Td>
+                  <Td align="right">
+                    <Button
+                      variant="ghost"
+                      className="text-xs px-2 py-1"
+                      style={{ color: "var(--tint-red-text)" }}
+                      onClick={() => handleDelete(t)}
+                      disabled={deleteMutation.isPending}
+                    >
+                      Delete
+                    </Button>
+                  </Td>
                 </Tr>
               );
             })}

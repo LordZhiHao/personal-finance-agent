@@ -149,7 +149,7 @@ export function InvestmentsPage() {
           </Button>
         }
       >
-        <TradeHistoryTable events={eventsSorted} />
+        <TradeHistoryTable events={eventsSorted} refetchKey={["portfolio-events"]} />
       </ChartCard>
 
       {dialogOpen && metaQuery.data && (

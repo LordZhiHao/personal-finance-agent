@@ -2,7 +2,7 @@ from datetime import date
 
 from pydantic import BaseModel, field_validator, model_validator
 
-from utils.constants import PORTFOLIO_ACTIONS
+from utils.constants import CATEGORIES, PORTFOLIO_ACTIONS
 
 
 class LoginRequest(BaseModel):
@@ -15,6 +15,22 @@ class TransactionUpdate(BaseModel):
     table — amount/date/account are read-only, matching dashboard/views/spending.py."""
     description: str | None = None
     category: str | None = None
+
+
+class TransactionCreate(BaseModel):
+    account_id: str
+    date: date
+    description: str
+    amount: float
+    category: str
+    currency: str
+
+    @field_validator("category")
+    @classmethod
+    def category_valid(cls, v: str) -> str:
+        if v not in CATEGORIES:
+            raise ValueError(f"category must be one of {CATEGORIES}")
+        return v
 
 
 class PortfolioEventCreate(BaseModel):

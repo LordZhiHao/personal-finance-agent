@@ -5,6 +5,7 @@ import { FilterBar, type FilterValue } from "../components/FilterBar";
 import { StatCard } from "../components/StatCard";
 import { ChartCard } from "../components/ChartCard";
 import { TransactionsTable } from "../components/TransactionsTable";
+import { AddTransactionDialog } from "../components/AddTransactionDialog";
 import { MonthlySpendBarChart } from "../components/charts/MonthlySpendBarChart";
 import { SpendByCategoryDonut } from "../components/charts/SpendByCategoryDonut";
 import { IncomeVsSpendLineChart } from "../components/charts/IncomeVsSpendLineChart";
@@ -12,12 +13,14 @@ import { SavingsRateLineChart } from "../components/charts/SavingsRateLineChart"
 import { SpendingHeatmap } from "../components/charts/SpendingHeatmap";
 import { MonthComparisonBarChart } from "../components/charts/MonthComparisonBarChart";
 import { dailySpendTotals, monthKey } from "../lib/dates";
+import { Button } from "../components/ui";
 
 const today = format(new Date(), "yyyy-MM-dd");
 const defaultFilters: FilterValue = { startDate: format(subDays(new Date(), 180), "yyyy-MM-dd"), endDate: today, account: "All" };
 
 export function SpendingPage() {
   const [filters, setFilters] = useState<FilterValue>(defaultFilters);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const accountsQuery = useAccounts(["bank", "ewallet"]);
   const metaQuery = useMeta();
   const txQuery = useTransactions(filters.startDate, filters.endDate);
@@ -49,9 +52,14 @@ export function SpendingPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold" style={{ color: "var(--text-heading)" }}>
-        💸 Spending
-      </h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold" style={{ color: "var(--text-heading)" }}>
+          💸 Spending
+        </h1>
+        <Button variant="primary" onClick={() => setDialogOpen(true)}>
+          ＋ Add Transaction
+        </Button>
+      </div>
       <FilterBar accounts={accountsQuery.data ?? []} value={filters} onChange={setFilters} />
 
       {filtered.length === 0 ? (
@@ -111,6 +119,16 @@ export function SpendingPage() {
             />
           </ChartCard>
         </>
+      )}
+
+      {dialogOpen && metaQuery.data && (
+        <AddTransactionDialog
+          open={dialogOpen}
+          onClose={() => setDialogOpen(false)}
+          accounts={accountsQuery.data ?? []}
+          meta={metaQuery.data}
+          refetchKey={["transactions", filters.startDate, filters.endDate]}
+        />
       )}
     </div>
   );

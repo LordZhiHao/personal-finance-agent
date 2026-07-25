@@ -2,7 +2,12 @@ from fastapi import APIRouter, Depends, Query
 
 from backend.auth import get_current_user
 from backend.schemas import PortfolioEventCreate
-from db.supabase import dashboard_insert_portfolio_event, get_latest_snapshots, get_portfolio_events
+from db.supabase import (
+    dashboard_insert_portfolio_event,
+    delete_portfolio_events,
+    get_latest_snapshots,
+    get_portfolio_events,
+)
 from utils.fx import convert
 from utils.portfolio import compute_holdings_summary
 
@@ -39,6 +44,12 @@ def create_portfolio_event(payload: PortfolioEventCreate, user: str = Depends(ge
         row["notes"] = row["notes"].strip() or None
     result = dashboard_insert_portfolio_event(row)
     return result.data[0] if result.data else row
+
+
+@router.delete("/portfolio-events/{event_id}")
+def delete_portfolio_event(event_id: str, user: str = Depends(get_current_user)):
+    delete_portfolio_events([event_id])
+    return {"ok": True}
 
 
 @router.get("/holdings")
