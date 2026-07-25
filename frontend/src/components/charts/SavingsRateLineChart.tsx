@@ -30,7 +30,7 @@ export function SavingsRateLineChart({ transactions }: { transactions: Transacti
         <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} unit="%" />
         <Tooltip {...tooltipStyle} />
         <ReferenceLine y={50} stroke="var(--status-good)" strokeDasharray="4 4" label={{ value: "50% target", fill: "var(--status-good)", fontSize: 11, position: "insideTopRight" }} />
-        <Line type="monotone" dataKey="rate" stroke="var(--series-1)" strokeWidth={2} dot={{ r: 4 }} />
+        <Line type="monotone" dataKey="rate" stroke="var(--brand)" strokeWidth={2} dot={{ r: 4 }} />
       </LineChart>
     </ResponsiveContainer>
   );

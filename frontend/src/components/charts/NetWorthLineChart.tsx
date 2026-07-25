@@ -18,7 +18,7 @@ export function NetWorthLineChart({ points }: { points: NetWorthPoint[] }) {
         <XAxis dataKey="label" tick={axisTickStyle} axisLine={{ stroke: CHROME.baseline }} tickLine={false} />
         <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} />
         <Tooltip {...tooltipStyle} />
-        <Line type="monotone" dataKey="value" stroke="var(--series-1)" strokeWidth={2} dot={{ r: 4 }} />
+        <Line type="monotone" dataKey="value" stroke="var(--brand)" strokeWidth={2} dot={{ r: 4 }} />
       </LineChart>
     </ResponsiveContainer>
   );

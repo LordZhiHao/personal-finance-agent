@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { format, subDays } from "date-fns";
+import { format, subDays, subMonths, subYears } from "date-fns";
 import { useAccounts, useMeta, usePortfolioEvents, useSnapshots } from "../hooks/api";
 import { FilterBar, type FilterValue } from "../components/FilterBar";
 import { StatCard } from "../components/StatCard";
@@ -7,7 +7,11 @@ import { ChartCard } from "../components/ChartCard";
 import { AddTradeDialog } from "../components/AddTradeDialog";
 import { NetWorthLineChart } from "../components/charts/NetWorthLineChart";
 import { AssetAllocationDonut } from "../components/charts/AssetAllocationDonut";
+import { AllocationBarChart } from "../components/charts/AllocationBarChart";
+import { DividendCalendar } from "../components/charts/DividendCalendar";
+import { TradeHistoryTable } from "../components/charts/TradeHistoryTable";
 import { formatMoney } from "../lib/format";
+import { Button, Select } from "../components/ui";
 
 const today = format(new Date(), "yyyy-MM-dd");
 const defaultFilters: FilterValue = {
@@ -17,13 +21,22 @@ const defaultFilters: FilterValue = {
   currency: "SGD",
 };
 
-const th = "text-left text-xs font-medium py-2 px-3";
-const td = "text-sm py-1.5 px-3";
+type Period = "1W" | "1M" | "1Y" | "All";
+const PERIODS: Period[] = ["1W", "1M", "1Y", "All"];
+
+function periodCutoff(period: Period): string | null {
+  const now = new Date();
+  if (period === "1W") return format(subDays(now, 7), "yyyy-MM-dd");
+  if (period === "1M") return format(subMonths(now, 1), "yyyy-MM-dd");
+  if (period === "1Y") return format(subYears(now, 1), "yyyy-MM-dd");
+  return null;
+}
 
 export function InvestmentsPage() {
   const [filters, setFilters] = useState<FilterValue>(defaultFilters);
   const [hasCustomFilters, setHasCustomFilters] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [period, setPeriod] = useState<Period>("All");
 
   const displayCurrency = filters.currency ?? "SGD";
   const accountsQuery = useAccounts(["brokerage"]);
@@ -56,6 +69,12 @@ export function InvestmentsPage() {
     return [...totals.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, value]) => ({ date, value }));
   }, [snapshots]);
 
+  const filteredNetWorthPoints = useMemo(() => {
+    const cutoff = periodCutoff(period);
+    if (!cutoff) return netWorthPoints;
+    return netWorthPoints.filter((p) => p.date >= cutoff);
+  }, [netWorthPoints, period]);
+
   const allocation = useMemo(
     () =>
       snapshots.map((s) => ({ name: s.accounts?.name ?? "Unknown", value: s.converted_value })),
@@ -66,7 +85,7 @@ export function InvestmentsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-medium" style={{ color: "var(--text-primary)" }}>
+      <h1 className="text-xl font-semibold" style={{ color: "var(--text-heading)" }}>
         📈 Investments
       </h1>
       <FilterBar
@@ -79,12 +98,23 @@ export function InvestmentsPage() {
         }}
       />
 
-      <StatCard label="Net Worth" value={formatMoney(netWorth, displayCurrency)} />
+      <StatCard label="Net Worth" value={formatMoney(netWorth, displayCurrency)} icon="💰" tint="brand" />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ChartCard title="Net Worth Over Time">
-          {netWorthPoints.length > 0 ? (
-            <NetWorthLineChart points={netWorthPoints} />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <ChartCard
+          title="Net Worth Over Time"
+          headerRight={
+            <Select value={period} onChange={(e) => setPeriod(e.target.value as Period)} className="w-24">
+              {PERIODS.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </Select>
+          }
+        >
+          {filteredNetWorthPoints.length > 0 ? (
+            <NetWorthLineChart points={filteredNetWorthPoints} />
           ) : (
             <p style={{ color: "var(--text-secondary)" }}>No asset snapshots yet.</p>
           )}
@@ -98,57 +128,29 @@ export function InvestmentsPage() {
         </ChartCard>
       </div>
 
-      <div className="rounded-lg p-4" style={{ background: "var(--surface-1)", border: "1px solid var(--border)" }}>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-            Trade History
-          </h3>
-          <button
-            type="button"
-            onClick={() => setDialogOpen(true)}
-            className="rounded px-3 py-1.5 text-sm font-medium text-white"
-            style={{ background: "var(--series-1)" }}
-          >
-            ＋ Add Entry
-          </button>
-        </div>
-        {eventsSorted.length === 0 ? (
-          <p style={{ color: "var(--text-secondary)" }}>No trades found for this period.</p>
-        ) : (
-          <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
-            <table className="w-full border-collapse">
-              <thead className="sticky top-0" style={{ background: "var(--surface-1)" }}>
-                <tr style={{ borderBottom: "1px solid var(--gridline)", color: "var(--text-muted)" }}>
-                  <th className={th}>Date</th>
-                  <th className={th}>Ticker</th>
-                  <th className={th}>Action</th>
-                  <th className={th}>Quantity</th>
-                  <th className={th}>Price</th>
-                  <th className={th}>Currency</th>
-                  <th className={th}>Fees</th>
-                  <th className={th}>Notes</th>
-                  <th className={th}>Account</th>
-                </tr>
-              </thead>
-              <tbody>
-                {eventsSorted.map((e) => (
-                  <tr key={e.id} style={{ borderBottom: "1px solid var(--gridline)" }}>
-                    <td className={`${td} tabular-nums`} style={{ color: "var(--text-secondary)" }}>{e.date}</td>
-                    <td className={td} style={{ color: "var(--text-primary)" }}>{e.ticker}</td>
-                    <td className={td} style={{ color: "var(--text-primary)" }}>{e.action}</td>
-                    <td className={`${td} tabular-nums`} style={{ color: "var(--text-primary)" }}>{e.quantity}</td>
-                    <td className={`${td} tabular-nums`} style={{ color: "var(--text-primary)" }}>{e.price}</td>
-                    <td className={td} style={{ color: "var(--text-secondary)" }}>{e.currency}</td>
-                    <td className={`${td} tabular-nums`} style={{ color: "var(--text-secondary)" }}>{e.fees ?? "—"}</td>
-                    <td className={td} style={{ color: "var(--text-secondary)" }}>{e.notes ?? ""}</td>
-                    <td className={td} style={{ color: "var(--text-secondary)" }}>{e.accounts?.name ?? "Unknown"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <ChartCard title="Allocation by Account">
+          {allocation.length > 0 ? (
+            <AllocationBarChart data={allocation} currency={displayCurrency} />
+          ) : (
+            <p style={{ color: "var(--text-secondary)" }}>No asset snapshots yet.</p>
+          )}
+        </ChartCard>
+        <ChartCard title="Dividend Calendar">
+          <DividendCalendar events={events} />
+        </ChartCard>
       </div>
+
+      <ChartCard
+        title="Trade History"
+        headerRight={
+          <Button variant="primary" onClick={() => setDialogOpen(true)}>
+            ＋ Add Entry
+          </Button>
+        }
+      >
+        <TradeHistoryTable events={eventsSorted} />
+      </ChartCard>
 
       {dialogOpen && metaQuery.data && (
         <AddTradeDialog

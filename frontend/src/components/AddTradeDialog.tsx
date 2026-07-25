@@ -5,6 +5,7 @@ import { z } from "zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Account, Meta } from "../types";
 import { api } from "../api/client";
+import { Button, Input, Select } from "./ui";
 
 const schema = z
   .object({
@@ -25,12 +26,6 @@ const schema = z
   });
 
 type FormValues = z.input<typeof schema>;
-
-const fieldStyle = {
-  border: "1px solid var(--baseline)",
-  color: "var(--text-primary)",
-  background: "var(--surface-1)",
-};
 
 export function AddTradeDialog({
   open,
@@ -94,14 +89,14 @@ export function AddTradeDialog({
   if (accounts.length === 0) {
     return (
       <Overlay onClose={onClose}>
-        <p style={{ color: "var(--status-warning)" }}>No brokerage accounts found. Please add one first.</p>
+        <p style={{ color: "var(--tint-amber-text)" }}>No brokerage accounts found. Please add one first.</p>
       </Overlay>
     );
   }
 
   return (
     <Overlay onClose={onClose}>
-      <h2 className="text-lg font-medium mb-4" style={{ color: "var(--text-primary)" }}>
+      <h2 className="text-lg font-semibold mb-4" style={{ color: "var(--text-heading)" }}>
         Add Investment Entry
       </h2>
       <form
@@ -113,73 +108,68 @@ export function AddTradeDialog({
       >
         <div className="grid grid-cols-2 gap-3">
           <Field label="Company Name" error={undefined}>
-            <input {...register("companyName")} placeholder="e.g. Apple Inc" className="w-full rounded px-2 py-1.5 text-sm outline-none" style={fieldStyle} />
+            <Input {...register("companyName")} placeholder="e.g. Apple Inc" className="w-full" />
           </Field>
           <Field label="Ticker Symbol *" error={errors.ticker?.message}>
-            <input {...register("ticker")} placeholder="e.g. AAPL, CSPX" className="w-full rounded px-2 py-1.5 text-sm outline-none" style={fieldStyle} />
+            <Input {...register("ticker")} placeholder="e.g. AAPL, CSPX" className="w-full" />
           </Field>
           <Field label="Action *" error={undefined}>
-            <select {...register("action")} className="w-full rounded px-2 py-1.5 text-sm outline-none" style={fieldStyle}>
+            <Select {...register("action")} className="w-full">
               {meta.portfolio_actions.map((a) => (
                 <option key={a} value={a}>
                   {a}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field label="Date *" error={undefined}>
-            <input type="date" {...register("date")} className="w-full rounded px-2 py-1.5 text-sm outline-none" style={fieldStyle} />
+            <Input type="date" {...register("date")} className="w-full" />
           </Field>
           <Field label="Currency *" error={undefined}>
-            <select {...register("currency")} className="w-full rounded px-2 py-1.5 text-sm outline-none" style={fieldStyle}>
+            <Select {...register("currency")} className="w-full">
               {meta.currencies.map((c) => (
                 <option key={c} value={c}>
                   {c}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field label="Account *" error={errors.accountId?.message}>
-            <select {...register("accountId")} className="w-full rounded px-2 py-1.5 text-sm outline-none" style={fieldStyle}>
+            <Select {...register("accountId")} className="w-full">
               {accounts.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field label="Quantity *" error={errors.quantity?.message}>
-            <input type="number" step="0.0001" min="0" {...register("quantity")} className="w-full rounded px-2 py-1.5 text-sm outline-none" style={fieldStyle} />
+            <Input type="number" step="0.0001" min="0" {...register("quantity")} className="w-full" />
           </Field>
           <Field label="Price per Unit *" error={errors.price?.message}>
-            <input type="number" step="0.0001" min="0" {...register("price")} className="w-full rounded px-2 py-1.5 text-sm outline-none" style={fieldStyle} />
+            <Input type="number" step="0.0001" min="0" {...register("price")} className="w-full" />
           </Field>
           <Field label="Fees" error={undefined}>
-            <input type="number" step="0.01" min="0" {...register("fees")} className="w-full rounded px-2 py-1.5 text-sm outline-none" style={fieldStyle} />
+            <Input type="number" step="0.01" min="0" {...register("fees")} className="w-full" />
           </Field>
         </div>
         <Field label="Description / Notes" error={undefined}>
-          <input {...register("notes")} placeholder="Optional notes about this trade" className="w-full rounded px-2 py-1.5 text-sm outline-none" style={fieldStyle} />
+          <Input {...register("notes")} placeholder="Optional notes about this trade" className="w-full" />
         </Field>
 
         {serverError && (
-          <p className="text-sm" style={{ color: "var(--status-critical)" }}>
+          <p className="text-sm" style={{ color: "var(--tint-red-text)" }}>
             {serverError}
           </p>
         )}
 
         <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} className="rounded px-3 py-2 text-sm" style={{ color: "var(--text-secondary)" }}>
+          <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={isSubmitting || mutation.isPending}
-            className="rounded px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
-            style={{ background: "var(--series-1)" }}
-          >
+          </Button>
+          <Button type="submit" variant="primary" disabled={isSubmitting || mutation.isPending}>
             {mutation.isPending ? "Saving…" : "Save Entry"}
-          </button>
+          </Button>
         </div>
       </form>
     </Overlay>
@@ -194,7 +184,7 @@ function Field({ label, error, children }: { label: string; error?: string; chil
       </span>
       {children}
       {error && (
-        <span className="text-xs" style={{ color: "var(--status-critical)" }}>
+        <span className="text-xs" style={{ color: "var(--tint-red-text)" }}>
           {error}
         </span>
       )}
@@ -210,8 +200,8 @@ function Overlay({ children, onClose }: { children: React.ReactNode; onClose: ()
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-lg p-6 max-h-[90vh] overflow-y-auto"
-        style={{ background: "var(--surface-1)", border: "1px solid var(--border)" }}
+        className="w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto"
+        style={{ background: "var(--surface-1)", borderRadius: "var(--radius-card)", boxShadow: "var(--shadow-card)" }}
         onClick={(e) => e.stopPropagation()}
       >
         {children}

@@ -3,6 +3,7 @@ import { api, clearToken, getToken, setToken, ApiError } from "../api/client";
 
 interface AuthContextValue {
   isAuthenticated: boolean;
+  email: string | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
 }
@@ -11,6 +12,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(getToken()));
+  const [email, setEmail] = useState<string | null>(null);
 
   const login = useCallback(async (email: string, password: string) => {
     try {
@@ -20,6 +22,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       setToken(access_token);
       setIsAuthenticated(true);
+      setEmail(email);
     } catch (err) {
       if (err instanceof ApiError) throw new Error(err.message || "Invalid email or password");
       throw err;
@@ -29,10 +32,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     clearToken();
     setIsAuthenticated(false);
+    setEmail(null);
   }, []);
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, login, logout }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={{ isAuthenticated, email, login, logout }}>{children}</AuthContext.Provider>
   );
 }
 

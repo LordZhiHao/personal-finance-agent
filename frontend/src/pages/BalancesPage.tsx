@@ -4,6 +4,7 @@ import { StatCard } from "../components/StatCard";
 import { ChartCard } from "../components/ChartCard";
 import { BalancesTable } from "../components/charts/BalancesTable";
 import { formatMoney } from "../lib/format";
+import { Select } from "../components/ui";
 
 export function BalancesPage() {
   const metaQuery = useMeta();
@@ -13,28 +14,28 @@ export function BalancesPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-medium" style={{ color: "var(--text-primary)" }}>
+        <h1 className="text-xl font-semibold" style={{ color: "var(--text-heading)" }}>
           💳 Balances
         </h1>
-        <select
-          value={currency}
-          onChange={(e) => setCurrency(e.target.value)}
-          className="rounded px-2 py-1.5 text-sm outline-none"
-          style={{ border: "1px solid var(--baseline)", color: "var(--text-primary)", background: "var(--surface-1)" }}
-        >
+        <Select value={currency} onChange={(e) => setCurrency(e.target.value)}>
           {(metaQuery.data?.currencies ?? ["SGD"]).map((c) => (
             <option key={c} value={c}>
               {c}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
 
       {balancesQuery.isLoading ? (
         <p style={{ color: "var(--text-secondary)" }}>Loading…</p>
       ) : (
         <>
-          <StatCard label="Total Net Worth" value={formatMoney(balancesQuery.data?.total ?? 0, currency)} />
+          <StatCard
+            label="Total Net Worth"
+            value={formatMoney(balancesQuery.data?.total ?? 0, currency)}
+            icon="🏦"
+            tint="brand"
+          />
           <ChartCard title="Accounts">
             <BalancesTable summary={balancesQuery.data!} />
           </ChartCard>

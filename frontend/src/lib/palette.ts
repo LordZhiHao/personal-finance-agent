@@ -57,5 +57,7 @@ export const CHROME = {
   border: "var(--border)",
 } as const;
 
-// Sequential single-hue ramp (blue), light -> dark, for the spending heatmap.
-export const SEQUENTIAL_BLUE = ["#cde2fb", "#9ec5f4", "#5598e7", "#2a78d6", "#184f95"] as const;
+// Sequential single-hue ramp (orange — the brand hue), light -> dark, for the
+// spending heatmap. Sequential ramps encode magnitude, not identity, so they
+// aren't subject to the categorical CVD-separation check (dataviz skill).
+export const SEQUENTIAL_ORANGE = ["#ffedd5", "#fdba74", "#fb923c", "#ea580c", "#9a3412"] as const;

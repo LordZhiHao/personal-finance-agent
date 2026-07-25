@@ -3,20 +3,13 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Transaction } from "../types";
 import { api } from "../api/client";
 import { formatMoney } from "../lib/format";
+import { Table, Thead, Tbody, Tr, Th, Td } from "./ui/Table";
+import { Input, Select, Button } from "./ui";
 
 interface EditState {
   description: string;
   category: string;
 }
-
-const th = "text-left text-xs font-medium py-2 px-3";
-const td = "text-sm py-1.5 px-3";
-
-const fieldStyle = {
-  border: "1px solid var(--baseline)",
-  color: "var(--text-primary)",
-  background: "var(--surface-1)",
-};
 
 export function TransactionsTable({
   transactions,
@@ -69,69 +62,63 @@ export function TransactionsTable({
 
   return (
     <div>
-      <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
-        <table className="w-full border-collapse">
-          <thead className="sticky top-0" style={{ background: "var(--surface-1)" }}>
-            <tr style={{ borderBottom: "1px solid var(--gridline)", color: "var(--text-muted)" }}>
-              <th className={th}>Date</th>
-              <th className={th}>Description</th>
-              <th className={th}>Amount</th>
-              <th className={th}>Category</th>
-              <th className={th}>Account</th>
-            </tr>
-          </thead>
-          <tbody>
+      <div className="max-h-[400px] overflow-y-auto">
+        <Table>
+          <Thead>
+            <Th>Date</Th>
+            <Th>Description</Th>
+            <Th align="right">Amount</Th>
+            <Th>Category</Th>
+            <Th>Account</Th>
+          </Thead>
+          <Tbody>
             {sorted.map((t) => {
               const edit = fieldFor(t);
               return (
-                <tr key={t.id} style={{ borderBottom: "1px solid var(--gridline)" }}>
-                  <td className={`${td} tabular-nums`} style={{ color: "var(--text-secondary)" }}>
-                    {t.date}
-                  </td>
-                  <td className={td}>
-                    <input
+                <Tr key={t.id}>
+                  <Td style={{ color: "var(--text-secondary)" }}>{t.date}</Td>
+                  <Td>
+                    <Input
                       value={edit.description}
                       onChange={(e) => updateField(t, { description: e.target.value })}
-                      className="w-full rounded px-2 py-1 text-sm outline-none"
-                      style={fieldStyle}
+                      className="w-full"
                     />
-                  </td>
-                  <td className={`${td} tabular-nums`} style={{ color: "var(--text-primary)" }}>
+                  </Td>
+                  <Td
+                    align="right"
+                    className="font-medium"
+                    style={{ color: t.amount >= 0 ? "var(--tint-green-text)" : "var(--text-primary)" }}
+                  >
                     {formatMoney(t.amount, t.currency)}
-                  </td>
-                  <td className={td}>
-                    <select
+                  </Td>
+                  <Td>
+                    <Select
                       value={edit.category}
                       onChange={(e) => updateField(t, { category: e.target.value })}
-                      className="rounded px-2 py-1 text-sm outline-none"
-                      style={fieldStyle}
                     >
                       {categories.map((c) => (
                         <option key={c} value={c}>
                           {c}
                         </option>
                       ))}
-                    </select>
-                  </td>
-                  <td className={td} style={{ color: "var(--text-secondary)" }}>
-                    {t.accounts?.name ?? "Unknown"}
-                  </td>
-                </tr>
+                    </Select>
+                  </Td>
+                  <Td style={{ color: "var(--text-secondary)" }}>{t.accounts?.name ?? "Unknown"}</Td>
+                </Tr>
               );
             })}
-          </tbody>
-        </table>
+          </Tbody>
+        </Table>
       </div>
       {changedCount > 0 && (
-        <button
-          type="button"
+        <Button
+          variant="primary"
           onClick={() => saveMutation.mutate()}
           disabled={saveMutation.isPending}
-          className="mt-3 rounded px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
-          style={{ background: "var(--series-1)" }}
+          className="mt-3"
         >
           {saveMutation.isPending ? "Saving…" : `Save ${changedCount} change(s)`}
-        </button>
+        </Button>
       )}
     </div>
   );
