@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { addDays, differenceInCalendarDays, format, parseISO, startOfWeek } from "date-fns";
 import type { DailyTotal } from "../../lib/dates";
+import type { Transaction } from "../../types";
 import { SEQUENTIAL_ORANGE } from "../../lib/palette";
 import { formatMoney } from "../../lib/format";
+import { Overlay, Table, Thead, Tbody, Tr, Th, Td } from "../ui";
 
 const EMPTY_CELL = "var(--gridline)";
 const CELL_SIZE = 32;
@@ -28,7 +30,15 @@ function textColor(total: number, max: number): string {
   return ratio > 0.5 ? LIGHT_TEXT : DARK_TEXT;
 }
 
-export function SpendingHeatmap({ daily, currency }: { daily: DailyTotal[]; currency: string }) {
+export function SpendingHeatmap({
+  daily,
+  transactions,
+  currency,
+}: {
+  daily: DailyTotal[];
+  transactions: Transaction[];
+  currency: string;
+}) {
   const [selected, setSelected] = useState<{ date: string; total: number } | null>(null);
 
   if (daily.length === 0) {
@@ -50,6 +60,12 @@ export function SpendingHeatmap({ daily, currency }: { daily: DailyTotal[]; curr
     }),
   );
 
+  const selectedTransactions = selected
+    ? transactions
+        .filter((t) => t.amount < 0 && t.date.slice(0, 10) === selected.date)
+        .sort((a, b) => a.amount - b.amount)
+    : [];
+
   return (
     <div className="overflow-x-auto">
       <div style={{ display: "grid", gridAutoFlow: "column", gap: CELL_GAP }}>
@@ -59,8 +75,8 @@ export function SpendingHeatmap({ daily, currency }: { daily: DailyTotal[]; curr
               <div
                 key={day.date}
                 title={`${day.date}: ${formatMoney(day.total, currency)}`}
-                onClick={() => setSelected(day)}
-                className="flex items-center justify-center cursor-pointer"
+                onClick={() => day.total > 0 && setSelected(day)}
+                className={day.total > 0 ? "flex items-center justify-center cursor-pointer" : "flex items-center justify-center"}
                 style={{
                   width: CELL_SIZE,
                   height: CELL_SIZE,
@@ -77,10 +93,7 @@ export function SpendingHeatmap({ daily, currency }: { daily: DailyTotal[]; curr
           </div>
         ))}
       </div>
-      <p className="mt-2 text-xs min-h-[1em]" style={{ color: "var(--text-secondary)" }}>
-        {selected ? `${format(parseISO(selected.date), "d MMM yyyy")}: ${formatMoney(selected.total, currency)}` : "Tap a day for its total."}
-      </p>
-      <div className="flex items-center gap-2 mt-2 text-xs" style={{ color: "var(--text-muted)" }}>
+      <div className="flex items-center gap-2 mt-3 text-xs" style={{ color: "var(--text-muted)" }}>
         <span>Less</span>
         {[EMPTY_CELL, SEQUENTIAL_ORANGE[1], SEQUENTIAL_ORANGE[2], SEQUENTIAL_ORANGE[3], SEQUENTIAL_ORANGE[4]].map(
           (c, i) => (
@@ -89,6 +102,33 @@ export function SpendingHeatmap({ daily, currency }: { daily: DailyTotal[]; curr
         )}
         <span>More</span>
       </div>
+
+      {selected && (
+        <Overlay onClose={() => setSelected(null)}>
+          <h2 className="text-lg font-semibold mb-1" style={{ color: "var(--text-heading)" }}>
+            {format(parseISO(selected.date), "d MMMM yyyy")}
+          </h2>
+          <p className="text-sm mb-4" style={{ color: "var(--text-secondary)" }}>
+            Total spent: {formatMoney(selected.total, currency)}
+          </p>
+          <Table>
+            <Thead>
+              <Th>Description</Th>
+              <Th>Category</Th>
+              <Th align="right">Amount</Th>
+            </Thead>
+            <Tbody>
+              {selectedTransactions.map((t) => (
+                <Tr key={t.id}>
+                  <Td>{t.description}</Td>
+                  <Td>{t.category}</Td>
+                  <Td align="right">{formatMoney(Math.abs(t.amount), t.currency)}</Td>
+                </Tr>
+              ))}
+            </Tbody>
+          </Table>
+        </Overlay>
+      )}
     </div>
   );
 }

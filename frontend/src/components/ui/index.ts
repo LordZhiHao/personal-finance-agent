@@ -8,3 +8,4 @@ export type { BadgeTint } from "./Badge";
 export { IconBadge } from "./IconBadge";
 export { TabToggle } from "./TabToggle";
 export { Table, Thead, Tbody, Tr, Th, Td } from "./Table";
+export { Overlay } from "./Overlay";

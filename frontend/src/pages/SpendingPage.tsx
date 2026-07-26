@@ -113,7 +113,7 @@ export function SpendingPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <ChartCard title="Spending Calendar">
-              <SpendingHeatmap daily={dailySpendTotals(filtered)} currency="SGD" />
+              <SpendingHeatmap daily={dailySpendTotals(filtered)} transactions={filtered} currency="SGD" />
             </ChartCard>
             <ChartCard title="Month-over-Month by Category">
               <MonthComparisonBarChart transactions={filtered} />

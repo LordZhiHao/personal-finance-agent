@@ -37,8 +37,11 @@ export function Layout() {
         >
           {menuOpen ? "✕" : "☰"}
         </button>
-        <h1 className="text-base font-semibold shrink-0" style={{ color: "var(--text-heading)" }}>
-          🍊 Finance Tracker
+        <h1 className="flex items-center gap-2 text-base font-semibold shrink-0">
+          <img src="/logo-mark.png" alt="" className="h-7 w-7" />
+          <span style={{ color: "var(--text-heading)" }}>
+            Finance<span style={{ color: "var(--brand)" }}>Ku</span>
+          </span>
         </h1>
         <nav className="hidden md:flex items-center gap-1 flex-1">
           {NAV_ITEMS.map((item) => (

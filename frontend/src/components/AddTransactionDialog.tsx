@@ -5,7 +5,7 @@ import { z } from "zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Account, Meta } from "../types";
 import { api } from "../api/client";
-import { Button, Input, Select } from "./ui";
+import { Button, Input, Overlay, Select } from "./ui";
 
 const schema = z.object({
   description: z.string().min(1, "Description is required."),
@@ -169,23 +169,5 @@ function Field({ label, error, children }: { label: string; error?: string; chil
         </span>
       )}
     </label>
-  );
-}
-
-function Overlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.4)" }}
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto"
-        style={{ background: "var(--surface-1)", borderRadius: "var(--radius-card)", boxShadow: "var(--shadow-card)" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {children}
-      </div>
-    </div>
   );
 }
