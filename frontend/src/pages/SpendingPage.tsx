@@ -16,7 +16,12 @@ import { dailySpendTotals, monthKey } from "../lib/dates";
 import { Button } from "../components/ui";
 
 const today = format(new Date(), "yyyy-MM-dd");
-const defaultFilters: FilterValue = { startDate: format(subDays(new Date(), 180), "yyyy-MM-dd"), endDate: today, account: "All" };
+const defaultFilters: FilterValue = {
+  startDate: format(subDays(new Date(), 180), "yyyy-MM-dd"),
+  endDate: today,
+  account: "All",
+  type: "all",
+};
 
 export function SpendingPage() {
   const [filters, setFilters] = useState<FilterValue>(defaultFilters);
@@ -27,9 +32,13 @@ export function SpendingPage() {
 
   const filtered = useMemo(() => {
     const txns = txQuery.data ?? [];
-    if (filters.account === "All") return txns;
-    return txns.filter((t) => t.accounts?.name === filters.account);
-  }, [txQuery.data, filters.account]);
+    return txns.filter((t) => {
+      if (filters.account !== "All" && t.accounts?.name !== filters.account) return false;
+      if (filters.type === "income" && t.amount <= 0) return false;
+      if (filters.type === "expense" && t.amount >= 0) return false;
+      return true;
+    });
+  }, [txQuery.data, filters.account, filters.type]);
 
   const { monthlyIncome, monthlySpend, savingsRate } = useMemo(() => {
     if (filtered.length === 0) return { monthlyIncome: 0, monthlySpend: 0, savingsRate: 0 };

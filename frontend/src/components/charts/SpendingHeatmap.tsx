@@ -4,8 +4,10 @@ import { SEQUENTIAL_ORANGE } from "../../lib/palette";
 import { formatMoney } from "../../lib/format";
 
 const EMPTY_CELL = "var(--gridline)";
-const CELL_SIZE = 12;
-const CELL_GAP = 3;
+const CELL_SIZE = 24;
+const CELL_GAP = 4;
+const DARK_TEXT = "var(--text-primary)";
+const LIGHT_TEXT = "#fff";
 
 function levelColor(total: number, max: number): string {
   if (total <= 0) return EMPTY_CELL;
@@ -15,6 +17,14 @@ function levelColor(total: number, max: number): string {
   if (ratio <= 0.5) return SEQUENTIAL_ORANGE[2];
   if (ratio <= 0.75) return SEQUENTIAL_ORANGE[3];
   return SEQUENTIAL_ORANGE[4];
+}
+
+// Two darkest buckets need light text for contrast; everything else (including
+// the empty-cell gray) reads fine with dark text.
+function textColor(total: number, max: number): string {
+  if (total <= 0 || max <= 0) return DARK_TEXT;
+  const ratio = total / max;
+  return ratio > 0.5 ? LIGHT_TEXT : DARK_TEXT;
 }
 
 export function SpendingHeatmap({ daily, currency }: { daily: DailyTotal[]; currency: string }) {
@@ -46,13 +56,19 @@ export function SpendingHeatmap({ daily, currency }: { daily: DailyTotal[]; curr
               <div
                 key={day.date}
                 title={`${day.date}: ${formatMoney(day.total, currency)}`}
+                className="flex items-center justify-center"
                 style={{
                   width: CELL_SIZE,
                   height: CELL_SIZE,
                   borderRadius: 3,
                   background: levelColor(day.total, max),
+                  color: textColor(day.total, max),
+                  fontSize: 9,
+                  lineHeight: 1,
                 }}
-              />
+              >
+                {format(parseISO(day.date), "d")}
+              </div>
             ))}
           </div>
         ))}
