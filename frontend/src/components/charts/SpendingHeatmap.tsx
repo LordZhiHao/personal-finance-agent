@@ -4,8 +4,8 @@ import { SEQUENTIAL_ORANGE } from "../../lib/palette";
 import { formatMoney } from "../../lib/format";
 
 const EMPTY_CELL = "var(--gridline)";
-const CELL_SIZE = 24;
-const CELL_GAP = 4;
+const CELL_SIZE = 32;
+const CELL_GAP = 5;
 const DARK_TEXT = "var(--text-primary)";
 const LIGHT_TEXT = "#fff";
 
@@ -63,7 +63,7 @@ export function SpendingHeatmap({ daily, currency }: { daily: DailyTotal[]; curr
                   borderRadius: 3,
                   background: levelColor(day.total, max),
                   color: textColor(day.total, max),
-                  fontSize: 9,
+                  fontSize: 12,
                   lineHeight: 1,
                 }}
               >

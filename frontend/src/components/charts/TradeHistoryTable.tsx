@@ -53,11 +53,11 @@ export function TradeHistoryTable({
               <Td>
                 <Badge tint={ACTION_TINT[e.action]}>{e.action}</Badge>
               </Td>
-              <Td align="right">{e.quantity}</Td>
-              <Td align="right">{e.price}</Td>
+              <Td align="right">{e.quantity.toFixed(2)}</Td>
+              <Td align="right">{e.price.toFixed(2)}</Td>
               <Td style={{ color: "var(--text-secondary)" }}>{e.currency}</Td>
               <Td align="right" style={{ color: "var(--text-secondary)" }}>
-                {e.fees ?? "—"}
+                {e.fees === null ? "—" : e.fees.toFixed(2)}
               </Td>
               <Td style={{ color: "var(--text-secondary)" }}>{e.notes ?? ""}</Td>
               <Td style={{ color: "var(--text-secondary)" }}>{e.accounts?.name ?? "Unknown"}</Td>

@@ -34,7 +34,7 @@ export function HoldingsTable({ holdings, currency }: { holdings: Holding[]; cur
                 {h.ticker}
               </Td>
               <Td style={{ color: "var(--text-secondary)" }}>{h.account_name}</Td>
-              <Td align="right">{h.quantity}</Td>
+              <Td align="right">{h.quantity.toFixed(2)}</Td>
               <Td align="right">
                 {h.avg_cost.toFixed(2)} {h.cost_currency}
               </Td>
