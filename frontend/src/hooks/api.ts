@@ -4,6 +4,7 @@ import type {
   Account,
   AssetSnapshot,
   BalancesSummary,
+  DividendForecast,
   ExpenseSummary,
   HoldingsSummary,
   Meta,
@@ -64,6 +65,13 @@ export function useBalances(currency: string) {
   return useQuery({
     queryKey: ["balances", currency],
     queryFn: () => api.get<BalancesSummary>(`/api/accounts/balances${qs({ currency })}`),
+  });
+}
+
+export function useDividendForecast() {
+  return useQuery({
+    queryKey: ["dividend-forecast"],
+    queryFn: () => api.get<DividendForecast[]>("/api/dividend-forecast"),
   });
 }
 

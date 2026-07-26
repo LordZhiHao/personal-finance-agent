@@ -90,3 +90,11 @@ export interface Meta {
   account_types: string[];
   portfolio_actions: string[];
 }
+
+export interface DividendForecast {
+  ticker: string;
+  ex_dividend_date: string | null;
+  dividend_rate: number | null;
+  dividend_yield: number | null;
+  currency?: string;
+}

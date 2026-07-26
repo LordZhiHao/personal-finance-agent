@@ -1,6 +1,13 @@
 import { useMemo, useState } from "react";
 import { format, subDays, subMonths, subYears } from "date-fns";
-import { useAccounts, useMeta, usePortfolioEvents, useRefreshPrices, useSnapshots } from "../hooks/api";
+import {
+  useAccounts,
+  useDividendForecast,
+  useMeta,
+  usePortfolioEvents,
+  useRefreshPrices,
+  useSnapshots,
+} from "../hooks/api";
 import { FilterBar, type FilterValue } from "../components/FilterBar";
 import { StatCard } from "../components/StatCard";
 import { ChartCard } from "../components/ChartCard";
@@ -9,6 +16,7 @@ import { NetWorthLineChart } from "../components/charts/NetWorthLineChart";
 import { AssetAllocationDonut } from "../components/charts/AssetAllocationDonut";
 import { AllocationBarChart } from "../components/charts/AllocationBarChart";
 import { DividendCalendar } from "../components/charts/DividendCalendar";
+import { UpcomingDividends } from "../components/charts/UpcomingDividends";
 import { TradeHistoryTable } from "../components/charts/TradeHistoryTable";
 import { formatMoney } from "../lib/format";
 import { Button, Select } from "../components/ui";
@@ -43,6 +51,7 @@ export function InvestmentsPage() {
   const metaQuery = useMeta();
   const snapshotsQuery = useSnapshots(displayCurrency);
   const refreshPricesMutation = useRefreshPrices();
+  const dividendForecastQuery = useDividendForecast();
   const eventsQuery = usePortfolioEvents(
     hasCustomFilters ? filters.startDate : undefined,
     hasCustomFilters ? filters.endDate : undefined,
@@ -173,6 +182,10 @@ export function InvestmentsPage() {
           <DividendCalendar events={events} />
         </ChartCard>
       </div>
+
+      <ChartCard title="Upcoming Dividends">
+        <UpcomingDividends forecast={dividendForecastQuery.data ?? []} />
+      </ChartCard>
 
       <ChartCard
         title="Trade History"

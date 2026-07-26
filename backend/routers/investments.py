@@ -6,11 +6,14 @@ from backend.schemas import PortfolioEventCreate, PortfolioEventUpdate
 from db.supabase import (
     dashboard_insert_portfolio_event,
     delete_portfolio_events,
+    get_held_positions,
     get_latest_snapshots,
     get_portfolio_events,
     update_portfolio_event,
 )
 from scheduler.equity_price_updater import update_equity_prices
+from utils.constants import TICKER_YFINANCE_MAP
+from utils.equity_pricing import fetch_dividend_forecast
 from utils.fx import convert
 from utils.portfolio import compute_holdings_summary
 
@@ -79,3 +82,15 @@ def holdings(currency: str = "SGD", user_id: str = Depends(get_current_user)):
     """Per-ticker avg-cost basis, market value, unrealized P&L — the /portfolio
     bot command's math, not currently surfaced in any dashboard."""
     return compute_holdings_summary(user_id, currency)
+
+
+@router.get("/dividend-forecast")
+async def dividend_forecast(user_id: str = Depends(get_current_user)):
+    """Next-known ex-dividend date/rate/yield per currently held ticker, where
+    Yahoo Finance has that data. Runs in a threadpool since it's blocking yfinance
+    I/O, same as /refresh-prices."""
+    positions = get_held_positions(user_id)
+    tickers = sorted({p["ticker"] for p in positions})
+    symbols = {t: TICKER_YFINANCE_MAP.get(t, t) for t in tickers}
+    forecast = await run_in_threadpool(fetch_dividend_forecast, sorted(set(symbols.values())))
+    return [{"ticker": t, **forecast.get(symbols[t], {})} for t in tickers]
