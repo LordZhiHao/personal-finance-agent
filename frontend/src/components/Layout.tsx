@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { Button } from "./ui/Button";
+import { ChatWidget } from "./ChatWidget";
 
 const NAV_ITEMS = [
   { to: "/spending", label: "💸 Spending" },
@@ -102,6 +103,7 @@ export function Layout() {
       <main className="p-4 md:p-6 overflow-x-hidden max-w-[1400px] mx-auto">
         <Outlet />
       </main>
+      <ChatWidget />
     </div>
   );
 }

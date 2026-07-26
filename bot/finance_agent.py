@@ -22,24 +22,37 @@ MAX_TOOL_ROUNDS = 4
 MAX_HISTORY_TURNS = 6  # rolling window: 6 user+assistant pairs = 12 messages kept
 
 # Per-user rolling chat history for multi-turn Q&A context — same dict-keyed-by-user_id
-# pattern as `pending`/`last_saved` in bot/handlers.py.
-chat_history: dict[int, list[dict]] = {}
+# pattern as `pending`/`last_saved` in bot/handlers.py. Keyed by the Telegram int chat id
+# for bot conversations, or the Supabase user_id string for web dashboard conversations —
+# the two key types never collide, so the channels naturally stay in separate threads.
+chat_history: dict[int | str, list[dict]] = {}
 
-AGENT_SYSTEM_PROMPT = f"""You are a personal finance assistant for a user based in Singapore, built into
-their Telegram bot. Answer questions about their spending, holdings, balances, and recent transactions by
+_SHARED_PROMPT_BODY = f"""Answer questions about their spending, holdings, balances, and recent transactions by
 calling the provided tools — never guess figures from memory. All monetary values from tools are already
-in {DEFAULT_CURRENCY} unless a tool result states otherwise. Keep replies concise and use plain text
-(no Markdown formatting — the message is sent unformatted). Default to the "week" period when a question
+in {DEFAULT_CURRENCY} unless a tool result states otherwise. Default to the "week" period when a question
 doesn't specify a timeframe. When a question refers to "this month" or "the current month," use the
 "month_to_date" period, not "month" — "month" is a trailing ~30-day window, while "month_to_date" is the
 current calendar month from the 1st.
 
-If asked for the web dashboard link or how to get to the dashboard, answer directly with this URL —
-no tool call needed: {DASHBOARD_URL}
-
 When asked about a specific ticker's performance (e.g. "how's CSPX doing"), call get_holdings and find
 that ticker in the results, then explicitly state its average buy price vs. current price and say
 whether the position is in the green (unrealized_gain > 0) or red (unrealized_gain < 0)."""
+
+
+def _build_system_prompt(channel: str) -> str:
+    if channel == "web":
+        return f"""You are a personal finance assistant for a user based in Singapore, integrated into
+their web dashboard. Keep replies concise and use plain text with line breaks where helpful.
+
+{_SHARED_PROMPT_BODY}"""
+    return f"""You are a personal finance assistant for a user based in Singapore, built into
+their Telegram bot. Keep replies concise and use plain text
+(no Markdown formatting — the message is sent unformatted).
+
+If asked for the web dashboard link or how to get to the dashboard, answer directly with this URL —
+no tool call needed: {DASHBOARD_URL}
+
+{_SHARED_PROMPT_BODY}"""
 
 TOOLS = [
     {
@@ -243,13 +256,17 @@ def _run_tool(name: str, args: dict, user_id: str) -> dict:
     return {"error": f"unknown tool {name!r}"}
 
 
-def answer_question(uid: int, raw_text: str, user_id: str) -> str:
+def answer_question(uid: int | str, raw_text: str, user_id: str, channel: str = "telegram") -> str:
     """Runs a bounded tool-calling loop against DeepSeek. Never raises — any failure
     (network, malformed tool call, etc.) is caught and turned into an apology string,
     the same graceful-degradation convention used elsewhere in this bot (e.g. weekly
-    report email failures don't crash the job)."""
+    report email failures don't crash the job).
+
+    `channel` selects the system prompt copy ("telegram" or "web") — the tools and
+    tool-calling loop are identical either way."""
     history = chat_history.get(uid, [])
-    messages = [{"role": "system", "content": AGENT_SYSTEM_PROMPT}] + history + [{"role": "user", "content": raw_text}]
+    system_prompt = _build_system_prompt(channel)
+    messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": raw_text}]
 
     try:
         final_text = None

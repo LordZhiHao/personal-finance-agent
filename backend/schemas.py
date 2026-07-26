@@ -107,6 +107,24 @@ class PortfolioEventCreate(BaseModel):
         return self
 
 
+class ChatRequest(BaseModel):
+    message: str
+
+    @field_validator("message")
+    @classmethod
+    def message_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Message cannot be empty.")
+        if len(v) > 2000:
+            raise ValueError("Message is too long (max 2000 characters).")
+        return v
+
+
+class ChatResponse(BaseModel):
+    reply: str
+
+
 class PortfolioEventUpdate(BaseModel):
     """All fields optional for partial updates from the trade history table's inline
     editor — only fields the client actually changed are sent (exclude_unset)."""

@@ -110,3 +110,9 @@ export function useGenerateTelegramLinkCode() {
     mutationFn: () => api.post<{ code: string; ttl_minutes: number }>("/api/telegram-link", {}),
   });
 }
+
+export function useSendChatMessage() {
+  return useMutation({
+    mutationFn: (message: string) => api.post<{ reply: string }>("/api/chat", { message }),
+  });
+}
