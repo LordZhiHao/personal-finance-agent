@@ -47,6 +47,7 @@ export interface Holding {
   account_name: string;
   ticker: string;
   name: string | null;
+  price_currency: string | null;
   quantity: number;
   avg_cost: number;
   cost_currency: string;

@@ -110,12 +110,12 @@ export function InvestmentsPage() {
 
   const currencyAllocation = useMemo(() => {
     const totals = new Map<string, number>();
-    for (const s of snapshots) {
-      const key = s.accounts?.currency ?? "Unknown";
-      totals.set(key, (totals.get(key) ?? 0) + s.converted_value);
+    for (const h of holdingsQuery.data?.holdings ?? []) {
+      if (h.market_value === null || h.price_currency === null) continue;
+      totals.set(h.price_currency, (totals.get(h.price_currency) ?? 0) + h.market_value);
     }
     return [...totals.entries()].map(([name, value]) => ({ name, value }));
-  }, [snapshots]);
+  }, [holdingsQuery.data]);
 
   const allocationData = allocationView === "broker" ? brokerAllocation : currencyAllocation;
 
@@ -221,7 +221,9 @@ export function InvestmentsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <ChartCard title="Top Holdings">
           {topHoldings.length > 0 ? (
-            <AllocationBarChart data={topHoldings} currency={displayCurrency} />
+            <div className="max-h-[420px] overflow-y-auto">
+              <AllocationBarChart data={topHoldings} currency={displayCurrency} />
+            </div>
           ) : (
             <p style={{ color: "var(--text-secondary)" }}>No holdings yet.</p>
           )}
