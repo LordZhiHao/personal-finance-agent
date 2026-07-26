@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Transaction } from "../types";
 import { api } from "../api/client";
 import { formatMoney } from "../lib/format";
 import { Table, Thead, Tbody, Tr, Th, Td } from "./ui/Table";
 import { Input, Select, Button } from "./ui";
+import { useSortableRows } from "../lib/sort";
 
 interface EditState {
   description: string;
@@ -21,9 +22,16 @@ export function TransactionsTable({
   refetchKey: unknown[];
 }) {
   const queryClient = useQueryClient();
-  const sorted = useMemo(
-    () => [...transactions].sort((a, b) => b.date.localeCompare(a.date)),
-    [transactions],
+  const { sorted, requestSort, directionFor } = useSortableRows(
+    transactions,
+    {
+      date: (t) => t.date,
+      description: (t) => t.description,
+      amount: (t) => t.amount,
+      category: (t) => t.category,
+      account: (t) => t.accounts?.name ?? null,
+    },
+    { key: "date", direction: "desc" },
   );
   const [edits, setEdits] = useState<Record<string, EditState>>({});
 
@@ -76,11 +84,21 @@ export function TransactionsTable({
       <div className="max-h-[400px] overflow-y-auto">
         <Table>
           <Thead>
-            <Th>Date</Th>
-            <Th>Description</Th>
-            <Th align="right">Amount</Th>
-            <Th>Category</Th>
-            <Th>Account</Th>
+            <Th sortDirection={directionFor("date")} onSort={() => requestSort("date")}>
+              Date
+            </Th>
+            <Th sortDirection={directionFor("description")} onSort={() => requestSort("description")}>
+              Description
+            </Th>
+            <Th align="right" sortDirection={directionFor("amount")} onSort={() => requestSort("amount")}>
+              Amount
+            </Th>
+            <Th sortDirection={directionFor("category")} onSort={() => requestSort("category")}>
+              Category
+            </Th>
+            <Th sortDirection={directionFor("account")} onSort={() => requestSort("account")}>
+              Account
+            </Th>
             <Th />
           </Thead>
           <Tbody>

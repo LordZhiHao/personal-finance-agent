@@ -1,6 +1,7 @@
 import type { Holding } from "../../types";
 import { formatMoney, formatPct } from "../../lib/format";
 import { Table, Thead, Tbody, Tr, Th, Td } from "../ui/Table";
+import { useSortableRows } from "../../lib/sort";
 
 export function HoldingsTable({
   holdings,
@@ -11,26 +12,59 @@ export function HoldingsTable({
   currency: string;
   totalMarketValue?: number;
 }) {
+  const showPortfolioShare = totalMarketValue !== undefined && totalMarketValue > 0;
+
+  function portfolioShareFor(h: Holding): number | null {
+    return h.market_value !== null && showPortfolioShare ? (h.market_value / totalMarketValue!) * 100 : null;
+  }
+
+  const { sorted, requestSort, directionFor } = useSortableRows(holdings, {
+    ticker: (h) => h.ticker,
+    account: (h) => h.account_name,
+    quantity: (h) => h.quantity,
+    avg_cost: (h) => h.avg_cost,
+    market_value: (h) => h.market_value,
+    cost_basis: (h) => h.cost_basis,
+    gain: (h) => h.unrealized_gain,
+    portfolio_share: (h) => portfolioShareFor(h),
+  });
+
   if (holdings.length === 0) {
     return <p style={{ color: "var(--text-secondary)" }}>No holdings found.</p>;
   }
 
-  const showPortfolioShare = totalMarketValue !== undefined && totalMarketValue > 0;
-
   return (
     <Table>
       <Thead>
-        <Th>Ticker</Th>
-        <Th>Account</Th>
-        <Th align="right">Quantity</Th>
-        <Th align="right">Avg Cost</Th>
-        <Th align="right">Market Value</Th>
-        <Th align="right">Cost Basis</Th>
-        <Th align="right">Gain/Loss</Th>
-        {showPortfolioShare && <Th align="right">% of Portfolio</Th>}
+        <Th sortDirection={directionFor("ticker")} onSort={() => requestSort("ticker")}>
+          Ticker
+        </Th>
+        <Th sortDirection={directionFor("account")} onSort={() => requestSort("account")}>
+          Account
+        </Th>
+        <Th align="right" sortDirection={directionFor("quantity")} onSort={() => requestSort("quantity")}>
+          Quantity
+        </Th>
+        <Th align="right" sortDirection={directionFor("avg_cost")} onSort={() => requestSort("avg_cost")}>
+          Avg Cost
+        </Th>
+        <Th align="right" sortDirection={directionFor("market_value")} onSort={() => requestSort("market_value")}>
+          Market Value
+        </Th>
+        <Th align="right" sortDirection={directionFor("cost_basis")} onSort={() => requestSort("cost_basis")}>
+          Cost Basis
+        </Th>
+        <Th align="right" sortDirection={directionFor("gain")} onSort={() => requestSort("gain")}>
+          Gain/Loss
+        </Th>
+        {showPortfolioShare && (
+          <Th align="right" sortDirection={directionFor("portfolio_share")} onSort={() => requestSort("portfolio_share")}>
+            % of Portfolio
+          </Th>
+        )}
       </Thead>
       <Tbody>
-        {holdings.map((h) => {
+        {sorted.map((h) => {
           const noPrice = h.market_value === null;
           const gainColor =
             h.unrealized_gain === null
@@ -38,7 +72,7 @@ export function HoldingsTable({
               : h.unrealized_gain >= 0
                 ? "var(--tint-green-text)"
                 : "var(--tint-red-text)";
-          const portfolioShare = !noPrice && showPortfolioShare ? (h.market_value! / totalMarketValue!) * 100 : null;
+          const portfolioShare = portfolioShareFor(h);
           return (
             <Tr key={`${h.account_name}-${h.ticker}`}>
               <Td>

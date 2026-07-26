@@ -1,8 +1,15 @@
 import type { BalancesSummary } from "../../types";
 import { formatMoney } from "../../lib/format";
 import { Table, Thead, Tbody, Tr, Th, Td } from "../ui/Table";
+import { useSortableRows } from "../../lib/sort";
 
 export function BalancesTable({ summary }: { summary: BalancesSummary }) {
+  const { sorted, requestSort, directionFor } = useSortableRows(summary.balances, {
+    account: (b) => b.account_name,
+    type: (b) => b.type,
+    balance: (b) => b.balance,
+  });
+
   if (summary.balances.length === 0) {
     return <p style={{ color: "var(--text-secondary)" }}>No accounts found.</p>;
   }
@@ -10,12 +17,18 @@ export function BalancesTable({ summary }: { summary: BalancesSummary }) {
   return (
     <Table>
       <Thead>
-        <Th>Account</Th>
-        <Th>Type</Th>
-        <Th align="right">Balance</Th>
+        <Th sortDirection={directionFor("account")} onSort={() => requestSort("account")}>
+          Account
+        </Th>
+        <Th sortDirection={directionFor("type")} onSort={() => requestSort("type")}>
+          Type
+        </Th>
+        <Th align="right" sortDirection={directionFor("balance")} onSort={() => requestSort("balance")}>
+          Balance
+        </Th>
       </Thead>
       <Tbody>
-        {summary.balances.map((b) => (
+        {sorted.map((b) => (
           <Tr key={b.account_id}>
             <Td className="font-medium">{b.account_name}</Td>
             <Td style={{ color: "var(--text-secondary)" }}>{b.type}</Td>

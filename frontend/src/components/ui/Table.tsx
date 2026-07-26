@@ -35,19 +35,30 @@ export function Th({
   align = "left",
   className,
   children,
+  sortDirection,
+  onSort,
   ...rest
-}: { align?: "left" | "right" } & ThHTMLAttributes<HTMLTableCellElement>) {
+}: {
+  align?: "left" | "right";
+  sortDirection?: "asc" | "desc" | null;
+  onSort?: () => void;
+} & ThHTMLAttributes<HTMLTableCellElement>) {
   return (
     <th
       className={clsx(
         "text-xs font-medium uppercase tracking-wide py-3 px-3",
         align === "right" ? "text-right" : "text-left",
+        onSort && "cursor-pointer select-none hover:opacity-75",
         className
       )}
       style={{ color: "var(--text-secondary)" }}
+      onClick={onSort}
       {...rest}
     >
-      {children}
+      <span className={clsx("inline-flex items-center gap-1", align === "right" && "flex-row-reverse")}>
+        {children}
+        {onSort && <span className="text-[10px]">{sortDirection === "asc" ? "▲" : sortDirection === "desc" ? "▼" : ""}</span>}
+      </span>
     </th>
   );
 }
