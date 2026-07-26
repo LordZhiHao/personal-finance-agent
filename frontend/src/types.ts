@@ -46,6 +46,7 @@ export interface AssetSnapshot {
 export interface Holding {
   account_name: string;
   ticker: string;
+  name: string | null;
   quantity: number;
   avg_cost: number;
   cost_currency: string;

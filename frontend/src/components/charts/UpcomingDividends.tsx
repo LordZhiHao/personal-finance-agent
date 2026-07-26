@@ -25,7 +25,7 @@ export function UpcomingDividends({ forecast }: { forecast: DividendForecast[] }
                 {f.dividend_rate !== null ? formatMoney(f.dividend_rate, f.currency ?? "") : "—"}
               </Td>
               <Td align="right" style={{ color: "var(--text-secondary)" }}>
-                {f.dividend_yield !== null ? `${(f.dividend_yield * 100).toFixed(2)}%` : "—"}
+                {f.dividend_yield !== null ? `${f.dividend_yield.toFixed(2)}%` : "—"}
               </Td>
             </Tr>
           ))}

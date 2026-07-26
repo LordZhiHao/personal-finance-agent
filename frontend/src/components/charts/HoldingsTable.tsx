@@ -41,9 +41,16 @@ export function HoldingsTable({
           const portfolioShare = !noPrice && showPortfolioShare ? (h.market_value! / totalMarketValue!) * 100 : null;
           return (
             <Tr key={`${h.account_name}-${h.ticker}`}>
-              <Td className="font-medium">
-                {noPrice && "⚠️ "}
-                {h.ticker}
+              <Td>
+                <div className="font-medium">
+                  {noPrice && "⚠️ "}
+                  {h.ticker}
+                </div>
+                {h.name && (
+                  <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                    {h.name}
+                  </div>
+                )}
               </Td>
               <Td style={{ color: "var(--text-secondary)" }}>{h.account_name}</Td>
               <Td align="right">{h.quantity.toFixed(2)}</Td>

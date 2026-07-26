@@ -94,7 +94,10 @@ export function useRefreshPrices() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      api.post<{ symbols_priced: number; accounts_refreshed: number }>("/api/refresh-prices", {}),
+      api.post<{ symbols_priced: number; symbols_failed: string[]; accounts_refreshed: number }>(
+        "/api/refresh-prices",
+        {},
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["snapshots"] });
       queryClient.invalidateQueries({ queryKey: ["holdings"] });

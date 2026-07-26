@@ -22,7 +22,7 @@ import { UpcomingDividends } from "../components/charts/UpcomingDividends";
 import { TradeHistoryTable } from "../components/charts/TradeHistoryTable";
 import { HoldingsTable } from "../components/charts/HoldingsTable";
 import { formatMoney } from "../lib/format";
-import { Button, Card, Select, TabToggle } from "../components/ui";
+import { Button, Select, TabToggle } from "../components/ui";
 
 const today = format(new Date(), "yyyy-MM-dd");
 const defaultFilters: FilterValue = {
@@ -147,41 +147,33 @@ export function InvestmentsPage() {
         }}
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-        <StatCard label="Net Worth" value={formatMoney(netWorth, displayCurrency)} icon="💰" tint="brand" />
-        <Card>
-          <div className="text-sm mb-2" style={{ color: "var(--text-secondary)" }}>
-            Display Currency
-          </div>
-          {metaQuery.data && (
-            <Select
-              value={displayCurrency}
-              onChange={(e) => {
-                setFilters({ ...filters, currency: e.target.value });
-                setHasCustomFilters(true);
-              }}
+      <StatCard
+        label="Net Worth"
+        value={formatMoney(netWorth, displayCurrency)}
+        icon="💰"
+        tint="brand"
+        headerRight={
+          <div className="flex items-center gap-2">
+            {metaQuery.data && (
+              <TabToggle
+                options={metaQuery.data.currencies.map((c) => ({ value: c, label: c }))}
+                value={displayCurrency}
+                onChange={(c) => {
+                  setFilters({ ...filters, currency: c });
+                  setHasCustomFilters(true);
+                }}
+              />
+            )}
+            <Button
+              variant="ghost"
+              onClick={() => refreshPricesMutation.mutate()}
+              disabled={refreshPricesMutation.isPending}
             >
-              {metaQuery.data.currencies.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </Select>
-          )}
-        </Card>
-        <Card>
-          <div className="text-sm mb-2" style={{ color: "var(--text-secondary)" }}>
-            Prices
+              {refreshPricesMutation.isPending ? "Refreshing…" : "🔄 Refresh Prices"}
+            </Button>
           </div>
-          <Button
-            variant="primary"
-            onClick={() => refreshPricesMutation.mutate()}
-            disabled={refreshPricesMutation.isPending}
-          >
-            {refreshPricesMutation.isPending ? "Refreshing…" : "🔄 Refresh Prices"}
-          </Button>
-        </Card>
-      </div>
+        }
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <ChartCard
@@ -244,11 +236,13 @@ export function InvestmentsPage() {
       </ChartCard>
 
       <ChartCard title="Positions">
-        <HoldingsTable
-          holdings={holdingsQuery.data?.holdings ?? []}
-          currency={displayCurrency}
-          totalMarketValue={holdingsQuery.data?.total_market_value}
-        />
+        <div className="max-h-[420px] overflow-y-auto">
+          <HoldingsTable
+            holdings={holdingsQuery.data?.holdings ?? []}
+            currency={displayCurrency}
+            totalMarketValue={holdingsQuery.data?.total_market_value}
+          />
+        </div>
       </ChartCard>
 
       <ChartCard

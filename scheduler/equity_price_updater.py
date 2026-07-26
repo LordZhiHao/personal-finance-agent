@@ -31,6 +31,7 @@ def update_equity_prices(user_id: str | None = None):
     price_rows: list[dict] = []
     totals: dict[str, float] = {}
     held_account_ids: set[str] = set()
+    symbols_failed: list[str] = []
     if positions:
         held_account_ids = {p["account_id"] for p in positions}
         symbols = sorted({TICKER_YFINANCE_MAP.get(p["ticker"], p["ticker"]) for p in positions})
@@ -38,11 +39,21 @@ def update_equity_prices(user_id: str | None = None):
 
         fetched_at = datetime.now(timezone.utc).isoformat()
         price_rows = [
-            {"ticker": symbol, "price": data["price"], "currency": data["currency"], "fetched_at": fetched_at}
+            {
+                "ticker": symbol,
+                "price": data["price"],
+                "currency": data["currency"],
+                "name": data.get("name"),
+                "fetched_at": fetched_at,
+            }
             for symbol, data in prices.items()
         ]
         if price_rows:
             insert_equity_prices(price_rows)
+
+        symbols_failed = [s for s in symbols if s not in prices]
+        if symbols_failed:
+            logger.warning("update_equity_prices: failed to price %d symbol(s): %s", len(symbols_failed), symbols_failed)
 
         for p in positions:
             symbol = TICKER_YFINANCE_MAP.get(p["ticker"], p["ticker"])
@@ -81,7 +92,11 @@ def update_equity_prices(user_id: str | None = None):
         accounts_refreshed += 1
 
     logger.info(
-        "update_equity_prices: complete — %d symbol(s) priced, %d account snapshot(s) refreshed",
-        len(price_rows), accounts_refreshed,
+        "update_equity_prices: complete — %d symbol(s) priced, %d failed, %d account snapshot(s) refreshed",
+        len(price_rows), len(symbols_failed), accounts_refreshed,
     )
-    return {"symbols_priced": len(price_rows), "accounts_refreshed": accounts_refreshed}
+    return {
+        "symbols_priced": len(price_rows),
+        "symbols_failed": symbols_failed,
+        "accounts_refreshed": accounts_refreshed,
+    }
