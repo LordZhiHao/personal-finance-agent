@@ -7,15 +7,18 @@ PERIOD_LABELS = {
     "week": "the past week",
     "month": "the past month",
     "year": "the past year",
+    "month_to_date": "this month so far",
 }
 
 _DEFAULT_PERIOD = "week"
 
 
 def parse_period(arg: str | None) -> tuple[date, date, str]:
-    """Maps a `day|week|month|year` arg to a trailing window ending today.
-    Falls back to `week` for missing/unrecognised args. Returns
-    (start_date, end_date, label) for use in both querying and messages."""
+    """Maps a `day|week|month|year|month_to_date` arg to a date window ending
+    today. `month` is a trailing ~30-day window; `month_to_date` is the current
+    calendar month from the 1st. Falls back to `week` for missing/unrecognised
+    args. Returns (start_date, end_date, label) for use in both querying and
+    messages."""
     period = (arg or "").strip().lower()
     if period not in PERIOD_LABELS:
         period = _DEFAULT_PERIOD
@@ -27,6 +30,8 @@ def parse_period(arg: str | None) -> tuple[date, date, str]:
         start = today - timedelta(days=7)
     elif period == "month":
         start = today - relativedelta(months=1)
+    elif period == "month_to_date":
+        start = today.replace(day=1)
     else:  # year
         start = today - relativedelta(years=1)
 

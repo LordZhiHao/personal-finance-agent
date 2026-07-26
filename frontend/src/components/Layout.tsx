@@ -1,4 +1,5 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { Button } from "./ui/Button";
 
@@ -13,17 +14,33 @@ const NAV_ITEMS = [
 export function Layout() {
   const { logout, email } = useAuth();
   const initial = email ? email.trim()[0]?.toUpperCase() : "?";
+  const [menuOpen, setMenuOpen] = useState(false);
+  const location = useLocation();
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [location.pathname]);
 
   return (
     <div className="min-h-screen" style={{ background: "var(--page)" }}>
       <header
-        className="flex items-center gap-6 px-6 py-3"
+        className="flex items-center gap-3 md:gap-6 px-4 py-3 md:px-6"
         style={{ background: "var(--surface-1)", boxShadow: "var(--shadow-card)" }}
       >
+        <button
+          type="button"
+          onClick={() => setMenuOpen((v) => !v)}
+          className="md:hidden text-xl leading-none px-1"
+          style={{ color: "var(--text-primary)" }}
+          aria-label="Toggle navigation menu"
+          aria-expanded={menuOpen}
+        >
+          {menuOpen ? "✕" : "☰"}
+        </button>
         <h1 className="text-base font-semibold shrink-0" style={{ color: "var(--text-heading)" }}>
           🍊 Finance Tracker
         </h1>
-        <nav className="flex items-center gap-1 flex-1">
+        <nav className="hidden md:flex items-center gap-1 flex-1">
           {NAV_ITEMS.map((item) => (
             <NavLink
               key={item.to}
@@ -42,7 +59,7 @@ export function Layout() {
             </NavLink>
           ))}
         </nav>
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-3 shrink-0 ml-auto md:ml-0">
           <div className="flex items-center gap-2">
             <div
               className="flex items-center justify-center rounded-full text-xs font-semibold"
@@ -59,7 +76,27 @@ export function Layout() {
           </Button>
         </div>
       </header>
-      <main className="p-6 overflow-x-hidden max-w-[1400px] mx-auto">
+      {menuOpen && (
+        <nav
+          className="md:hidden flex flex-col px-4 py-2"
+          style={{ background: "var(--surface-1)", boxShadow: "var(--shadow-card)" }}
+        >
+          {NAV_ITEMS.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className="px-2 py-3 text-sm font-medium border-b"
+              style={({ isActive }) => ({
+                color: isActive ? "var(--brand)" : "var(--text-secondary)",
+                borderColor: "var(--gridline)",
+              })}
+            >
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
+      )}
+      <main className="p-4 md:p-6 overflow-x-hidden max-w-[1400px] mx-auto">
         <Outlet />
       </main>
     </div>

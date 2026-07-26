@@ -95,7 +95,7 @@ export function AddTransactionDialog({
         <Field label="Description *" error={errors.description?.message}>
           <Input {...register("description")} placeholder="e.g. Lunch at hawker centre" className="w-full" />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Type *" error={undefined}>
             <Select {...register("type")} className="w-full">
               <option value="expense">Expense</option>

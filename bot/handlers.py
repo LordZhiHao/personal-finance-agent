@@ -21,7 +21,7 @@ from db.supabase import (
 )
 from scheduler.report_builder import summarize_transactions
 from utils.balances import compute_account_balances
-from utils.constants import ACCOUNT_TYPES, CURRENCIES, DEFAULT_CURRENCY
+from utils.constants import ACCOUNT_TYPES, CURRENCIES, DASHBOARD_URL, DEFAULT_CURRENCY
 from utils.fx import convert
 from utils.formatters import format_money, format_pct
 from utils.logger import get_logger
@@ -498,12 +498,17 @@ async def handle_error(update: object, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+async def handle_dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f"🌐 Your dashboard: {DASHBOARD_URL}")
+
+
 async def handle_help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines = [
         "*Available commands:*",
         "/link <code> — link this chat to your web dashboard account",
+        "/dashboard — get the link to your web dashboard",
         "/newaccount <name> <type> <currency> — create your first account",
-        "/expense [day|week|month|year] — spending summary (default: week)",
+        "/expense [day|week|month|year|month_to_date] — spending summary (default: week)",
         "/portfolio — current holdings & unrealized gain/loss",
         "/assets — net worth across all accounts",
         "/balance [account] — balance for one account, or all accounts",
@@ -511,6 +516,7 @@ async def handle_help_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         "/undo — revert your last confirmed save",
         "/help — this message",
         "",
-        "Send a photo, PDF, or just type a transaction to log a new entry.",
+        "Send a photo, PDF, or just type a transaction to log a new entry. You can also just "
+        "ask questions in plain English, e.g. \"how's CSPX doing\" or \"what did I spend this month\".",
     ]
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")

@@ -17,7 +17,8 @@ Decide whether the user's message is:
   (e.g. "spent 12 on lunch", "bought 10 CSPX at 500", "got paid 3000 salary").
 - "chat": the user is asking a question, requesting a summary/analysis, or having a general
   conversation about their existing finances (e.g. "how much did I spend on food this month",
-  "what's my portfolio doing", "am I saving enough").
+  "what's my portfolio doing", "am I saving enough"), or asking for the web dashboard link/URL
+  (e.g. "take me to my dashboard", "what's the link to the site").
 
 Return ONLY a JSON object: {"intent": "record"} or {"intent": "chat"}.
 If the message could plausibly be either, prefer "record"."""

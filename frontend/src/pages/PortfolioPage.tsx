@@ -48,7 +48,7 @@ export function PortfolioPage() {
         <p style={{ color: "var(--text-secondary)" }}>Loading…</p>
       ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             <StatCard
               label="Total Market Value"
               value={formatMoney(holdingsQuery.data?.total_market_value ?? 0, currency)}
@@ -80,7 +80,7 @@ export function PortfolioPage() {
                 placeholder="Search ticker…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-48"
+                className="w-full sm:w-48"
               />
             </div>
           </Card>

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { addDays, differenceInCalendarDays, format, parseISO, startOfWeek } from "date-fns";
 import type { DailyTotal } from "../../lib/dates";
 import { SEQUENTIAL_ORANGE } from "../../lib/palette";
@@ -28,6 +29,8 @@ function textColor(total: number, max: number): string {
 }
 
 export function SpendingHeatmap({ daily, currency }: { daily: DailyTotal[]; currency: string }) {
+  const [selected, setSelected] = useState<{ date: string; total: number } | null>(null);
+
   if (daily.length === 0) {
     return <p style={{ color: "var(--text-secondary)" }}>No spending in this period.</p>;
   }
@@ -56,7 +59,8 @@ export function SpendingHeatmap({ daily, currency }: { daily: DailyTotal[]; curr
               <div
                 key={day.date}
                 title={`${day.date}: ${formatMoney(day.total, currency)}`}
-                className="flex items-center justify-center"
+                onClick={() => setSelected(day)}
+                className="flex items-center justify-center cursor-pointer"
                 style={{
                   width: CELL_SIZE,
                   height: CELL_SIZE,
@@ -73,7 +77,10 @@ export function SpendingHeatmap({ daily, currency }: { daily: DailyTotal[]; curr
           </div>
         ))}
       </div>
-      <div className="flex items-center gap-2 mt-3 text-xs" style={{ color: "var(--text-muted)" }}>
+      <p className="mt-2 text-xs min-h-[1em]" style={{ color: "var(--text-secondary)" }}>
+        {selected ? `${format(parseISO(selected.date), "d MMM yyyy")}: ${formatMoney(selected.total, currency)}` : "Tap a day for its total."}
+      </p>
+      <div className="flex items-center gap-2 mt-2 text-xs" style={{ color: "var(--text-muted)" }}>
         <span>Less</span>
         {[EMPTY_CELL, SEQUENTIAL_ORANGE[1], SEQUENTIAL_ORANGE[2], SEQUENTIAL_ORANGE[3], SEQUENTIAL_ORANGE[4]].map(
           (c, i) => (

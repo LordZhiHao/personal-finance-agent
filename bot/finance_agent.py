@@ -5,7 +5,7 @@ from bot.deepseek_client import client
 from db.supabase import get_portfolio_events, get_recent_transactions, get_transactions
 from scheduler.report_builder import summarize_transactions
 from utils.balances import compute_account_balances
-from utils.constants import DEFAULT_CURRENCY
+from utils.constants import DASHBOARD_URL, DEFAULT_CURRENCY
 from utils.logger import get_logger
 from utils.period import parse_period
 from utils.portfolio import compute_holdings_summary
@@ -26,21 +26,55 @@ their Telegram bot. Answer questions about their spending, holdings, balances, a
 calling the provided tools — never guess figures from memory. All monetary values from tools are already
 in {DEFAULT_CURRENCY} unless a tool result states otherwise. Keep replies concise and use plain text
 (no Markdown formatting — the message is sent unformatted). Default to the "week" period when a question
-doesn't specify a timeframe."""
+doesn't specify a timeframe. When a question refers to "this month" or "the current month," use the
+"month_to_date" period, not "month" — "month" is a trailing ~30-day window, while "month_to_date" is the
+current calendar month from the 1st.
+
+If asked for the web dashboard link or how to get to the dashboard, answer directly with this URL —
+no tool call needed: {DASHBOARD_URL}
+
+When asked about a specific ticker's performance (e.g. "how's CSPX doing"), call get_holdings and find
+that ticker in the results, then explicitly state its average buy price vs. current price and say
+whether the position is in the green (unrealized_gain > 0) or red (unrealized_gain < 0)."""
 
 TOOLS = [
     {
         "type": "function",
         "function": {
             "name": "get_spending_summary",
-            "description": "Income, expenses, net, savings rate, and spend-by-category for a trailing period.",
+            "description": "Income, expenses, net, savings rate, and spend-by-category for a period.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "period": {
                         "type": "string",
-                        "enum": ["day", "week", "month", "year"],
-                        "description": "Trailing window ending today. Defaults to 'week' if omitted.",
+                        "enum": ["day", "week", "month", "year", "month_to_date"],
+                        "description": (
+                            "'day'/'week'/'month'/'year' are trailing windows ending today; "
+                            "'month_to_date' is the current calendar month from the 1st. "
+                            "Defaults to 'week' if omitted."
+                        ),
+                    }
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_transactions_list",
+            "description": "The actual itemized transactions (date, description, amount, category) for a period — use this when the user wants to see/list transactions, not just a summary.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "period": {
+                        "type": "string",
+                        "enum": ["day", "week", "month", "year", "month_to_date"],
+                        "description": (
+                            "'day'/'week'/'month'/'year' are trailing windows ending today; "
+                            "'month_to_date' is the current calendar month from the 1st. "
+                            "Defaults to 'week' if omitted."
+                        ),
                     }
                 },
             },
@@ -103,6 +137,10 @@ def _run_tool(name: str, args: dict, user_id: str) -> dict:
         start, end, label = parse_period(args.get("period"))
         txns = get_transactions(start.isoformat(), end.isoformat(), user_id)
         return {"period": label, **summarize_transactions(txns)}
+    if name == "get_transactions_list":
+        start, end, label = parse_period(args.get("period"))
+        txns = get_transactions(start.isoformat(), end.isoformat(), user_id)
+        return {"period": label, "transactions": txns}
     if name == "get_holdings":
         return compute_holdings_summary(user_id, DEFAULT_CURRENCY)
     if name == "get_balances":

@@ -16,6 +16,8 @@ CURRENCIES = ["SGD", "MYR", "USD"]
 
 DEFAULT_CURRENCY = "SGD"
 
+DASHBOARD_URL = "https://personal-finance-agent-kappa.vercel.app/"
+
 ACCOUNT_TYPES = ["bank", "brokerage", "ewallet"]
 
 PORTFOLIO_ACTIONS = ["BUY", "SELL", "DIVIDEND"]

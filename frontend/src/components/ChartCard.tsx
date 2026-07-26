@@ -16,7 +16,7 @@ export function ChartCard({
 }) {
   return (
     <Card>
-      <div className="flex items-start justify-between gap-3 mb-3">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
         <div>
           <div className="flex items-center gap-2">
             <h3 className="text-base font-semibold" style={{ color: "var(--text-heading)" }}>

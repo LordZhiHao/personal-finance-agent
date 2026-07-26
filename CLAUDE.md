@@ -90,7 +90,7 @@ expense-tracker/
 ├── scripts/
 │   └── backfill_owner.py     # One-off: creates the users row for the original owner from legacy env vars
 ├── utils/
-│   ├── constants.py         # CATEGORIES, CURRENCIES, ACCOUNT_TYPES, TICKER_YFINANCE_MAP
+│   ├── constants.py         # CATEGORIES, CURRENCIES, ACCOUNT_TYPES, TICKER_YFINANCE_MAP, DASHBOARD_URL
 │   ├── pdf_converter.py     # pdf2image: rasterizes PDF pages to JPEG for Gemini (PDF default path, see extract_from_pdf_images in bot/extractor.py)
 │   ├── fx.py                # Currency conversion via Frankfurter API
 │   ├── equity_pricing.py    # yfinance price lookups
@@ -247,12 +247,14 @@ CATEGORIES = [
 ### Finance Q&A Agent (`bot/finance_agent.py`)
 
 - `answer_question(uid, raw_text, user_id) -> str` runs a bounded DeepSeek tool-calling loop (`MAX_TOOL_ROUNDS = 4`) so the bot can answer questions like "how much did I spend on food this month" or "what's my portfolio doing" using real Supabase-backed data rather than guessing.
-- Five tools, all thin wrappers around existing query functions, each implicitly scoped to `user_id` via `_run_tool(name, args, user_id)` — no new Supabase queries were added:
-  - `get_spending_summary(period)` → `utils/period.py::parse_period` + `db.supabase.get_transactions(..., user_id)` + `scheduler/report_builder.py::summarize_transactions`
-  - `get_holdings()` → `utils/portfolio.py::compute_holdings_summary(user_id, DEFAULT_CURRENCY)`
+- Six tools, all thin wrappers around existing query functions, each implicitly scoped to `user_id` via `_run_tool(name, args, user_id)`:
+  - `get_spending_summary(period)` → `utils/period.py::parse_period` + `db.supabase.get_transactions(..., user_id)` + `scheduler/report_builder.py::summarize_transactions`. `period` accepts `day|week|month|year|month_to_date`.
+  - `get_transactions_list(period)` → `db.supabase.get_transactions(..., user_id)` directly, returning the itemized rows (not aggregated) for a period — used when the user wants to see/list transactions (e.g. "what are this month's transactions") rather than a summary. Same `period` enum as `get_spending_summary`.
+  - `get_holdings()` → `utils/portfolio.py::compute_holdings_summary(user_id, DEFAULT_CURRENCY)`. Already returns per-ticker `avg_cost`, `market_value`, `unrealized_gain`/`unrealized_gain_pct`, so single-ticker questions ("how's CSPX doing") are answered by calling this and filtering — no separate single-ticker tool.
   - `get_balances()` → `utils/balances.py::compute_account_balances(user_id, DEFAULT_CURRENCY)`
   - `get_recent_transactions_tool(limit)` → `db.supabase.get_recent_transactions(limit, user_id)`, capped 1–30 like `/recent`
   - `get_portfolio_trades(period)` → `db.supabase.get_portfolio_events(..., user_id=user_id)`, optionally bounded via `parse_period`
+- `AGENT_SYSTEM_PROMPT` also hardcodes the web dashboard URL (`utils/constants.py::DASHBOARD_URL`) so "guide me to my dashboard"-style questions get answered directly without a tool call, and instructs the model to map "this/current month" to the `month_to_date` period rather than the trailing `month` window.
 - One agent, not three separate ones — it naturally covers general enquiry, transaction questions, and investment questions through tool selection, since a message can pull from any combination of tools.
 - Maintains a small per-user rolling chat history (`chat_history: dict[int, list[dict]]`, capped at `MAX_HISTORY_TURNS = 6` turns) for multi-turn context — same dict-keyed-by-`user_id` pattern as `pending`/`last_saved` in `handlers.py`.
 - Any exception during the loop (network failure, malformed tool call, etc.) is caught and turned into an apology string — this path never raises into `handle_text`.
@@ -280,11 +282,12 @@ CATEGORIES = [
 
 ## Telegram Commands
 
-Registered via `CommandHandler` in `bot/main.py`, all implemented as `handle_*_command` functions in `bot/handlers.py`. Every command except `/link` and `/help` resolves the caller via `_resolve_user()` first, same as the media/text handlers. All money figures are reported in `DEFAULT_CURRENCY` (`"SGD"`) — like the weekly report, amounts are summed/displayed without per-transaction currency conversion (a pre-existing simplification; only `/assets`, `/balance`, and `/portfolio` convert, since those read from already-currency-tagged snapshots/prices via `utils/fx.convert`).
+Registered via `CommandHandler` in `bot/main.py`, all implemented as `handle_*_command` functions in `bot/handlers.py`. Every command except `/link`, `/dashboard`, and `/help` resolves the caller via `_resolve_user()` first, same as the media/text handlers. All money figures are reported in `DEFAULT_CURRENCY` (`"SGD"`) — like the weekly report, amounts are summed/displayed without per-transaction currency conversion (a pre-existing simplification; only `/assets`, `/balance`, and `/portfolio` convert, since those read from already-currency-tagged snapshots/prices via `utils/fx.convert`).
 
 - **`/link <code>`** — the one command that runs without user resolution (that's its purpose). Redeems a code generated on the dashboard's Settings page via `db.consume_telegram_link_code()`, binding this Telegram chat to that web account. Invalid/expired codes get a plain error reply.
+- **`/dashboard`** — replies with the web dashboard URL (`utils/constants.py::DASHBOARD_URL`). Also runs without user resolution, same as `/help` — it's not account-scoped data. The chat agent (`bot/finance_agent.py`) answers the same request in plain English too (see "Finance Q&A Agent" above).
 - **`/newaccount <name> <bank|brokerage|ewallet> <currency>`** — creates the caller's first (or Nth) account via `db.create_account()`. Needed because signup no longer auto-creates an account — a brand-new or newly-linked user has zero accounts until they run this (or use `POST /api/accounts` from the dashboard).
-- **`/expense [day|week|month|year]`** — `utils/period.py` (`parse_period`) resolves the arg to a trailing window ending today (default `week`); queries `get_transactions` for that range and reuses `scheduler/report_builder.summarize_transactions()` (extracted from `get_weekly_data` so the weekly cron report and this command share one aggregation, not two copies) for income/expenses/net/savings rate/by-category.
+- **`/expense [day|week|month|year|month_to_date]`** — `utils/period.py` (`parse_period`) resolves the arg to a date window ending today (default `week`); `month` is trailing ~30 days, `month_to_date` is the current calendar month from the 1st. Queries `get_transactions` for that range and reuses `scheduler/report_builder.summarize_transactions()` (extracted from `get_weekly_data` so the weekly cron report and this command share one aggregation, not two copies) for income/expenses/net/savings rate/by-category.
 - **`/portfolio`** — `utils/portfolio.py` (`compute_holdings_summary`) computes per-ticker **average-cost basis** from full `portfolio_events` history (BUYs roll a running weighted average; SELLs reduce quantity without changing the average — standard average-cost method, not FIFO), prices each holding from the latest `equity_prices` row per ticker, and reports unrealized gain/loss. A ticker with no price available is shown with a ⚠️ rather than silently dropped.
 - **`/assets`** — sums the latest `asset_snapshots` per account (reuses `get_latest_snapshots`), converted to `DEFAULT_CURRENCY`.
 - **`/balance [account]`** — no arg lists every account; an arg does a case-insensitive substring match on account name. Delegates the actual balance computation to `utils/balances.py::compute_account_balances()`, shared with `GET /api/accounts/balances`. **Balance differs by account type**: `bank`/`ewallet` sum `transactions.amount` for that account (`get_account_cash_totals`); `brokerage` uses the latest `asset_snapshots` market value instead, since brokerage cash flow isn't tracked separately from invested value anywhere in this codebase.

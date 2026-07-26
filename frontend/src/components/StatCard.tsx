@@ -24,7 +24,7 @@ export function StatCard({
 }) {
   return (
     <Card tint={tint ?? "white"}>
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="text-sm" style={{ color: "var(--text-secondary)" }}>
             {label}

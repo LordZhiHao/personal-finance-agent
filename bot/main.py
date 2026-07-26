@@ -8,6 +8,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, fil
 from bot.handlers import (
     handle_assets_command,
     handle_balance_command,
+    handle_dashboard_command,
     handle_document,
     handle_error,
     handle_expense_command,
@@ -84,6 +85,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(CommandHandler("link", handle_link_command))
+    app.add_handler(CommandHandler("dashboard", handle_dashboard_command))
     app.add_handler(CommandHandler("newaccount", handle_newaccount_command))
     app.add_handler(CommandHandler("expense", handle_expense_command))
     app.add_handler(CommandHandler("portfolio", handle_portfolio_command))
