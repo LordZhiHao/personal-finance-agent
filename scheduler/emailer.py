@@ -43,13 +43,13 @@ def build_html(data: dict) -> str:
     """
 
 
-def send_email(data: dict):
+def send_email(data: dict, to_email: str):
     msg = MIMEMultipart("alternative")
     msg["Subject"] = f"💰 Weekly Update — w/e {data['week_end'].strftime('%d %b %Y')}"
     msg["From"] = os.getenv("GMAIL_USER")
-    msg["To"] = os.getenv("NOTIFY_EMAIL")
+    msg["To"] = to_email
     msg.attach(MIMEText(build_html(data), "html"))
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(os.getenv("GMAIL_USER"), os.getenv("GMAIL_APP_PASSWORD"))
         server.send_message(msg)
-    logger.info("send_email: sent to %s", os.getenv("NOTIFY_EMAIL"))
+    logger.info("send_email: sent to %s", to_email)

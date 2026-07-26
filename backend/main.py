@@ -1,11 +1,12 @@
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 load_dotenv()
 
 from backend.config import CORS_ALLOWED_ORIGINS  # noqa: E402
-from backend.routers import accounts, auth_routes, investments, meta, spending  # noqa: E402
+from backend.routers import accounts, auth_routes, investments, meta, spending, telegram_link  # noqa: E402
 
 app = FastAPI(title="Personal Finance API")
 
@@ -17,7 +18,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.exception_handler(PermissionError)
+def _forbidden(request: Request, exc: PermissionError):
+    return JSONResponse(status_code=403, content={"detail": str(exc)})
+
+
+@app.exception_handler(LookupError)
+def _not_found(request: Request, exc: LookupError):
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
 app.include_router(auth_routes.router)
+app.include_router(telegram_link.router)
 app.include_router(meta.router)
 app.include_router(spending.router)
 app.include_router(investments.router)

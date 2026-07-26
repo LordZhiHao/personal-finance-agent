@@ -21,7 +21,7 @@ def update_equity_prices():
         logger.info("update_equity_prices: no equity positions held — skipping")
         return
 
-    accounts = {a["id"]: a["currency"] for a in get_accounts()}
+    accounts = {a["id"]: a for a in get_accounts()}
     symbols = sorted({TICKER_YFINANCE_MAP.get(p["ticker"], p["ticker"]) for p in positions})
     prices = fetch_prices(symbols)
 
@@ -40,7 +40,8 @@ def update_equity_prices():
         if not quote:
             logger.warning("update_equity_prices: no price for %s (%s) — excluded from snapshot", p["ticker"], symbol)
             continue
-        account_currency = accounts.get(p["account_id"], quote["currency"])
+        account = accounts.get(p["account_id"])
+        account_currency = account["currency"] if account else quote["currency"]
         value = p["quantity"] * convert(quote["price"], quote["currency"], account_currency)
         totals[p["account_id"]] = totals.get(p["account_id"], 0) + value
 
@@ -50,7 +51,8 @@ def update_equity_prices():
             account_id,
             today,
             total_value,
-            accounts[account_id],
+            accounts[account_id]["currency"],
+            user_id=accounts[account_id]["user_id"],
             notes="auto: hourly equity price update",
         )
 

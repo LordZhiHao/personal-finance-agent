@@ -12,38 +12,38 @@ router = APIRouter(prefix="/api/transactions", tags=["spending"])
 def list_transactions(
     start_date: str = Query(...),
     end_date: str = Query(...),
-    user: str = Depends(get_current_user),
+    user_id: str = Depends(get_current_user),
 ):
-    return get_transactions(start_date, end_date)
+    return get_transactions(start_date, end_date, user_id)
 
 
 @router.get("/summary")
 def expense_summary(
     start_date: str = Query(...),
     end_date: str = Query(...),
-    user: str = Depends(get_current_user),
+    user_id: str = Depends(get_current_user),
 ):
-    return summarize_transactions(get_transactions(start_date, end_date))
+    return summarize_transactions(get_transactions(start_date, end_date, user_id))
 
 
 @router.post("", status_code=201)
-def create_transaction(payload: TransactionCreate, user: str = Depends(get_current_user)):
+def create_transaction(payload: TransactionCreate, user_id: str = Depends(get_current_user)):
     row = payload.model_dump(mode="json")
     row["source"] = "manual"
-    result = insert_transactions([row])
+    result = insert_transactions([row], user_id)
     return result.data[0] if result.data else row
 
 
 @router.patch("/{transaction_id}")
-def patch_transaction(transaction_id: str, fields: TransactionUpdate, user: str = Depends(get_current_user)):
+def patch_transaction(transaction_id: str, fields: TransactionUpdate, user_id: str = Depends(get_current_user)):
     updates = fields.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
-    update_transaction(transaction_id, updates)
+    update_transaction(transaction_id, updates, user_id)
     return {"ok": True}
 
 
 @router.delete("/{transaction_id}")
-def delete_transaction(transaction_id: str, user: str = Depends(get_current_user)):
-    delete_transactions([transaction_id])
+def delete_transaction(transaction_id: str, user_id: str = Depends(get_current_user)):
+    delete_transactions([transaction_id], user_id)
     return {"ok": True}

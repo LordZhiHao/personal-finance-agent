@@ -1,6 +1,6 @@
 from datetime import date, timedelta
 
-from db.supabase import get_client
+from db.supabase import get_account_ids_for_user, get_client
 
 
 def summarize_transactions(txns: list[dict]) -> dict:
@@ -27,7 +27,7 @@ def summarize_transactions(txns: list[dict]) -> dict:
     }
 
 
-def get_weekly_data() -> dict:
+def get_weekly_data(user_id: str) -> dict:
     db = get_client()
     today = date.today()
     # Last full Mon–Sun window
@@ -35,13 +35,17 @@ def get_weekly_data() -> dict:
     week_end = today - timedelta(days=days_since_sunday)
     week_start = week_end - timedelta(days=6)
 
+    account_ids = get_account_ids_for_user(user_id)
+
     txns = (
         db.table("transactions")
         .select("*")
+        .in_("account_id", account_ids)
         .gte("date", week_start.isoformat())
         .lte("date", week_end.isoformat())
         .execute()
         .data
+        if account_ids else []
     )
 
     summary = summarize_transactions(txns)
@@ -49,10 +53,12 @@ def get_weekly_data() -> dict:
     snapshots = (
         db.table("asset_snapshots")
         .select("*, accounts(name, currency)")
+        .in_("account_id", account_ids)
         .order("snapshot_date", desc=True)
         .limit(50)
         .execute()
         .data
+        if account_ids else []
     )
     seen = {}
     for s in snapshots:

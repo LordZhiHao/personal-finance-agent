@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { api, qs } from "../api/client";
 import type {
   Account,
@@ -64,5 +64,11 @@ export function useBalances(currency: string) {
   return useQuery({
     queryKey: ["balances", currency],
     queryFn: () => api.get<BalancesSummary>(`/api/accounts/balances${qs({ currency })}`),
+  });
+}
+
+export function useGenerateTelegramLinkCode() {
+  return useMutation({
+    mutationFn: () => api.post<{ code: string; ttl_minutes: number }>("/api/telegram-link", {}),
   });
 }

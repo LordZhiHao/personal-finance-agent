@@ -1,5 +1,4 @@
-import os
-
+from db.supabase import get_all_users
 from scheduler.emailer import send_email
 from scheduler.report_builder import get_weekly_data
 from utils.logger import get_logger
@@ -40,20 +39,30 @@ _Next update: Sunday 8pm SGT_
 
 
 async def send_weekly_report(bot):
-    logger.info("send_weekly_report: building report")
-    data = get_weekly_data()
-    msg = format_telegram_message(data)
-    await bot.send_message(
-        chat_id=int(os.getenv("YOUR_TELEGRAM_CHAT_ID")),
-        text=msg,
-        parse_mode="Markdown",
-    )
-    logger.info(
-        "send_weekly_report: telegram sent — income=%.2f expenses=%.2f net=%.2f",
-        data["income"], data["expenses"], data["net"],
-    )
-    try:
-        send_email(data)
-    except Exception:
-        logger.exception("send_weekly_report: email send failed")
+    users = get_all_users()
+    logger.info("send_weekly_report: building reports for %d user(s)", len(users))
+    for user in users:
+        try:
+            data = get_weekly_data(user["id"])
+        except Exception:
+            logger.exception("send_weekly_report: failed building data for user_id=%s", user["id"])
+            continue
+        msg = format_telegram_message(data)
+
+        if user.get("telegram_chat_id"):
+            try:
+                await bot.send_message(chat_id=user["telegram_chat_id"], text=msg, parse_mode="Markdown")
+                logger.info(
+                    "send_weekly_report: telegram sent to user_id=%s — income=%.2f expenses=%.2f net=%.2f",
+                    user["id"], data["income"], data["expenses"], data["net"],
+                )
+            except Exception:
+                logger.exception("send_weekly_report: telegram send failed for user_id=%s", user["id"])
+
+        if user.get("notify_email"):
+            try:
+                send_email(data, to_email=user["notify_email"])
+            except Exception:
+                logger.exception("send_weekly_report: email send failed for user_id=%s", user["id"])
+
     logger.info("send_weekly_report: complete")

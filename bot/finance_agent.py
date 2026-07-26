@@ -98,30 +98,30 @@ TOOLS = [
 ]
 
 
-def _run_tool(name: str, args: dict) -> dict:
+def _run_tool(name: str, args: dict, user_id: str) -> dict:
     if name == "get_spending_summary":
         start, end, label = parse_period(args.get("period"))
-        txns = get_transactions(start.isoformat(), end.isoformat())
+        txns = get_transactions(start.isoformat(), end.isoformat(), user_id)
         return {"period": label, **summarize_transactions(txns)}
     if name == "get_holdings":
-        return compute_holdings_summary(DEFAULT_CURRENCY)
+        return compute_holdings_summary(user_id, DEFAULT_CURRENCY)
     if name == "get_balances":
-        return compute_account_balances(DEFAULT_CURRENCY)
+        return compute_account_balances(user_id, DEFAULT_CURRENCY)
     if name == "get_recent_transactions_tool":
         n = max(1, min(int(args.get("limit", 10)), 30))
-        return {"transactions": get_recent_transactions(n)}
+        return {"transactions": get_recent_transactions(n, user_id)}
     if name == "get_portfolio_trades":
         period = args.get("period")
         if period:
             start, end, label = parse_period(period)
-            events = get_portfolio_events(start.isoformat(), end.isoformat())
+            events = get_portfolio_events(start.isoformat(), end.isoformat(), user_id)
         else:
-            label, events = "all time", get_portfolio_events()
+            label, events = "all time", get_portfolio_events(user_id=user_id)
         return {"period": label, "events": events}
     return {"error": f"unknown tool {name!r}"}
 
 
-def answer_question(uid: int, raw_text: str) -> str:
+def answer_question(uid: int, raw_text: str, user_id: str) -> str:
     """Runs a bounded tool-calling loop against DeepSeek. Never raises — any failure
     (network, malformed tool call, etc.) is caught and turned into an apology string,
     the same graceful-degradation convention used elsewhere in this bot (e.g. weekly
@@ -146,7 +146,7 @@ def answer_question(uid: int, raw_text: str) -> str:
             for tc in msg.tool_calls:
                 args = json.loads(tc.function.arguments or "{}")
                 logger.info("answer_question: tool=%s args=%s user_id=%s", tc.function.name, args, uid)
-                result = _run_tool(tc.function.name, args)
+                result = _run_tool(tc.function.name, args, user_id)
                 messages.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(result, default=str)})
         if final_text is None:
             final_text = "Sorry, I couldn't finish answering that — try a more specific question."

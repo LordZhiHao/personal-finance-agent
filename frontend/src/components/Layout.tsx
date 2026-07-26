@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { to: "/investments", label: "📈 Investments" },
   { to: "/portfolio", label: "📊 Portfolio" },
   { to: "/balances", label: "💳 Balances" },
+  { to: "/settings", label: "⚙️ Settings" },
 ];
 
 export function Layout() {

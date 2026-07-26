@@ -4,8 +4,8 @@ import { Card } from "../components/ui/Card";
 import { Input } from "../components/ui/Input";
 import { Button } from "../components/ui/Button";
 
-export function LoginPage({ onSwitchToSignup }: { onSwitchToSignup: () => void }) {
-  const { login } = useAuth();
+export function SignupPage({ onSwitchToLogin }: { onSwitchToLogin: () => void }) {
+  const { signup } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -16,9 +16,9 @@ export function LoginPage({ onSwitchToSignup }: { onSwitchToSignup: () => void }
     setError(null);
     setSubmitting(true);
     try {
-      await login(email, password);
+      await signup(email, password);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Invalid email or password");
+      setError(err instanceof Error ? err.message : "Could not create account");
     } finally {
       setSubmitting(false);
     }
@@ -29,7 +29,7 @@ export function LoginPage({ onSwitchToSignup }: { onSwitchToSignup: () => void }
       <Card className="w-full max-w-sm">
         <form onSubmit={handleSubmit} className="space-y-4">
           <h1 className="text-xl font-semibold" style={{ color: "var(--text-heading)" }}>
-            🍊 Personal Finance Dashboard
+            🍊 Create your account
           </h1>
           <div className="space-y-1">
             <label className="text-sm" style={{ color: "var(--text-secondary)" }}>
@@ -50,10 +50,14 @@ export function LoginPage({ onSwitchToSignup }: { onSwitchToSignup: () => void }
             <Input
               type="password"
               required
+              minLength={8}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full"
             />
+            <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+              At least 8 characters.
+            </span>
           </div>
           {error && (
             <p className="text-sm" style={{ color: "var(--tint-red-text)" }}>
@@ -61,17 +65,17 @@ export function LoginPage({ onSwitchToSignup }: { onSwitchToSignup: () => void }
             </p>
           )}
           <Button type="submit" variant="primary" disabled={submitting} className="w-full">
-            {submitting ? "Logging in…" : "Log in"}
+            {submitting ? "Creating account…" : "Sign up"}
           </Button>
           <p className="text-sm text-center" style={{ color: "var(--text-secondary)" }}>
-            Don't have an account?{" "}
+            Already have an account?{" "}
             <button
               type="button"
-              onClick={onSwitchToSignup}
+              onClick={onSwitchToLogin}
               className="font-medium hover:underline"
               style={{ color: "var(--brand)" }}
             >
-              Sign up
+              Log in
             </button>
           </p>
         </form>

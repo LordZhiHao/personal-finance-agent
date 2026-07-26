@@ -5,6 +5,7 @@ import { SpendingPage } from "./pages/SpendingPage";
 import { InvestmentsPage } from "./pages/InvestmentsPage";
 import { PortfolioPage } from "./pages/PortfolioPage";
 import { BalancesPage } from "./pages/BalancesPage";
+import { SettingsPage } from "./pages/SettingsPage";
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
           <Route path="/investments" element={<InvestmentsPage />} />
           <Route path="/portfolio" element={<PortfolioPage />} />
           <Route path="/balances" element={<BalancesPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/spending" replace />} />
         </Route>
       </Routes>

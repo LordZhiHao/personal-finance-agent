@@ -1,5 +1,4 @@
 import json
-import os
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -8,18 +7,21 @@ from bot.extractor import extract_from_image, extract_from_pdf_images, extract_f
 from bot.finance_agent import answer_question
 from bot.router import classify_intent
 from db.supabase import (
+    consume_telegram_link_code,
+    create_account,
     delete_portfolio_events,
     delete_transactions,
     get_accounts,
     get_latest_snapshots,
     get_recent_transactions,
     get_transactions,
+    get_user_by_telegram_chat_id,
     insert_portfolio_events,
     insert_transactions,
 )
 from scheduler.report_builder import summarize_transactions
 from utils.balances import compute_account_balances
-from utils.constants import DEFAULT_CURRENCY
+from utils.constants import ACCOUNT_TYPES, CURRENCIES, DEFAULT_CURRENCY
 from utils.fx import convert
 from utils.formatters import format_money, format_pct
 from utils.logger import get_logger
@@ -28,22 +30,23 @@ from utils.portfolio import compute_holdings_summary
 
 logger = get_logger(__name__)
 
-ALLOWED_USER_IDS = {int(os.getenv("YOUR_TELEGRAM_CHAT_ID"))}
-
-# In-memory pending store: user_id → extracted data awaiting confirmation
+# In-memory pending store: telegram user_id → extracted data awaiting confirmation
 pending = {}
 
-# In-memory last-saved store: user_id → ids from the most recent confirm, for /undo
+# In-memory last-saved store: telegram user_id → ids from the most recent confirm, for /undo
 last_saved = {}
 
 TELEGRAM_MESSAGE_LIMIT = 4000  # headroom under Telegram's hard 4096-char cap
 
+UNLINKED_MSG = (
+    "🔒 This Telegram account isn't linked yet. Log into the web dashboard, "
+    "open *Link Telegram* in Settings, and send the code here as `/link 123456`."
+)
 
-def is_authorized(update: Update) -> bool:
-    authorized = update.effective_user.id in ALLOWED_USER_IDS
-    if not authorized:
-        logger.warning("Unauthorized access attempt from user_id=%s", update.effective_user.id)
-    return authorized
+
+def _resolve_user(update: Update) -> dict | None:
+    """Looks up the web account (a `users` row) linked to this Telegram chat, if any."""
+    return get_user_by_telegram_chat_id(update.effective_user.id)
 
 
 def _escape_md(text: str) -> str:
@@ -93,7 +96,9 @@ async def send_confirmation(update: Update, data: dict):
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_authorized(update):
+    user = _resolve_user(update)
+    if not user:
+        await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
     uid = update.effective_user.id
     logger.info("handle_photo: received photo from user_id=%s", uid)
@@ -120,7 +125,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_authorized(update):
+    user = _resolve_user(update)
+    if not user:
+        await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
     uid = update.effective_user.id
     doc = update.message.document
@@ -155,20 +162,32 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_authorized(update):
+    user = _resolve_user(update)
+    if not user:
+        await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
+    user_id = user["id"]
     raw_text = update.message.text.strip()
     text = raw_text.lower()
     uid = update.effective_user.id
 
     if text == "confirm":
-        data = pending.pop(uid, None)
+        data = pending.get(uid)
         if not data:
             logger.info("handle_text: confirm with nothing pending for user_id=%s", uid)
             await update.message.reply_text("Nothing pending to confirm.")
             return
-        accounts = get_accounts()
-        default_account_id = accounts[0]["id"] if accounts else None
+        accounts = get_accounts(user_id=user_id)
+        if not accounts:
+            logger.info("handle_text: confirm with no accounts for user_id=%s", uid)
+            await update.message.reply_text(
+                "⚠️ You don't have any accounts yet. Create one first, e.g.\n"
+                "/newaccount DBS bank SGD\n\n"
+                "Then reply `confirm` again — your pending entry is still saved."
+            )
+            return
+        pending.pop(uid, None)
+        default_account_id = accounts[0]["id"]
 
         txn_rows = [
             {
@@ -198,9 +217,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         saved_txn_ids, saved_trade_ids = [], []
         if txn_rows:
-            saved_txn_ids = [r["id"] for r in insert_transactions(txn_rows).data]
+            saved_txn_ids = [r["id"] for r in insert_transactions(txn_rows, user_id).data]
         if trade_rows:
-            saved_trade_ids = [r["id"] for r in insert_portfolio_events(trade_rows).data]
+            saved_trade_ids = [r["id"] for r in insert_portfolio_events(trade_rows, user_id).data]
         last_saved[uid] = {"transaction_ids": saved_txn_ids, "portfolio_event_ids": saved_trade_ids}
         total = len(txn_rows) + len(trade_rows)
         logger.info(
@@ -225,7 +244,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info("handle_text: intent=%s for user_id=%s", intent, uid)
 
         if intent == "chat":
-            reply = answer_question(uid, raw_text)
+            reply = answer_question(uid, raw_text, user_id)
             for chunk in chunk_lines(reply.split("\n")):
                 await update.message.reply_text(chunk)
             return
@@ -256,13 +275,57 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_confirmation(update, data)
 
 
+async def handle_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Redeems a short-lived code generated on the web dashboard's Settings page,
+    binding this Telegram chat to that web account. Runs without user resolution —
+    that's the entire point of this command."""
+    if not context.args:
+        await update.message.reply_text(
+            "Usage: /link <code> — get a code from the dashboard's Settings > Link Telegram page."
+        )
+        return
+    code = context.args[0].strip()
+    user = consume_telegram_link_code(code, update.effective_user.id)
+    if not user:
+        await update.message.reply_text("❌ That code is invalid or expired. Generate a new one from the dashboard.")
+        return
+    logger.info("handle_link_command: linked telegram_chat_id=%s to user_id=%s", update.effective_user.id, user["id"])
+    await update.message.reply_text(f"✅ Linked! This chat is now connected to {user['email']}.")
+
+
+async def handle_newaccount_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = _resolve_user(update)
+    if not user:
+        await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
+        return
+    if len(context.args) < 3:
+        await update.message.reply_text(
+            f"Usage: /newaccount <name> <{'|'.join(ACCOUNT_TYPES)}> <{'|'.join(CURRENCIES)}>"
+        )
+        return
+    name = context.args[0]
+    type_ = context.args[1].lower()
+    currency = context.args[2].upper()
+    if type_ not in ACCOUNT_TYPES:
+        await update.message.reply_text(f"Account type must be one of: {', '.join(ACCOUNT_TYPES)}")
+        return
+    if currency not in CURRENCIES:
+        await update.message.reply_text(f"Currency must be one of: {', '.join(CURRENCIES)}")
+        return
+    account = create_account(user["id"], name, type_, currency)
+    logger.info("handle_newaccount_command: user_id=%s created account_id=%s", user["id"], account["id"])
+    await update.message.reply_text(f"✅ Created account '{account['name']}' ({account['type']}, {account['currency']})")
+
+
 async def handle_expense_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_authorized(update):
+    user = _resolve_user(update)
+    if not user:
+        await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
     uid = update.effective_user.id
     arg = context.args[0] if context.args else None
     start, end, label = parse_period(arg)
-    txns = get_transactions(start.isoformat(), end.isoformat())
+    txns = get_transactions(start.isoformat(), end.isoformat(), user["id"])
     summary = summarize_transactions(txns)
 
     lines = [f"📊 *Expense Summary* — {label}", ""]
@@ -284,10 +347,12 @@ async def handle_expense_command(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def handle_portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_authorized(update):
+    user = _resolve_user(update)
+    if not user:
+        await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
     uid = update.effective_user.id
-    summary = compute_holdings_summary(DEFAULT_CURRENCY)
+    summary = compute_holdings_summary(user["id"], DEFAULT_CURRENCY)
     if not summary["holdings"]:
         await update.message.reply_text("No holdings found.")
         return
@@ -314,10 +379,12 @@ async def handle_portfolio_command(update: Update, context: ContextTypes.DEFAULT
 
 
 async def handle_assets_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_authorized(update):
+    user = _resolve_user(update)
+    if not user:
+        await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
     uid = update.effective_user.id
-    snapshots = get_latest_snapshots()
+    snapshots = get_latest_snapshots(user_id=user["id"])
     if not snapshots:
         await update.message.reply_text("No asset snapshots found.")
         return
@@ -337,19 +404,21 @@ async def handle_assets_command(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def handle_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_authorized(update):
+    user = _resolve_user(update)
+    if not user:
+        await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
     uid = update.effective_user.id
     query = " ".join(context.args).strip().lower() if context.args else None
 
-    accounts = get_accounts()
+    accounts = get_accounts(user_id=user["id"])
     if query:
         accounts = [a for a in accounts if query in a["name"].lower()]
         if not accounts:
             await update.message.reply_text(f"No account matching '{query}'.")
             return
 
-    result = compute_account_balances(DEFAULT_CURRENCY, accounts=accounts)
+    result = compute_account_balances(user["id"], DEFAULT_CURRENCY, accounts=accounts)
 
     lines = [f"💳 *Balances* — {DEFAULT_CURRENCY}", ""]
     for b in result["balances"]:
@@ -366,7 +435,9 @@ async def handle_balance_command(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def handle_recent_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_authorized(update):
+    user = _resolve_user(update)
+    if not user:
+        await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
     uid = update.effective_user.id
     try:
@@ -375,7 +446,7 @@ async def handle_recent_command(update: Update, context: ContextTypes.DEFAULT_TY
         n = 10
     n = max(1, min(n, 30))  # cap to stay comfortably under the Telegram message limit
 
-    txns = get_recent_transactions(n)
+    txns = get_recent_transactions(n, user["id"])
     if not txns:
         await update.message.reply_text("No transactions found.")
         return
@@ -395,7 +466,9 @@ async def handle_recent_command(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def handle_undo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_authorized(update):
+    user = _resolve_user(update)
+    if not user:
+        await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
     uid = update.effective_user.id
     saved = last_saved.pop(uid, None)
@@ -404,9 +477,9 @@ async def handle_undo_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     if saved["transaction_ids"]:
-        delete_transactions(saved["transaction_ids"])
+        delete_transactions(saved["transaction_ids"], user["id"])
     if saved["portfolio_event_ids"]:
-        delete_portfolio_events(saved["portfolio_event_ids"])
+        delete_portfolio_events(saved["portfolio_event_ids"], user["id"])
     total = len(saved["transaction_ids"]) + len(saved["portfolio_event_ids"])
 
     logger.info("handle_undo_command: user_id=%s reverted %d entries", uid, total)
@@ -426,10 +499,10 @@ async def handle_error(update: object, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_authorized(update):
-        return
     lines = [
         "*Available commands:*",
+        "/link <code> — link this chat to your web dashboard account",
+        "/newaccount <name> <type> <currency> — create your first account",
         "/expense [day|week|month|year] — spending summary (default: week)",
         "/portfolio — current holdings & unrealized gain/loss",
         "/assets — net worth across all accounts",

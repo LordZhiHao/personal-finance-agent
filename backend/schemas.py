@@ -2,12 +2,46 @@ from datetime import date
 
 from pydantic import BaseModel, field_validator, model_validator
 
-from utils.constants import CATEGORIES, PORTFOLIO_ACTIONS
+from utils.constants import ACCOUNT_TYPES, CATEGORIES, CURRENCIES, PORTFOLIO_ACTIONS
 
 
 class LoginRequest(BaseModel):
     email: str
     password: str
+
+
+class SignupRequest(BaseModel):
+    email: str
+    password: str
+
+    @field_validator("password")
+    @classmethod
+    def password_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters.")
+        if len(v.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 bytes.")
+        return v
+
+
+class AccountCreate(BaseModel):
+    name: str
+    type: str
+    currency: str
+
+    @field_validator("type")
+    @classmethod
+    def type_valid(cls, v: str) -> str:
+        if v not in ACCOUNT_TYPES:
+            raise ValueError(f"type must be one of {ACCOUNT_TYPES}")
+        return v
+
+    @field_validator("currency")
+    @classmethod
+    def currency_valid(cls, v: str) -> str:
+        if v not in CURRENCIES:
+            raise ValueError(f"currency must be one of {CURRENCIES}")
+        return v
 
 
 class TransactionUpdate(BaseModel):

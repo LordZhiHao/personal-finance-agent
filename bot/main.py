@@ -12,6 +12,8 @@ from bot.handlers import (
     handle_error,
     handle_expense_command,
     handle_help_command,
+    handle_link_command,
+    handle_newaccount_command,
     handle_photo,
     handle_portfolio_command,
     handle_recent_command,
@@ -65,6 +67,8 @@ def main():
     )
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    app.add_handler(CommandHandler("link", handle_link_command))
+    app.add_handler(CommandHandler("newaccount", handle_newaccount_command))
     app.add_handler(CommandHandler("expense", handle_expense_command))
     app.add_handler(CommandHandler("portfolio", handle_portfolio_command))
     app.add_handler(CommandHandler("assets", handle_assets_command))

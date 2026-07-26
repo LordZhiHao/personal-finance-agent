@@ -27,20 +27,20 @@ def _build_cost_basis_state(events: list[dict]) -> dict[tuple, dict]:
     return state
 
 
-def compute_holdings_summary(display_currency: str = "SGD") -> dict:
+def compute_holdings_summary(user_id: str, display_currency: str = "SGD") -> dict:
     """Current brokerage holdings with market value (from the latest equity_prices
     row per ticker) and unrealized gain/loss vs average-cost basis, all converted
     to display_currency. Holdings with no price available report market_value=None
     rather than being dropped, so a stale/unmapped ticker is still visible."""
-    positions = get_held_positions()
+    positions = get_held_positions(user_id)
     if not positions:
         return {"holdings": [], "total_market_value": 0.0, "total_cost_basis": 0.0,
                  "total_unrealized_gain": 0.0, "currency": display_currency}
 
-    accounts = {a["id"]: a for a in get_accounts(account_type="brokerage")}
+    accounts = {a["id"]: a for a in get_accounts(account_type="brokerage", user_id=user_id)}
     tickers = sorted({p["ticker"] for p in positions})
     prices = get_latest_equity_prices(tickers)
-    cost_state = _build_cost_basis_state(get_all_portfolio_events())
+    cost_state = _build_cost_basis_state(get_all_portfolio_events(user_id))
 
     holdings = []
     total_market_value = 0.0

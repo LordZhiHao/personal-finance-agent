@@ -1,7 +1,6 @@
-import os
 from datetime import date
 
-from db.supabase import get_transactions
+from db.supabase import get_transactions, get_users_with_telegram
 from scheduler.report_builder import summarize_transactions
 from utils.formatters import format_money
 from utils.logger import get_logger
@@ -34,12 +33,13 @@ def format_checkin_message(txns: list, today: date) -> str:
 
 async def send_daily_checkin(bot):
     today = date.today()
-    logger.info("send_daily_checkin: checking transactions for %s", today.isoformat())
-    txns = get_transactions(today.isoformat(), today.isoformat())
-    msg = format_checkin_message(txns, today)
-    await bot.send_message(
-        chat_id=int(os.getenv("YOUR_TELEGRAM_CHAT_ID")),
-        text=msg,
-        parse_mode="Markdown",
-    )
-    logger.info("send_daily_checkin: sent — %d transaction(s) found", len(txns))
+    users = get_users_with_telegram()
+    logger.info("send_daily_checkin: checking transactions for %s across %d user(s)", today.isoformat(), len(users))
+    for user in users:
+        try:
+            txns = get_transactions(today.isoformat(), today.isoformat(), user["id"])
+            msg = format_checkin_message(txns, today)
+            await bot.send_message(chat_id=user["telegram_chat_id"], text=msg, parse_mode="Markdown")
+            logger.info("send_daily_checkin: sent to user_id=%s — %d transaction(s) found", user["id"], len(txns))
+        except Exception:
+            logger.exception("send_daily_checkin: failed for user_id=%s", user["id"])
