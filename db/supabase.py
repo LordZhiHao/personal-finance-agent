@@ -140,6 +140,31 @@ def get_latest_snapshots(user_id: str | None = None):
     return list(seen.values())
 
 
+def get_snapshot_history(
+    user_id: str,
+    account_id: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+):
+    """Full asset_snapshots history (every row, not deduped to latest-per-account like
+    get_latest_snapshots), for plotting a net worth trend over time. Optionally scoped
+    to a single account_id (per-broker charts) and/or a date range."""
+    logger.debug("get_snapshot_history: account_id=%s start=%s end=%s", account_id, start_date, end_date)
+    db = get_client()
+    query = (
+        db.table("asset_snapshots")
+        .select("*, accounts(name, currency)")
+        .in_("account_id", get_account_ids_for_user(user_id))
+    )
+    if account_id is not None:
+        query = query.eq("account_id", account_id)
+    if start_date is not None:
+        query = query.gte("snapshot_date", start_date)
+    if end_date is not None:
+        query = query.lte("snapshot_date", end_date)
+    return query.order("snapshot_date").execute().data
+
+
 def get_accounts(account_type: str | list[str] | None = None, user_id: str | None = None):
     """user_id=None returns every tenant's accounts — used only by the legacy dashboard
     and system-wide jobs (e.g. the equity price updater)."""

@@ -3,9 +3,11 @@ import { format, subDays, subMonths, subYears } from "date-fns";
 import {
   useAccounts,
   useDividendForecast,
+  useHoldings,
   useMeta,
   usePortfolioEvents,
   useRefreshPrices,
+  useSnapshotHistory,
   useSnapshots,
 } from "../hooks/api";
 import { FilterBar, type FilterValue } from "../components/FilterBar";
@@ -18,8 +20,9 @@ import { AllocationBarChart } from "../components/charts/AllocationBarChart";
 import { DividendCalendar } from "../components/charts/DividendCalendar";
 import { UpcomingDividends } from "../components/charts/UpcomingDividends";
 import { TradeHistoryTable } from "../components/charts/TradeHistoryTable";
+import { HoldingsTable } from "../components/charts/HoldingsTable";
 import { formatMoney } from "../lib/format";
-import { Button, Select } from "../components/ui";
+import { Button, Card, Select, TabToggle } from "../components/ui";
 
 const today = format(new Date(), "yyyy-MM-dd");
 const defaultFilters: FilterValue = {
@@ -40,16 +43,22 @@ function periodCutoff(period: Period): string | null {
   return null;
 }
 
+type AllocationView = "broker" | "currency";
+
 export function InvestmentsPage() {
   const [filters, setFilters] = useState<FilterValue>(defaultFilters);
   const [hasCustomFilters, setHasCustomFilters] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [period, setPeriod] = useState<Period>("All");
+  const [selectedBrokerAccountId, setSelectedBrokerAccountId] = useState<string>("");
+  const [allocationView, setAllocationView] = useState<AllocationView>("broker");
 
   const displayCurrency = filters.currency ?? "SGD";
   const accountsQuery = useAccounts(["brokerage"]);
   const metaQuery = useMeta();
   const snapshotsQuery = useSnapshots(displayCurrency);
+  const historyQuery = useSnapshotHistory(displayCurrency, selectedBrokerAccountId || undefined);
+  const holdingsQuery = useHoldings(displayCurrency);
   const refreshPricesMutation = useRefreshPrices();
   const dividendForecastQuery = useDividendForecast();
   const eventsQuery = usePortfolioEvents(
@@ -73,11 +82,11 @@ export function InvestmentsPage() {
 
   const netWorthPoints = useMemo(() => {
     const totals = new Map<string, number>();
-    for (const s of snapshots) {
+    for (const s of historyQuery.data ?? []) {
       totals.set(s.snapshot_date, (totals.get(s.snapshot_date) ?? 0) + s.converted_value);
     }
     return [...totals.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, value]) => ({ date, value }));
-  }, [snapshots]);
+  }, [historyQuery.data]);
 
   const filteredNetWorthPoints = useMemo(() => {
     const cutoff = periodCutoff(period);
@@ -85,11 +94,41 @@ export function InvestmentsPage() {
     return netWorthPoints.filter((p) => p.date >= cutoff);
   }, [netWorthPoints, period]);
 
-  const allocation = useMemo(
+  const brokerOptions = useMemo(
+    () => [
+      { value: "", label: "All" },
+      ...(accountsQuery.data ?? []).map((a) => ({ value: a.id, label: a.name })),
+    ],
+    [accountsQuery.data],
+  );
+
+  const brokerAllocation = useMemo(
     () =>
       snapshots.map((s) => ({ name: s.accounts?.name ?? "Unknown", value: s.converted_value })),
     [snapshots],
   );
+
+  const currencyAllocation = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const s of snapshots) {
+      const key = s.accounts?.currency ?? "Unknown";
+      totals.set(key, (totals.get(key) ?? 0) + s.converted_value);
+    }
+    return [...totals.entries()].map(([name, value]) => ({ name, value }));
+  }, [snapshots]);
+
+  const allocationData = allocationView === "broker" ? brokerAllocation : currencyAllocation;
+
+  const topHoldings = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const h of holdingsQuery.data?.holdings ?? []) {
+      if (h.market_value === null) continue;
+      totals.set(h.ticker, (totals.get(h.ticker) ?? 0) + h.market_value);
+    }
+    return [...totals.entries()]
+      .sort(([, a], [, b]) => b - a)
+      .map(([name, value]) => ({ name, value }));
+  }, [holdingsQuery.data]);
 
   const eventsSorted = useMemo(() => [...events].sort((a, b) => b.date.localeCompare(a.date)), [events]);
 
@@ -108,39 +147,41 @@ export function InvestmentsPage() {
         }}
       />
 
-      <StatCard
-        label="Net Worth"
-        value={formatMoney(netWorth, displayCurrency)}
-        icon="💰"
-        tint="brand"
-        headerRight={
-          <div className="flex items-center gap-2">
-            {metaQuery.data && (
-              <Select
-                value={displayCurrency}
-                onChange={(e) => {
-                  setFilters({ ...filters, currency: e.target.value });
-                  setHasCustomFilters(true);
-                }}
-                className="w-24"
-              >
-                {metaQuery.data.currencies.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </Select>
-            )}
-            <Button
-              variant="ghost"
-              onClick={() => refreshPricesMutation.mutate()}
-              disabled={refreshPricesMutation.isPending}
-            >
-              {refreshPricesMutation.isPending ? "Refreshing…" : "🔄 Refresh Prices"}
-            </Button>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+        <StatCard label="Net Worth" value={formatMoney(netWorth, displayCurrency)} icon="💰" tint="brand" />
+        <Card>
+          <div className="text-sm mb-2" style={{ color: "var(--text-secondary)" }}>
+            Display Currency
           </div>
-        }
-      />
+          {metaQuery.data && (
+            <Select
+              value={displayCurrency}
+              onChange={(e) => {
+                setFilters({ ...filters, currency: e.target.value });
+                setHasCustomFilters(true);
+              }}
+            >
+              {metaQuery.data.currencies.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Card>
+        <Card>
+          <div className="text-sm mb-2" style={{ color: "var(--text-secondary)" }}>
+            Prices
+          </div>
+          <Button
+            variant="primary"
+            onClick={() => refreshPricesMutation.mutate()}
+            disabled={refreshPricesMutation.isPending}
+          >
+            {refreshPricesMutation.isPending ? "Refreshing…" : "🔄 Refresh Prices"}
+          </Button>
+        </Card>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <ChartCard
@@ -155,15 +196,30 @@ export function InvestmentsPage() {
             </Select>
           }
         >
+          <div className="mb-3">
+            <TabToggle options={brokerOptions} value={selectedBrokerAccountId} onChange={setSelectedBrokerAccountId} />
+          </div>
           {filteredNetWorthPoints.length > 0 ? (
             <NetWorthLineChart points={filteredNetWorthPoints} />
           ) : (
             <p style={{ color: "var(--text-secondary)" }}>No asset snapshots yet.</p>
           )}
         </ChartCard>
-        <ChartCard title="Asset Allocation">
-          {allocation.length > 0 ? (
-            <AssetAllocationDonut data={allocation} />
+        <ChartCard
+          title="Asset Allocation"
+          headerRight={
+            <TabToggle
+              options={[
+                { value: "broker", label: "Broker" },
+                { value: "currency", label: "Currency" },
+              ]}
+              value={allocationView}
+              onChange={setAllocationView}
+            />
+          }
+        >
+          {allocationData.length > 0 ? (
+            <AssetAllocationDonut data={allocationData} />
           ) : (
             <p style={{ color: "var(--text-secondary)" }}>No asset snapshots yet.</p>
           )}
@@ -171,11 +227,11 @@ export function InvestmentsPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <ChartCard title="Allocation by Account">
-          {allocation.length > 0 ? (
-            <AllocationBarChart data={allocation} currency={displayCurrency} />
+        <ChartCard title="Top Holdings">
+          {topHoldings.length > 0 ? (
+            <AllocationBarChart data={topHoldings} currency={displayCurrency} />
           ) : (
-            <p style={{ color: "var(--text-secondary)" }}>No asset snapshots yet.</p>
+            <p style={{ color: "var(--text-secondary)" }}>No holdings yet.</p>
           )}
         </ChartCard>
         <ChartCard title="Dividend Calendar">
@@ -185,6 +241,14 @@ export function InvestmentsPage() {
 
       <ChartCard title="Upcoming Dividends">
         <UpcomingDividends forecast={dividendForecastQuery.data ?? []} />
+      </ChartCard>
+
+      <ChartCard title="Positions">
+        <HoldingsTable
+          holdings={holdingsQuery.data?.holdings ?? []}
+          currency={displayCurrency}
+          totalMarketValue={holdingsQuery.data?.total_market_value}
+        />
       </ChartCard>
 
       <ChartCard

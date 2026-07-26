@@ -9,6 +9,7 @@ from db.supabase import (
     get_held_positions,
     get_latest_snapshots,
     get_portfolio_events,
+    get_snapshot_history,
     update_portfolio_event,
 )
 from scheduler.equity_price_updater import update_equity_prices
@@ -25,6 +26,22 @@ def snapshots(currency: str = "SGD", user_id: str = Depends(get_current_user)):
     """Latest asset_snapshots per account, each with converted_value added (converted
     to `currency` via utils/fx.py) so the frontend doesn't need its own FX calls."""
     rows = get_latest_snapshots(user_id=user_id)
+    for r in rows:
+        r["converted_value"] = convert(r["total_value"], r["currency"], currency)
+    return rows
+
+
+@router.get("/snapshots/history")
+def snapshot_history(
+    currency: str = "SGD",
+    account_id: str | None = Query(None),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    user_id: str = Depends(get_current_user),
+):
+    """Full asset_snapshots history (not just the latest row per account), for the Net
+    Worth Over Time chart. Same converted_value enrichment as GET /snapshots."""
+    rows = get_snapshot_history(user_id, account_id=account_id, start_date=start_date, end_date=end_date)
     for r in rows:
         r["converted_value"] = convert(r["total_value"], r["currency"], currency)
     return rows

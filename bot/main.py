@@ -44,6 +44,14 @@ async def post_init(app):
         update_equity_prices,
         trigger="interval",
         hours=1,
+        id="equity_prices_hourly",
+    )
+    scheduler.add_job(
+        update_equity_prices,
+        trigger="cron",
+        hour=23,
+        minute=50,
+        id="equity_prices_eod",
     )
     scheduler.add_job(
         send_daily_checkin,
@@ -62,7 +70,7 @@ async def post_init(app):
     scheduler.start()
     logger.info(
         "Scheduler started — weekly report every Sunday 8pm SGT, "
-        "daily check-in 10:30pm SGT, dividend check 8am SGT, equity prices hourly"
+        "daily check-in 10:30pm SGT, dividend check 8am SGT, equity prices hourly + 11:50pm SGT"
     )
 
 

@@ -46,6 +46,21 @@ export function useSnapshots(currency: string) {
   });
 }
 
+export function useSnapshotHistory(
+  currency: string,
+  accountId?: string,
+  startDate?: string,
+  endDate?: string,
+) {
+  return useQuery({
+    queryKey: ["snapshots-history", currency, accountId, startDate, endDate],
+    queryFn: () =>
+      api.get<AssetSnapshot[]>(
+        `/api/snapshots/history${qs({ currency, account_id: accountId, start_date: startDate, end_date: endDate })}`,
+      ),
+  });
+}
+
 export function usePortfolioEvents(startDate?: string, endDate?: string) {
   return useQuery({
     queryKey: ["portfolio-events", startDate, endDate],
