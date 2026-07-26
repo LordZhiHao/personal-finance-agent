@@ -1,5 +1,7 @@
 from datetime import date, timedelta
 
+from dateutil.relativedelta import relativedelta
+
 from db.supabase import get_account_ids_for_user, get_client
 
 
@@ -25,6 +27,40 @@ def summarize_transactions(txns: list[dict]) -> dict:
         "savings_rate": savings_rate,
         "by_category": by_category,
     }
+
+
+def month_comparison(txns: list[dict]) -> list[dict]:
+    """Expense-by-category totals across three calendar-month buckets — current,
+    previous, and the same month one year ago — mirroring
+    frontend/src/lib/dates.ts's monthComparison() so the bot's /compare command
+    and the dashboard's MonthComparisonBarChart agree on the same buckets.
+    Sorted descending by current-month spend."""
+    today = date.today()
+    current_month = today.replace(day=1)
+    previous_month = current_month - relativedelta(months=1)
+    year_ago_month = current_month - relativedelta(months=12)
+
+    totals: dict[str, dict[str, float]] = {}
+    for t in txns:
+        if t["amount"] >= 0:
+            continue
+        t_month = date.fromisoformat(t["date"]).replace(day=1)
+        if t_month == current_month:
+            bucket = "current"
+        elif t_month == previous_month:
+            bucket = "previous"
+        elif t_month == year_ago_month:
+            bucket = "year_ago"
+        else:
+            continue
+
+        cat = t.get("category") or "Other"
+        row = totals.setdefault(cat, {"current": 0.0, "previous": 0.0, "year_ago": 0.0})
+        row[bucket] += abs(t["amount"])
+
+    rows = [{"category": cat, **v} for cat, v in totals.items()]
+    rows.sort(key=lambda r: r["current"], reverse=True)
+    return rows
 
 
 def get_weekly_data(user_id: str) -> dict:

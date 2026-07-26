@@ -1,5 +1,8 @@
+import asyncio
 import json
+from datetime import date
 
+from dateutil.relativedelta import relativedelta
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -12,6 +15,7 @@ from db.supabase import (
     delete_portfolio_events,
     delete_transactions,
     get_accounts,
+    get_held_positions,
     get_latest_snapshots,
     get_recent_transactions,
     get_transactions,
@@ -19,9 +23,10 @@ from db.supabase import (
     insert_portfolio_events,
     insert_transactions,
 )
-from scheduler.report_builder import summarize_transactions
-from utils.balances import compute_account_balances
-from utils.constants import ACCOUNT_TYPES, CURRENCIES, DASHBOARD_URL, DEFAULT_CURRENCY
+from scheduler.report_builder import month_comparison, summarize_transactions
+from utils.balances import compute_account_balances, compute_net_worth_trend
+from utils.constants import ACCOUNT_TYPES, CURRENCIES, DASHBOARD_URL, DEFAULT_CURRENCY, TICKER_YFINANCE_MAP
+from utils.equity_pricing import fetch_dividend_forecast
 from utils.fx import convert
 from utils.formatters import format_money, format_pct
 from utils.logger import get_logger
@@ -346,6 +351,32 @@ async def handle_expense_command(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text(chunk, parse_mode="Markdown")
 
 
+async def handle_compare_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = _resolve_user(update)
+    if not user:
+        await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
+        return
+    uid = update.effective_user.id
+    start = date.today() - relativedelta(months=13)
+    txns = get_transactions(start.isoformat(), date.today().isoformat(), user["id"])
+    rows = month_comparison(txns)[:8]
+    if not rows:
+        await update.message.reply_text("No expenses in the last 13 months to compare.")
+        return
+
+    lines = [f"📊 *Month Comparison* — {DEFAULT_CURRENCY}", ""]
+    for r in rows:
+        lines.append(
+            f"▪️ {r['category']}: {format_money(r['current'], DEFAULT_CURRENCY)} this month | "
+            f"{format_money(r['previous'], DEFAULT_CURRENCY)} last month | "
+            f"{format_money(r['year_ago'], DEFAULT_CURRENCY)} same month last year"
+        )
+
+    logger.info("handle_compare_command: user_id=%s categories=%d", uid, len(rows))
+    for chunk in chunk_lines(lines):
+        await update.message.reply_text(chunk, parse_mode="Markdown")
+
+
 async def handle_portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = _resolve_user(update)
     if not user:
@@ -378,6 +409,81 @@ async def handle_portfolio_command(update: Update, context: ContextTypes.DEFAULT
         await update.message.reply_text(chunk, parse_mode="Markdown")
 
 
+async def handle_dividends_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = _resolve_user(update)
+    if not user:
+        await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
+        return
+    uid = update.effective_user.id
+    positions = get_held_positions(user["id"])
+    tickers = sorted({p["ticker"] for p in positions})
+    if not tickers:
+        await update.message.reply_text("No holdings found.")
+        return
+
+    symbols = {t: TICKER_YFINANCE_MAP.get(t, t) for t in tickers}
+    await update.message.reply_text("⏳ Checking dividend forecasts...")
+    # Blocking yfinance I/O — offloaded to a thread so it doesn't stall the bot's
+    # single asyncio event loop (and every other user's messages) while it runs.
+    forecast = await asyncio.to_thread(fetch_dividend_forecast, sorted(set(symbols.values())))
+
+    lines = ["💰 *Dividend Forecast*", ""]
+    no_forecast = []
+    for t in tickers:
+        f = forecast.get(symbols[t])
+        if not f or not f.get("ex_dividend_date"):
+            no_forecast.append(t)
+            continue
+        yield_str = f"{f['dividend_yield']:.2f}%" if f.get("dividend_yield") is not None else "—"
+        rate_str = f"{f['dividend_rate']:.2f} {f['currency']}" if f.get("dividend_rate") is not None else "—"
+        lines.append(f"▪️ {t}: next ex-div {f['ex_dividend_date']} | rate {rate_str}/share | yield {yield_str}")
+    if no_forecast:
+        lines.append("")
+        lines.append(f"⚠️ No forecast available for: {', '.join(no_forecast)}")
+
+    logger.info("handle_dividends_command: user_id=%s tickers=%d", uid, len(tickers))
+    for chunk in chunk_lines(lines):
+        await update.message.reply_text(chunk, parse_mode="Markdown")
+
+
+ALLOCATION_GROUPS = {"ticker": "ticker", "account": "account_name", "currency": "price_currency"}
+
+
+async def handle_allocation_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = _resolve_user(update)
+    if not user:
+        await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
+        return
+    uid = update.effective_user.id
+    group_arg = context.args[0].lower() if context.args else "ticker"
+    if group_arg not in ALLOCATION_GROUPS:
+        await update.message.reply_text(f"Usage: /allocation [{'|'.join(ALLOCATION_GROUPS)}]")
+        return
+    group_key = ALLOCATION_GROUPS[group_arg]
+
+    summary = compute_holdings_summary(user["id"], DEFAULT_CURRENCY)
+    if not summary["holdings"] or not summary["total_market_value"]:
+        await update.message.reply_text("No priced holdings to allocate.")
+        return
+
+    totals: dict[str, float] = {}
+    for h in summary["holdings"]:
+        if h["market_value"] is None:
+            continue
+        key = h[group_key] or "Unknown"
+        totals[key] = totals.get(key, 0.0) + h["market_value"]
+    rows = sorted(totals.items(), key=lambda x: x[1], reverse=True)
+
+    lines = [f"🧭 *Allocation by {group_arg}* — {DEFAULT_CURRENCY}", ""]
+    for name, value in rows:
+        pct = value / summary["total_market_value"] * 100
+        lines.append(f"▪️ {name}: {format_money(value, DEFAULT_CURRENCY)} ({pct:.1f}%)")
+
+    logger.info("handle_allocation_command: user_id=%s group=%s groups=%d", uid, group_arg, len(rows))
+    for chunk in chunk_lines(lines):
+        await update.message.reply_text(chunk, parse_mode="Markdown")
+
+
 async def handle_assets_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = _resolve_user(update)
     if not user:
@@ -397,6 +503,14 @@ async def handle_assets_command(update: Update, context: ContextTypes.DEFAULT_TY
         lines.append(f"▪️ {s['accounts']['name']}: {format_money(converted, DEFAULT_CURRENCY)}")
     lines.append("")
     lines.append(f"Total: {format_money(total, DEFAULT_CURRENCY)}")
+
+    trend = compute_net_worth_trend(user["id"], DEFAULT_CURRENCY, lookback_days=7)
+    if trend["delta"] is not None:
+        arrow = "▲" if trend["delta"] >= 0 else "▼"
+        lines.append(
+            f"{arrow} {format_money(trend['delta'], DEFAULT_CURRENCY)} "
+            f"({format_pct(trend['delta_pct'])}) vs 7 days ago"
+        )
 
     logger.info("handle_assets_command: user_id=%s accounts=%d total=%.2f", uid, len(snapshots), total)
     for chunk in chunk_lines(lines):
@@ -509,8 +623,11 @@ async def handle_help_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         "/dashboard — get the link to your web dashboard",
         "/newaccount <name> <type> <currency> — create your first account",
         "/expense [day|week|month|year|month_to_date] — spending summary (default: week)",
+        "/compare — this month vs last month vs same month last year, by category",
         "/portfolio — current holdings & unrealized gain/loss",
-        "/assets — net worth across all accounts",
+        "/dividends — next ex-dividend date, rate & yield per holding",
+        "/allocation [ticker|account|currency] — portfolio allocation % (default: ticker)",
+        "/assets — net worth across all accounts, with 7-day trend once enough history exists",
         "/balance [account] — balance for one account, or all accounts",
         "/recent [n] — last n transactions (default 10)",
         "/undo — revert your last confirmed save",

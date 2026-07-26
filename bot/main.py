@@ -6,9 +6,12 @@ from dotenv import load_dotenv
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 
 from bot.handlers import (
+    handle_allocation_command,
     handle_assets_command,
     handle_balance_command,
+    handle_compare_command,
     handle_dashboard_command,
+    handle_dividends_command,
     handle_document,
     handle_error,
     handle_expense_command,
@@ -88,7 +91,10 @@ def main():
     app.add_handler(CommandHandler("dashboard", handle_dashboard_command))
     app.add_handler(CommandHandler("newaccount", handle_newaccount_command))
     app.add_handler(CommandHandler("expense", handle_expense_command))
+    app.add_handler(CommandHandler("compare", handle_compare_command))
     app.add_handler(CommandHandler("portfolio", handle_portfolio_command))
+    app.add_handler(CommandHandler("dividends", handle_dividends_command))
+    app.add_handler(CommandHandler("allocation", handle_allocation_command))
     app.add_handler(CommandHandler("assets", handle_assets_command))
     app.add_handler(CommandHandler("balance", handle_balance_command))
     app.add_handler(CommandHandler("recent", handle_recent_command))
