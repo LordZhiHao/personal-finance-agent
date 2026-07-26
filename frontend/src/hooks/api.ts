@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, qs } from "../api/client";
 import type {
   Account,
@@ -64,6 +64,18 @@ export function useBalances(currency: string) {
   return useQuery({
     queryKey: ["balances", currency],
     queryFn: () => api.get<BalancesSummary>(`/api/accounts/balances${qs({ currency })}`),
+  });
+}
+
+export function useRefreshPrices() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.post<{ symbols_priced: number; accounts_refreshed: number }>("/api/refresh-prices", {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["snapshots"] });
+      queryClient.invalidateQueries({ queryKey: ["holdings"] });
+    },
   });
 }
 

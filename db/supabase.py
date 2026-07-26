@@ -104,6 +104,26 @@ def dashboard_insert_portfolio_event(row: dict, user_id: str | None = None):
     return result
 
 
+def update_portfolio_event(event_id: str, fields: dict, user_id: str):
+    """Unlike update_transaction, this has no legacy dashboard caller, so user_id is
+    required (standard convention). If fields moves the event to a different account,
+    the new account must also be owned by user_id."""
+    if "account_id" in fields:
+        _validate_owned_account(fields["account_id"], user_id)
+    logger.info("update_portfolio_event: id=%s fields=%s", event_id, list(fields.keys()))
+    db = get_client(use_service_key=True)
+    result = (
+        db.table("portfolio_events")
+        .update(fields)
+        .eq("id", event_id)
+        .in_("account_id", get_account_ids_for_user(user_id))
+        .execute()
+    )
+    if not result.data:
+        raise LookupError(f"Portfolio event {event_id} not found")
+    return result
+
+
 def get_latest_snapshots(user_id: str | None = None):
     """user_id=None returns every tenant's latest snapshots — used only by the legacy
     dashboard and the system-wide equity price updater."""

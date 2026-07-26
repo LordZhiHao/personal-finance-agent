@@ -1,4 +1,5 @@
 from datetime import date
+from datetime import date as _date
 
 from pydantic import BaseModel, field_validator, model_validator
 
@@ -103,4 +104,54 @@ class PortfolioEventCreate(BaseModel):
     def price_positive_unless_dividend(self):
         if self.price <= 0 and self.action != "DIVIDEND":
             raise ValueError("Price must be greater than 0.")
+        return self
+
+
+class PortfolioEventUpdate(BaseModel):
+    """All fields optional for partial updates from the trade history table's inline
+    editor — only fields the client actually changed are sent (exclude_unset)."""
+    account_id: str | None = None
+    # _date alias avoids self-shadowing: "date: date | None = None" stores None to the
+    # class-body name `date` before the annotation is evaluated, so a bare `date` here
+    # would resolve to None instead of the datetime.date class.
+    date: _date | None = None
+    ticker: str | None = None
+    action: str | None = None
+    quantity: float | None = None
+    price: float | None = None
+    currency: str | None = None
+    fees: float | None = None
+    notes: str | None = None
+
+    @field_validator("ticker")
+    @classmethod
+    def ticker_not_blank(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if not v.strip():
+            raise ValueError("Ticker Symbol is required.")
+        return v.strip().upper()
+
+    @field_validator("action")
+    @classmethod
+    def action_valid(cls, v: str | None) -> str | None:
+        if v is not None and v not in PORTFOLIO_ACTIONS:
+            raise ValueError(f"action must be one of {PORTFOLIO_ACTIONS}")
+        return v
+
+    @field_validator("quantity")
+    @classmethod
+    def quantity_positive(cls, v: float | None) -> float | None:
+        if v is not None and v <= 0:
+            raise ValueError("Quantity must be greater than 0.")
+        return v
+
+    @model_validator(mode="after")
+    def price_positive_unless_dividend(self):
+        # A partial update may set price without touching action (or vice versa) — only
+        # enforce when action was explicitly included in this request, since otherwise
+        # we can't tell if the row's existing (unset-here) action is DIVIDEND.
+        if self.price is not None and self.price <= 0 and "action" in self.model_fields_set:
+            if self.action != "DIVIDEND":
+                raise ValueError("Price must be greater than 0.")
         return self

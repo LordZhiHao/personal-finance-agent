@@ -13,12 +13,14 @@ export function StatCard({
   icon,
   tint,
   delta,
+  headerRight,
 }: {
   label: string;
   value: string;
   icon?: ReactNode;
   tint?: CardTint;
   delta?: StatCardDelta;
+  headerRight?: ReactNode;
 }) {
   return (
     <Card tint={tint ?? "white"}>
@@ -39,7 +41,10 @@ export function StatCard({
             </div>
           )}
         </div>
-        {icon && <IconBadge icon={icon} tint={tint ?? "brand"} />}
+        <div className="flex items-center gap-2">
+          {headerRight}
+          {icon && <IconBadge icon={icon} tint={tint ?? "brand"} />}
+        </div>
       </div>
     </Card>
   );

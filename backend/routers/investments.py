@@ -1,13 +1,16 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.concurrency import run_in_threadpool
 
 from backend.auth import get_current_user
-from backend.schemas import PortfolioEventCreate
+from backend.schemas import PortfolioEventCreate, PortfolioEventUpdate
 from db.supabase import (
     dashboard_insert_portfolio_event,
     delete_portfolio_events,
     get_latest_snapshots,
     get_portfolio_events,
+    update_portfolio_event,
 )
+from scheduler.equity_price_updater import update_equity_prices
 from utils.fx import convert
 from utils.portfolio import compute_holdings_summary
 
@@ -46,10 +49,29 @@ def create_portfolio_event(payload: PortfolioEventCreate, user_id: str = Depends
     return result.data[0] if result.data else row
 
 
+@router.patch("/portfolio-events/{event_id}")
+def patch_portfolio_event(
+    event_id: str, fields: PortfolioEventUpdate, user_id: str = Depends(get_current_user)
+):
+    updates = fields.model_dump(exclude_unset=True, mode="json")
+    if not updates:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+    update_portfolio_event(event_id, updates, user_id)
+    return {"ok": True}
+
+
 @router.delete("/portfolio-events/{event_id}")
 def delete_portfolio_event(event_id: str, user_id: str = Depends(get_current_user)):
     delete_portfolio_events([event_id], user_id)
     return {"ok": True}
+
+
+@router.post("/refresh-prices")
+async def refresh_prices(user_id: str = Depends(get_current_user)):
+    """Manual on-demand equivalent of the hourly APScheduler job — scoped to only this
+    user's held positions/accounts. Runs in a threadpool since yfinance calls are
+    blocking network I/O and must not block the event loop."""
+    return await run_in_threadpool(update_equity_prices, user_id)
 
 
 @router.get("/holdings")

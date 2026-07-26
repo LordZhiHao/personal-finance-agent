@@ -14,14 +14,17 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 
-def update_equity_prices():
-    logger.info("update_equity_prices: starting")
-    positions = get_held_positions()
+def update_equity_prices(user_id: str | None = None):
+    """user_id=None (the hourly APScheduler job) prices every tenant's held positions in
+    one batch. A concrete user_id (the manual "Refresh Prices" button) scopes both the
+    held-position lookup and the account lookup to that user only."""
+    logger.info("update_equity_prices: starting (user_id=%s)", user_id)
+    positions = get_held_positions(user_id)
     if not positions:
         logger.info("update_equity_prices: no equity positions held — skipping")
-        return
+        return {"symbols_priced": 0, "accounts_refreshed": 0}
 
-    accounts = {a["id"]: a for a in get_accounts()}
+    accounts = {a["id"]: a for a in get_accounts(user_id=user_id)}
     symbols = sorted({TICKER_YFINANCE_MAP.get(p["ticker"], p["ticker"]) for p in positions})
     prices = fetch_prices(symbols)
 
@@ -60,3 +63,4 @@ def update_equity_prices():
         "update_equity_prices: complete — %d symbol(s) priced, %d account snapshot(s) refreshed",
         len(price_rows), len(totals),
     )
+    return {"symbols_priced": len(price_rows), "accounts_refreshed": len(totals)}

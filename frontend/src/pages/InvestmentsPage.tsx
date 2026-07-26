@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { format, subDays, subMonths, subYears } from "date-fns";
-import { useAccounts, useMeta, usePortfolioEvents, useSnapshots } from "../hooks/api";
+import { useAccounts, useMeta, usePortfolioEvents, useRefreshPrices, useSnapshots } from "../hooks/api";
 import { FilterBar, type FilterValue } from "../components/FilterBar";
 import { StatCard } from "../components/StatCard";
 import { ChartCard } from "../components/ChartCard";
@@ -42,6 +42,7 @@ export function InvestmentsPage() {
   const accountsQuery = useAccounts(["brokerage"]);
   const metaQuery = useMeta();
   const snapshotsQuery = useSnapshots(displayCurrency);
+  const refreshPricesMutation = useRefreshPrices();
   const eventsQuery = usePortfolioEvents(
     hasCustomFilters ? filters.startDate : undefined,
     hasCustomFilters ? filters.endDate : undefined,
@@ -98,7 +99,39 @@ export function InvestmentsPage() {
         }}
       />
 
-      <StatCard label="Net Worth" value={formatMoney(netWorth, displayCurrency)} icon="💰" tint="brand" />
+      <StatCard
+        label="Net Worth"
+        value={formatMoney(netWorth, displayCurrency)}
+        icon="💰"
+        tint="brand"
+        headerRight={
+          <div className="flex items-center gap-2">
+            {metaQuery.data && (
+              <Select
+                value={displayCurrency}
+                onChange={(e) => {
+                  setFilters({ ...filters, currency: e.target.value });
+                  setHasCustomFilters(true);
+                }}
+                className="w-24"
+              >
+                {metaQuery.data.currencies.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </Select>
+            )}
+            <Button
+              variant="ghost"
+              onClick={() => refreshPricesMutation.mutate()}
+              disabled={refreshPricesMutation.isPending}
+            >
+              {refreshPricesMutation.isPending ? "Refreshing…" : "🔄 Refresh Prices"}
+            </Button>
+          </div>
+        }
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <ChartCard
@@ -149,7 +182,14 @@ export function InvestmentsPage() {
           </Button>
         }
       >
-        <TradeHistoryTable events={eventsSorted} refetchKey={["portfolio-events"]} />
+        {metaQuery.data && (
+          <TradeHistoryTable
+            events={eventsSorted}
+            refetchKey={["portfolio-events"]}
+            meta={metaQuery.data}
+            accounts={accountsQuery.data ?? []}
+          />
+        )}
       </ChartCard>
 
       {dialogOpen && metaQuery.data && (
