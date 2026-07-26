@@ -119,6 +119,14 @@ export function InvestmentsPage() {
 
   const allocationData = allocationView === "broker" ? brokerAllocation : currencyAllocation;
 
+  const tickerNames = useMemo(() => {
+    const names: Record<string, string> = {};
+    for (const h of holdingsQuery.data?.holdings ?? []) {
+      if (h.name && !names[h.ticker]) names[h.ticker] = h.name;
+    }
+    return names;
+  }, [holdingsQuery.data]);
+
   const topHoldings = useMemo(() => {
     const totals = new Map<string, number>();
     for (const h of holdingsQuery.data?.holdings ?? []) {
@@ -127,8 +135,8 @@ export function InvestmentsPage() {
     }
     return [...totals.entries()]
       .sort(([, a], [, b]) => b - a)
-      .map(([name, value]) => ({ name, value }));
-  }, [holdingsQuery.data]);
+      .map(([name, value]) => ({ name, subtitle: tickerNames[name], value }));
+  }, [holdingsQuery.data, tickerNames]);
 
   const eventsSorted = useMemo(() => [...events].sort((a, b) => b.date.localeCompare(a.date)), [events]);
 
@@ -234,7 +242,7 @@ export function InvestmentsPage() {
       </div>
 
       <ChartCard title="Upcoming Dividends">
-        <UpcomingDividends forecast={dividendForecastQuery.data ?? []} />
+        <UpcomingDividends forecast={dividendForecastQuery.data ?? []} names={tickerNames} />
       </ChartCard>
 
       <ChartCard title="Positions">

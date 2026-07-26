@@ -2,7 +2,13 @@ import type { DividendForecast } from "../../types";
 import { Table, Thead, Tbody, Tr, Th, Td } from "../ui/Table";
 import { formatMoney } from "../../lib/format";
 
-export function UpcomingDividends({ forecast }: { forecast: DividendForecast[] }) {
+export function UpcomingDividends({
+  forecast,
+  names,
+}: {
+  forecast: DividendForecast[];
+  names?: Record<string, string>;
+}) {
   if (forecast.length === 0) {
     return <p style={{ color: "var(--text-secondary)" }}>No held tickers yet.</p>;
   }
@@ -19,7 +25,14 @@ export function UpcomingDividends({ forecast }: { forecast: DividendForecast[] }
         <Tbody>
           {forecast.map((f) => (
             <Tr key={f.ticker}>
-              <Td className="font-medium">{f.ticker}</Td>
+              <Td>
+                <div className="font-medium">{f.ticker}</div>
+                {names?.[f.ticker] && (
+                  <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                    {names[f.ticker]}
+                  </div>
+                )}
+              </Td>
               <Td style={{ color: "var(--text-secondary)" }}>{f.ex_dividend_date ?? "—"}</Td>
               <Td align="right">
                 {f.dividend_rate !== null ? formatMoney(f.dividend_rate, f.currency ?? "") : "—"}

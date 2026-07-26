@@ -3,6 +3,7 @@ import { formatMoney } from "../../lib/format";
 
 export interface AllocationSlice {
   name: string;
+  subtitle?: string;
   value: number;
 }
 
@@ -18,9 +19,16 @@ export function AllocationBarChart({ data, currency }: { data: AllocationSlice[]
         const color = colorForKey(d.name, names);
         return (
           <div key={d.name}>
-            <div className="flex items-center justify-between text-sm mb-1">
-              <span style={{ color: "var(--text-primary)" }}>{d.name}</span>
-              <span className="tabular-nums" style={{ color: "var(--text-secondary)" }}>
+            <div className="flex items-end justify-between text-sm mb-1">
+              <div>
+                <div style={{ color: "var(--text-primary)" }}>{d.name}</div>
+                {d.subtitle && (
+                  <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                    {d.subtitle}
+                  </div>
+                )}
+              </div>
+              <span className="tabular-nums shrink-0" style={{ color: "var(--text-secondary)" }}>
                 {formatMoney(d.value, currency)} · {pct.toFixed(1)}%
               </span>
             </div>
