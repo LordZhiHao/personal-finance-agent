@@ -1,108 +1,153 @@
-import { useEffect, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { NavLink, Outlet } from "react-router-dom";
+import {
+  Bot,
+  PieChart,
+  Receipt,
+  Settings as SettingsIcon,
+  TrendingUp,
+  Wallet,
+  type LucideIcon,
+} from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { Button } from "./ui/Button";
 
-const NAV_ITEMS = [
-  { to: "/spending", label: "💸 Spending" },
-  { to: "/investments", label: "📈 Investments" },
-  { to: "/portfolio", label: "📊 Portfolio" },
-  { to: "/balances", label: "💳 Balances" },
-  { to: "/chat", label: "💬 Chat" },
-  { to: "/settings", label: "⚙️ Settings" },
+interface NavItem {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+}
+
+const MAIN_NAV_ITEMS: NavItem[] = [
+  { to: "/portfolio", label: "Portfolio", icon: PieChart },
+  { to: "/balances", label: "Balances", icon: Wallet },
+  { to: "/spending", label: "Spending", icon: Receipt },
+  { to: "/investments", label: "Investments", icon: TrendingUp },
+  { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];
+
+const CHAT_NAV_ITEM: NavItem = { to: "/chat", label: "Chat", icon: Bot };
+
+function NavIconLink({ item }: { item: NavItem }) {
+  const Icon = item.icon;
+  return (
+    <NavLink
+      to={item.to}
+      aria-label={item.label}
+      title={item.label}
+      className="relative flex items-center justify-center shrink-0 transition-colors"
+      style={({ isActive }) => ({
+        width: 40,
+        height: 40,
+        borderRadius: "var(--radius-control)",
+        background: isActive ? "var(--brand-tint)" : "transparent",
+        color: isActive ? "var(--brand)" : "var(--text-secondary)",
+      })}
+    >
+      {({ isActive }) => <Icon size={20} strokeWidth={isActive ? 2.25 : 2} />}
+    </NavLink>
+  );
+}
+
+function NavDivider() {
+  return <div aria-hidden="true" style={{ width: 1, height: 24, background: "var(--border)" }} />;
+}
 
 export function Layout() {
   const { logout, email } = useAuth();
   const initial = email ? email.trim()[0]?.toUpperCase() : "?";
-  const [menuOpen, setMenuOpen] = useState(false);
-  const location = useLocation();
-
-  useEffect(() => {
-    setMenuOpen(false);
-  }, [location.pathname]);
 
   return (
     <div className="min-h-screen" style={{ background: "var(--page)" }}>
+      {/* Desktop: three floating capsules — logo, centered nav, account cluster */}
+      <div
+        className="hidden md:grid sticky top-4 z-40 items-center px-4 md:px-6"
+        style={{ gridTemplateColumns: "1fr auto 1fr", columnGap: "1rem" }}
+      >
+        <div className="flex items-center">
+          <h1
+            className="flex items-center gap-2 text-base font-semibold px-4 py-2 rounded-full"
+            style={{ background: "var(--surface-1)", boxShadow: "var(--shadow-card)" }}
+          >
+            <img src="/logo-mark.png" alt="" className="h-6 w-6" />
+            <span style={{ color: "var(--text-heading)" }}>
+              Finance<span style={{ color: "var(--brand)" }}>Ku</span>
+            </span>
+          </h1>
+        </div>
+
+        <nav
+          className="flex items-center gap-1 px-2 py-2 rounded-full justify-self-center"
+          style={{ background: "var(--surface-1)", boxShadow: "var(--shadow-card)" }}
+        >
+          {MAIN_NAV_ITEMS.map((item) => (
+            <NavIconLink key={item.to} item={item} />
+          ))}
+          <NavDivider />
+          <NavIconLink item={CHAT_NAV_ITEM} />
+        </nav>
+
+        <div
+          className="flex items-center gap-2 px-3 py-2 rounded-full justify-self-end"
+          style={{ background: "var(--surface-1)", boxShadow: "var(--shadow-card)" }}
+        >
+          <div
+            className="flex items-center justify-center rounded-full text-xs font-semibold"
+            style={{ width: 32, height: 32, background: "var(--brand-tint)", color: "var(--brand-hover)" }}
+          >
+            {initial}
+          </div>
+          <span className="text-sm hidden lg:inline" style={{ color: "var(--text-primary)" }}>
+            {email ?? "Account"}
+          </span>
+          <Button variant="outline" onClick={logout}>
+            Logout
+          </Button>
+        </div>
+      </div>
+
+      {/* Mobile: slim top bar (logo + account), nav lives in the fixed bottom bar below */}
       <header
-        className="flex items-center gap-3 md:gap-6 px-4 py-3 md:px-6"
+        className="md:hidden sticky top-0 z-30 flex items-center justify-between gap-3 px-4 py-3"
         style={{ background: "var(--surface-1)", boxShadow: "var(--shadow-card)" }}
       >
-        <button
-          type="button"
-          onClick={() => setMenuOpen((v) => !v)}
-          className="md:hidden text-xl leading-none px-1"
-          style={{ color: "var(--text-primary)" }}
-          aria-label="Toggle navigation menu"
-          aria-expanded={menuOpen}
-        >
-          {menuOpen ? "✕" : "☰"}
-        </button>
-        <h1 className="flex items-center gap-2 text-base font-semibold shrink-0">
+        <h1 className="flex items-center gap-2 text-base font-semibold">
           <img src="/logo-mark.png" alt="" className="h-7 w-7" />
           <span style={{ color: "var(--text-heading)" }}>
             Finance<span style={{ color: "var(--brand)" }}>Ku</span>
           </span>
         </h1>
-        <nav className="hidden md:flex items-center gap-1 flex-1">
-          {NAV_ITEMS.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                `px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
-                  isActive ? "" : "border-transparent hover:opacity-80"
-                }`
-              }
-              style={({ isActive }) => ({
-                color: isActive ? "var(--brand)" : "var(--text-secondary)",
-                borderColor: isActive ? "var(--brand)" : "transparent",
-              })}
-            >
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
-        <div className="flex items-center gap-3 shrink-0 ml-auto md:ml-0">
-          <div className="flex items-center gap-2">
-            <div
-              className="flex items-center justify-center rounded-full text-xs font-semibold"
-              style={{ width: 32, height: 32, background: "var(--brand-tint)", color: "var(--brand-hover)" }}
-            >
-              {initial}
-            </div>
-            <span className="text-sm hidden sm:inline" style={{ color: "var(--text-primary)" }}>
-              {email ?? "Account"}
-            </span>
+        <div className="flex items-center gap-2">
+          <div
+            className="flex items-center justify-center rounded-full text-xs font-semibold"
+            style={{ width: 32, height: 32, background: "var(--brand-tint)", color: "var(--brand-hover)" }}
+          >
+            {initial}
           </div>
           <Button variant="outline" onClick={logout}>
             Logout
           </Button>
         </div>
       </header>
-      {menuOpen && (
-        <nav
-          className="md:hidden flex flex-col px-4 py-2"
-          style={{ background: "var(--surface-1)", boxShadow: "var(--shadow-card)" }}
-        >
-          {NAV_ITEMS.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className="px-2 py-3 text-sm font-medium border-b"
-              style={({ isActive }) => ({
-                color: isActive ? "var(--brand)" : "var(--text-secondary)",
-                borderColor: "var(--gridline)",
-              })}
-            >
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
-      )}
-      <main className="p-4 md:p-6 overflow-x-hidden max-w-[1400px] mx-auto">
+
+      <main className="p-4 pb-24 md:p-6 overflow-x-hidden max-w-[1400px] mx-auto">
         <Outlet />
       </main>
+
+      <nav
+        className="md:hidden fixed bottom-0 inset-x-0 z-40 flex items-center justify-around px-2 py-2"
+        style={{
+          background: "var(--surface-1)",
+          boxShadow: "var(--shadow-card)",
+          borderTop: "1px solid var(--border)",
+          paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))",
+        }}
+      >
+        {MAIN_NAV_ITEMS.map((item) => (
+          <NavIconLink key={item.to} item={item} />
+        ))}
+        <NavDivider />
+        <NavIconLink item={CHAT_NAV_ITEM} />
+      </nav>
     </div>
   );
 }
