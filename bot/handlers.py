@@ -3,9 +3,10 @@ import json
 from datetime import date
 
 from dateutil.relativedelta import relativedelta
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
+from bot.account_matcher import match_account
 from bot.extractor import extract_from_image, extract_from_pdf_images, extract_from_text
 from bot.finance_agent import answer_question
 from bot.router import classify_intent
@@ -38,6 +39,10 @@ logger = get_logger(__name__)
 
 # In-memory last-saved store: telegram user_id → ids from the most recent auto-save, for /undo
 last_saved = {}
+
+# In-memory store: telegram user_id → {"data": ..., "user_id": ...} awaiting an account choice
+# via the inline-keyboard prompt sent by _commit_and_reply when match_account is unsure.
+pending_account_choice = {}
 
 TELEGRAM_MESSAGE_LIMIT = 4000  # headroom under Telegram's hard 4096-char cap
 
@@ -148,25 +153,57 @@ def save_extraction(data: dict, user_id: str, account_id: str) -> dict:
     }
 
 
-async def _commit_and_reply(update: Update, data: dict, user_id: str, uid: int) -> None:
-    """Shared tail end of handle_photo/handle_document/handle_text's record path:
-    resolves the caller's default account, auto-commits via save_extraction (no
-    confirm step), records ids in last_saved for /undo, and replies with a summary."""
-    accounts = get_accounts(user_id=user_id)
-    if not accounts:
-        logger.info("_commit_and_reply: no accounts for user_id=%s", uid)
-        await update.message.reply_text(NO_ACCOUNTS_MSG)
-        return
-    result = save_extraction(data, user_id, accounts[0]["id"])
+async def _finalize(update: Update, data: dict, user_id: str, uid: int, account_id: str) -> None:
+    """Commits via save_extraction, records ids in last_saved for /undo, and replies with
+    a summary. Shared tail end of both the confident-match path and the account-choice
+    callback below."""
+    result = save_extraction(data, user_id, account_id)
     last_saved[uid] = {
         "transaction_ids": result["transaction_ids"],
         "portfolio_event_ids": result["portfolio_event_ids"],
     }
     logger.info(
-        "_commit_and_reply: saved %d transaction(s), %d portfolio event(s) for user_id=%s",
-        len(result["transaction_ids"]), len(result["portfolio_event_ids"]), uid,
+        "_finalize: saved %d transaction(s), %d portfolio event(s) for user_id=%s account_id=%s",
+        len(result["transaction_ids"]), len(result["portfolio_event_ids"]), uid, account_id,
     )
     await send_saved(update, data)
+
+
+async def _commit_and_reply(update: Update, data: dict, user_id: str, uid: int) -> None:
+    """Shared tail end of handle_photo/handle_document/handle_text's record path:
+    resolves the caller's accounts, uses match_account to pick one (or asks via an
+    inline-keyboard prompt if unsure), then auto-commits (no confirm step for the
+    entry's contents — only the account can be ambiguous)."""
+    accounts = get_accounts(user_id=user_id)
+    if not accounts:
+        logger.info("_commit_and_reply: no accounts for user_id=%s", uid)
+        await update.message.reply_text(NO_ACCOUNTS_MSG)
+        return
+    match = match_account(data, accounts)
+    if match["account_id"]:
+        await _finalize(update, data, user_id, uid, match["account_id"])
+        return
+    pending_account_choice[uid] = {"data": data, "user_id": user_id}
+    keyboard = InlineKeyboardMarkup(
+        [[InlineKeyboardButton(a["name"], callback_data=f"acct:{a['id']}")] for a in match["candidates"]]
+    )
+    logger.info("_commit_and_reply: account unsure for user_id=%s, prompting %d candidate(s)", uid, len(match["candidates"]))
+    await update.message.reply_text("Which account should I log this to?", reply_markup=keyboard)
+
+
+async def handle_account_choice_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Resolves the inline-keyboard account prompt sent by _commit_and_reply when
+    match_account was unsure."""
+    query = update.callback_query
+    await query.answer()
+    uid = query.from_user.id
+    pending = pending_account_choice.pop(uid, None)
+    if not pending:
+        await query.edit_message_text("This request has expired — please resend the receipt/message.")
+        return
+    await query.edit_message_reply_markup(reply_markup=None)  # prevent double-taps on the same prompt
+    account_id = query.data.split(":", 1)[1]
+    await _finalize(query, pending["data"], pending["user_id"], uid, account_id)
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):

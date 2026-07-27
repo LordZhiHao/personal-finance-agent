@@ -180,15 +180,46 @@ def get_accounts(account_type: str | list[str] | None = None, user_id: str | Non
     return query.execute().data
 
 
-def create_account(user_id: str, name: str, type_: str, currency: str) -> dict:
+def create_account(user_id: str, name: str, type_: str, currency: str, comments: str | None = None) -> dict:
     db = get_client(use_service_key=True)
     result = (
         db.table("accounts")
-        .insert({"name": name, "type": type_, "currency": currency, "user_id": user_id, "is_active": True})
+        .insert({
+            "name": name, "type": type_, "currency": currency, "user_id": user_id,
+            "is_active": True, "comments": comments,
+        })
         .execute()
     )
     logger.info("create_account: user_id=%s name=%s type=%s currency=%s", user_id, name, type_, currency)
     return result.data[0]
+
+
+def update_account(account_id: str, fields: dict, user_id: str) -> dict:
+    db = get_client(use_service_key=True)
+    result = db.table("accounts").update(fields).eq("id", account_id).eq("user_id", user_id).execute()
+    if not result.data:
+        raise LookupError(f"Account {account_id} not found")
+    logger.info("update_account: id=%s fields=%s", account_id, list(fields.keys()))
+    return result.data[0]
+
+
+def deactivate_account(account_id: str, user_id: str) -> None:
+    """Soft-delete: accounts.transactions/portfolio_events/asset_snapshots have no
+    ON DELETE clause on their account_id FK (defaults to restrict), so a hard delete
+    would fail once an account has any history. Setting is_active=False hides it from
+    get_accounts()/dropdowns while leaving historical data untouched everywhere else —
+    get_account_ids_for_user() doesn't filter on is_active."""
+    db = get_client(use_service_key=True)
+    result = (
+        db.table("accounts")
+        .update({"is_active": False})
+        .eq("id", account_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if not result.data:
+        raise LookupError(f"Account {account_id} not found")
+    logger.info("deactivate_account: id=%s user_id=%s", account_id, user_id)
 
 
 def create_custom_category(user_id: str, name: str) -> dict:
@@ -202,6 +233,42 @@ def get_custom_categories(user_id: str) -> list[str]:
     db = get_client()
     rows = db.table("custom_categories").select("name").eq("user_id", user_id).execute().data
     return [r["name"] for r in rows]
+
+
+def get_custom_categories_full(user_id: str) -> list[dict]:
+    """Full {id, name} rows for the Settings page's manage-categories UI — distinct from
+    get_custom_categories(), which returns bare names for merging into get_categories_for_user()."""
+    db = get_client()
+    return db.table("custom_categories").select("id, name").eq("user_id", user_id).order("name").execute().data
+
+
+def update_custom_category(category_id: str, name: str, user_id: str) -> dict:
+    db = get_client(use_service_key=True)
+    result = (
+        db.table("custom_categories")
+        .update({"name": name})
+        .eq("id", category_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if not result.data:
+        raise LookupError(f"Category {category_id} not found")
+    logger.info("update_custom_category: id=%s name=%s", category_id, name)
+    return result.data[0]
+
+
+def delete_custom_category(category_id: str, user_id: str) -> None:
+    db = get_client(use_service_key=True)
+    result = (
+        db.table("custom_categories")
+        .delete()
+        .eq("id", category_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if not result.data:
+        raise LookupError(f"Category {category_id} not found")
+    logger.info("delete_custom_category: id=%s user_id=%s", category_id, user_id)
 
 
 def get_categories_for_user(user_id: str) -> list[str]:

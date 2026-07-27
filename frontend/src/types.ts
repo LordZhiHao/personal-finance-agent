@@ -4,6 +4,12 @@ export interface Account {
   type: "bank" | "brokerage" | "ewallet";
   currency: string;
   is_active: boolean;
+  comments: string | null;
+}
+
+export interface CustomCategory {
+  id: string;
+  name: string;
 }
 
 export interface Transaction {
@@ -94,12 +100,28 @@ export interface Meta {
   portfolio_actions: string[];
 }
 
-export interface UploadResult {
+export interface AccountCandidate {
+  id: string;
+  name: string;
+  type: string;
+  currency: string;
+}
+
+export interface UploadSaved {
+  needs_account_selection: false;
   summary: string;
   lines: string[];
   transaction_ids: string[];
   portfolio_event_ids: string[];
 }
+
+export interface UploadNeedsAccount {
+  needs_account_selection: true;
+  data: Record<string, unknown>;
+  candidates: AccountCandidate[];
+}
+
+export type UploadResult = UploadSaved | UploadNeedsAccount;
 
 export interface DividendForecast {
   ticker: string;

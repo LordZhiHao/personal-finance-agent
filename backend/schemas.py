@@ -29,6 +29,7 @@ class AccountCreate(BaseModel):
     name: str
     type: str
     currency: str
+    comments: str | None = None
 
     @field_validator("type")
     @classmethod
@@ -42,6 +43,55 @@ class AccountCreate(BaseModel):
     def currency_valid(cls, v: str) -> str:
         if v not in CURRENCIES:
             raise ValueError(f"currency must be one of {CURRENCIES}")
+        return v
+
+    @field_validator("comments")
+    @classmethod
+    def comments_length(cls, v: str | None) -> str | None:
+        if v is not None and len(v) > 500:
+            raise ValueError("Comments must be at most 500 characters.")
+        return v
+
+
+class AccountUpdate(BaseModel):
+    """All fields optional for partial updates from the Settings page's account rows —
+    only fields the client actually changed are sent (exclude_unset)."""
+    name: str | None = None
+    type: str | None = None
+    currency: str | None = None
+    comments: str | None = None
+
+    @field_validator("type")
+    @classmethod
+    def type_valid(cls, v: str | None) -> str | None:
+        if v is not None and v not in ACCOUNT_TYPES:
+            raise ValueError(f"type must be one of {ACCOUNT_TYPES}")
+        return v
+
+    @field_validator("currency")
+    @classmethod
+    def currency_valid(cls, v: str | None) -> str | None:
+        if v is not None and v not in CURRENCIES:
+            raise ValueError(f"currency must be one of {CURRENCIES}")
+        return v
+
+    @field_validator("comments")
+    @classmethod
+    def comments_length(cls, v: str | None) -> str | None:
+        if v is not None and len(v) > 500:
+            raise ValueError("Comments must be at most 500 characters.")
+        return v
+
+
+class CustomCategoryUpdate(BaseModel):
+    name: str
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Category name is required.")
         return v
 
 
@@ -138,6 +188,14 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     reply: str
+
+
+class ChatCommitRequest(BaseModel):
+    """Finalizes an upload that POST /api/chat/upload couldn't confidently assign to an
+    account — `data` is the already-extracted dict returned in that response's
+    `needs_account_selection` branch, passed back verbatim (no re-extraction)."""
+    data: dict
+    account_id: str
 
 
 class PortfolioEventUpdate(BaseModel):

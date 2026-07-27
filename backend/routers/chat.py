@@ -1,12 +1,13 @@
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
 
 from backend.auth import get_current_user
-from backend.schemas import ChatRequest, ChatResponse
+from backend.schemas import ChatCommitRequest, ChatRequest, ChatResponse
+from bot.account_matcher import match_account
 from bot.extractor import extract_from_image, extract_from_pdf_images
 from bot.finance_agent import answer_question
 from bot.handlers import save_extraction
-from db.supabase import get_categories_for_user
+from db.supabase import get_accounts, get_categories_for_user
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -32,16 +33,24 @@ def _format_saved_lines(data: dict) -> list[str]:
     return lines
 
 
+def _build_saved_response(data: dict, result: dict) -> dict:
+    return {
+        "needs_account_selection": False,
+        "summary": f"✅ Saved — {data.get('document_type') or 'entry'} ({data.get('currency', '')})",
+        "lines": _format_saved_lines(data),
+        "transaction_ids": result["transaction_ids"],
+        "portfolio_event_ids": result["portfolio_event_ids"],
+    }
+
+
 @router.post("/chat/upload")
-async def upload_file(
-    file: UploadFile,
-    account_id: str = Form(...),
-    user_id: str = Depends(get_current_user),
-):
+async def upload_file(file: UploadFile, user_id: str = Depends(get_current_user)):
     """Web-dashboard equivalent of the Telegram bot's handle_photo/handle_document — runs
     the same Gemini extraction and auto-commits immediately (no confirm step, matching
-    bot/handlers.py's save_extraction), against the account the user picked in the chat
-    page's account selector."""
+    bot/handlers.py's save_extraction). Which account it commits to is resolved the same
+    way as the bot: bot/account_matcher.py::match_account, using each account's freeform
+    `comments` as the strongest signal. If unsure, nothing is committed yet — the response
+    asks the frontend to prompt the user, which then calls POST /api/chat/commit."""
     file_bytes = await file.read()
     categories = get_categories_for_user(user_id)
     try:
@@ -60,14 +69,40 @@ async def upload_file(
         )
 
     if not data.get("transactions") and not data.get("portfolio_events"):
-        return {"summary": "I couldn't find a transaction in that file.", "lines": [], "transaction_ids": [], "portfolio_event_ids": []}
+        return {
+            "needs_account_selection": False,
+            "summary": "I couldn't find a transaction in that file.",
+            "lines": [], "transaction_ids": [], "portfolio_event_ids": [],
+        }
 
     data["raw_text"] = str(data)
     data["source"] = source
-    result = save_extraction(data, user_id, account_id)
-    return {
-        "summary": f"✅ Saved — {data.get('document_type') or 'entry'} ({data.get('currency', '')})",
-        "lines": _format_saved_lines(data),
-        "transaction_ids": result["transaction_ids"],
-        "portfolio_event_ids": result["portfolio_event_ids"],
-    }
+
+    accounts = get_accounts(user_id=user_id)
+    if not accounts:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="You don't have any accounts yet — create one in Settings first.",
+        )
+
+    match = await run_in_threadpool(match_account, data, accounts)
+    if not match["account_id"]:
+        return {
+            "needs_account_selection": True,
+            "data": data,
+            "candidates": [
+                {"id": a["id"], "name": a["name"], "type": a["type"], "currency": a["currency"]}
+                for a in match["candidates"]
+            ],
+        }
+
+    result = save_extraction(data, user_id, match["account_id"])
+    return _build_saved_response(data, result)
+
+
+@router.post("/chat/commit")
+def commit_upload(payload: ChatCommitRequest, user_id: str = Depends(get_current_user)):
+    """Finalizes an upload that POST /api/chat/upload flagged needs_account_selection —
+    no re-extraction, just commits the already-extracted data to the chosen account."""
+    result = save_extraction(payload.data, user_id, payload.account_id)
+    return _build_saved_response(payload.data, result)

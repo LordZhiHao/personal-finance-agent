@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -8,9 +9,15 @@ import {
   useAccounts,
   useCreateAccount,
   useCreateCategory,
+  useCustomCategories,
+  useDeleteAccount,
+  useDeleteCategory,
   useGenerateTelegramLinkCode,
   useMeta,
+  useUpdateAccount,
+  useUpdateCategory,
 } from "../hooks/api";
+import type { Account, CustomCategory, Meta } from "../types";
 
 const accountSchema = z.object({
   name: z.string().min(1, "Name is required."),
@@ -23,6 +30,82 @@ const categorySchema = z.object({
   name: z.string().min(1, "Category name is required."),
 });
 type CategoryFormValues = z.infer<typeof categorySchema>;
+
+function AccountRow({ account, meta }: { account: Account; meta: Meta }) {
+  const updateMutation = useUpdateAccount();
+  const deleteMutation = useDeleteAccount();
+  const [draft, setDraft] = useState<{ name: string; type: string; currency: string; comments: string }>({
+    name: account.name,
+    type: account.type,
+    currency: account.currency,
+    comments: account.comments ?? "",
+  });
+
+  const dirty =
+    draft.name !== account.name ||
+    draft.type !== account.type ||
+    draft.currency !== account.currency ||
+    draft.comments !== (account.comments ?? "");
+
+  function handleSave() {
+    updateMutation.mutate({ id: account.id, ...draft });
+  }
+
+  function handleDelete() {
+    if (
+      !window.confirm(
+        `Delete account "${account.name}"? Its past transactions/trades stay in your history — this just hides it from new entries.`,
+      )
+    )
+      return;
+    deleteMutation.mutate(account.id);
+  }
+
+  return (
+    <div className="flex flex-wrap items-end gap-2 py-2" style={{ borderBottom: "1px solid var(--gridline)" }}>
+      <Input
+        value={draft.name}
+        onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+        className="w-32"
+      />
+      <Select value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value })} className="w-28">
+        {meta.account_types.map((t) => (
+          <option key={t} value={t}>
+            {t}
+          </option>
+        ))}
+      </Select>
+      <Select
+        value={draft.currency}
+        onChange={(e) => setDraft({ ...draft, currency: e.target.value })}
+        className="w-20"
+      >
+        {meta.currencies.map((c) => (
+          <option key={c} value={c}>
+            {c}
+          </option>
+        ))}
+      </Select>
+      <Input
+        value={draft.comments}
+        onChange={(e) => setDraft({ ...draft, comments: e.target.value })}
+        placeholder="e.g. for US stock trades"
+        className="flex-1 min-w-[10rem]"
+      />
+      <Button variant="outline" onClick={handleSave} disabled={!dirty || updateMutation.isPending}>
+        {updateMutation.isPending ? "Saving…" : "Save"}
+      </Button>
+      <Button
+        variant="ghost"
+        onClick={handleDelete}
+        disabled={deleteMutation.isPending}
+        style={{ color: "var(--tint-red-text)" }}
+      >
+        Delete
+      </Button>
+    </div>
+  );
+}
 
 function AccountsCard() {
   const accountsQuery = useAccounts();
@@ -45,18 +128,16 @@ function AccountsCard() {
       <h2 className="text-sm font-semibold mb-2" style={{ color: "var(--text-heading)" }}>
         Your Accounts
       </h2>
-      <ul className="mb-3 space-y-1">
+      <div className="mb-3">
         {(accountsQuery.data ?? []).map((a) => (
-          <li key={a.id} className="text-sm" style={{ color: "var(--text-secondary)" }}>
-            {a.name} — {a.type}, {a.currency}
-          </li>
+          <AccountRow key={a.id} account={a} meta={metaQuery.data} />
         ))}
         {accountsQuery.data?.length === 0 && (
-          <li className="text-sm" style={{ color: "var(--text-secondary)" }}>
+          <p className="text-sm py-1" style={{ color: "var(--text-secondary)" }}>
             No accounts yet — create one below.
-          </li>
+          </p>
         )}
-      </ul>
+      </div>
       <form
         onSubmit={handleSubmit((values) => {
           mutation.mutate(values, { onSuccess: () => reset() });
@@ -111,8 +192,47 @@ function AccountsCard() {
   );
 }
 
+function CategoryRow({ category }: { category: CustomCategory }) {
+  const updateMutation = useUpdateCategory();
+  const deleteMutation = useDeleteCategory();
+  const [name, setName] = useState(category.name);
+  const dirty = name.trim() !== "" && name !== category.name;
+
+  function handleSave() {
+    if (dirty) updateMutation.mutate({ id: category.id, name: name.trim() });
+  }
+
+  function handleDelete() {
+    if (
+      !window.confirm(
+        `Delete category "${category.name}"? Past transactions keep this label — it just won't be selectable anymore.`,
+      )
+    )
+      return;
+    deleteMutation.mutate(category.id);
+  }
+
+  return (
+    <div className="flex items-center gap-2 py-1">
+      <Input value={name} onChange={(e) => setName(e.target.value)} className="flex-1" />
+      <Button variant="outline" onClick={handleSave} disabled={!dirty || updateMutation.isPending}>
+        {updateMutation.isPending ? "Saving…" : "Save"}
+      </Button>
+      <Button
+        variant="ghost"
+        onClick={handleDelete}
+        disabled={deleteMutation.isPending}
+        style={{ color: "var(--tint-red-text)" }}
+      >
+        Delete
+      </Button>
+    </div>
+  );
+}
+
 function CategoriesCard() {
   const metaQuery = useMeta();
+  const categoriesQuery = useCustomCategories();
   const mutation = useCreateCategory();
   const {
     register,
@@ -123,14 +243,24 @@ function CategoriesCard() {
 
   if (!metaQuery.data) return null;
 
+  const customNames = new Set((categoriesQuery.data ?? []).map((c) => c.name));
+  const builtins = metaQuery.data.categories.filter((name) => !customNames.has(name));
+
   return (
     <Card>
       <h2 className="text-sm font-semibold mb-2" style={{ color: "var(--text-heading)" }}>
         Transaction Categories
       </h2>
-      <p className="text-sm mb-2 flex flex-wrap gap-1" style={{ color: "var(--text-secondary)" }}>
-        {metaQuery.data.categories.join(", ")}
+      <p className="text-sm mb-3" style={{ color: "var(--text-secondary)" }}>
+        Built-in: {builtins.join(", ")}
       </p>
+      {(categoriesQuery.data?.length ?? 0) > 0 && (
+        <div className="mb-3">
+          {categoriesQuery.data!.map((c) => (
+            <CategoryRow key={c.id} category={c} />
+          ))}
+        </div>
+      )}
       <form
         onSubmit={handleSubmit((values) => {
           mutation.mutate(values.name, { onSuccess: () => reset() });

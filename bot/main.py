@@ -3,9 +3,10 @@ import os
 import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
+from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 from bot.handlers import (
+    handle_account_choice_callback,
     handle_allocation_command,
     handle_assets_command,
     handle_balance_command,
@@ -101,6 +102,7 @@ def main():
     app.add_handler(CommandHandler("undo", handle_undo_command))
     app.add_handler(CommandHandler("help", handle_help_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_handler(CallbackQueryHandler(handle_account_choice_callback, pattern=r"^acct:"))
     app.add_error_handler(handle_error)
     logger.info("Bot is running...")
     app.run_polling()

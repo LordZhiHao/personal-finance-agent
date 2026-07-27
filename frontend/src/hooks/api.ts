@@ -4,6 +4,7 @@ import type {
   Account,
   AssetSnapshot,
   BalancesSummary,
+  CustomCategory,
   DividendForecast,
   ExpenseSummary,
   HoldingsSummary,
@@ -11,6 +12,7 @@ import type {
   PortfolioEvent,
   Transaction,
   UploadResult,
+  UploadSaved,
 } from "../types";
 
 export function useMeta() {
@@ -115,7 +117,7 @@ export function useGenerateTelegramLinkCode() {
 export function useCreateAccount() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { name: string; type: string; currency: string }) =>
+    mutationFn: (payload: { name: string; type: string; currency: string; comments?: string }) =>
       api.post<Account>("/api/accounts", payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
@@ -123,12 +125,64 @@ export function useCreateAccount() {
   });
 }
 
+export function useUpdateAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...fields }: { id: string; name?: string; type?: string; currency?: string; comments?: string }) =>
+      api.patch<Account>(`/api/accounts/${id}`, fields),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+    },
+  });
+}
+
+export function useDeleteAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/api/accounts/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+    },
+  });
+}
+
+export function useCustomCategories() {
+  return useQuery({
+    queryKey: ["categories"],
+    queryFn: () => api.get<CustomCategory[]>("/api/categories"),
+  });
+}
+
 export function useCreateCategory() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) => api.post<{ id: string; name: string }>("/api/categories", { name }),
+    mutationFn: (name: string) => api.post<CustomCategory>("/api/categories", { name }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["meta"] });
+      queryClient.invalidateQueries({ queryKey: ["categories"] });
+    },
+  });
+}
+
+export function useUpdateCategory() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      api.patch<CustomCategory>(`/api/categories/${id}`, { name }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["meta"] });
+      queryClient.invalidateQueries({ queryKey: ["categories"] });
+    },
+  });
+}
+
+export function useDeleteCategory() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/api/categories/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["meta"] });
+      queryClient.invalidateQueries({ queryKey: ["categories"] });
     },
   });
 }
@@ -151,12 +205,24 @@ const UPLOAD_AFFECTED_QUERY_KEYS = [
 export function useUploadChatFile() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ file, accountId }: { file: File; accountId: string }) => {
+    mutationFn: (file: File) => {
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("account_id", accountId);
       return api.upload<UploadResult>("/api/chat/upload", formData);
     },
+    onSuccess: (result) => {
+      if (!result.needs_account_selection) {
+        for (const queryKey of UPLOAD_AFFECTED_QUERY_KEYS) queryClient.invalidateQueries({ queryKey });
+      }
+    },
+  });
+}
+
+export function useCommitUpload() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ data, accountId }: { data: Record<string, unknown>; accountId: string }) =>
+      api.post<UploadSaved>("/api/chat/commit", { data, account_id: accountId }),
     onSuccess: () => {
       for (const queryKey of UPLOAD_AFFECTED_QUERY_KEYS) queryClient.invalidateQueries({ queryKey });
     },
