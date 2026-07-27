@@ -47,6 +47,7 @@ export interface Holding {
   account_name: string;
   ticker: string;
   name: string | null;
+  price: number | null;
   price_currency: string | null;
   quantity: number;
   avg_cost: number;
@@ -91,6 +92,13 @@ export interface Meta {
   currencies: string[];
   account_types: string[];
   portfolio_actions: string[];
+}
+
+export interface UploadResult {
+  summary: string;
+  lines: string[];
+  transaction_ids: string[];
+  portfolio_event_ids: string[];
 }
 
 export interface DividendForecast {

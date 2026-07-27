@@ -1,7 +1,165 @@
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { Card } from "../components/ui/Card";
-import { Button } from "../components/ui/Button";
+import { Button, Input, Select } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
-import { useGenerateTelegramLinkCode } from "../hooks/api";
+import {
+  useAccounts,
+  useCreateAccount,
+  useCreateCategory,
+  useGenerateTelegramLinkCode,
+  useMeta,
+} from "../hooks/api";
+
+const accountSchema = z.object({
+  name: z.string().min(1, "Name is required."),
+  type: z.string().min(1),
+  currency: z.string().min(1),
+});
+type AccountFormValues = z.infer<typeof accountSchema>;
+
+const categorySchema = z.object({
+  name: z.string().min(1, "Category name is required."),
+});
+type CategoryFormValues = z.infer<typeof categorySchema>;
+
+function AccountsCard() {
+  const accountsQuery = useAccounts();
+  const metaQuery = useMeta();
+  const mutation = useCreateAccount();
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<AccountFormValues>({
+    resolver: zodResolver(accountSchema),
+    defaultValues: { name: "", type: metaQuery.data?.account_types[0] ?? "", currency: metaQuery.data?.currencies[0] ?? "" },
+  });
+
+  if (!metaQuery.data) return null;
+
+  return (
+    <Card>
+      <h2 className="text-sm font-semibold mb-2" style={{ color: "var(--text-heading)" }}>
+        Your Accounts
+      </h2>
+      <ul className="mb-3 space-y-1">
+        {(accountsQuery.data ?? []).map((a) => (
+          <li key={a.id} className="text-sm" style={{ color: "var(--text-secondary)" }}>
+            {a.name} — {a.type}, {a.currency}
+          </li>
+        ))}
+        {accountsQuery.data?.length === 0 && (
+          <li className="text-sm" style={{ color: "var(--text-secondary)" }}>
+            No accounts yet — create one below.
+          </li>
+        )}
+      </ul>
+      <form
+        onSubmit={handleSubmit((values) => {
+          mutation.mutate(values, { onSuccess: () => reset() });
+        })}
+        className="flex flex-wrap items-end gap-2"
+      >
+        <label className="flex flex-col gap-1">
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            Name
+          </span>
+          <Input {...register("name")} placeholder="e.g. DBS" />
+          {errors.name && (
+            <span className="text-xs" style={{ color: "var(--tint-red-text)" }}>
+              {errors.name.message}
+            </span>
+          )}
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            Type
+          </span>
+          <Select {...register("type")}>
+            {metaQuery.data.account_types.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            Currency
+          </span>
+          <Select {...register("currency")}>
+            {metaQuery.data.currencies.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <Button type="submit" variant="primary" disabled={isSubmitting || mutation.isPending}>
+          {mutation.isPending ? "Adding…" : "＋ Add Account"}
+        </Button>
+      </form>
+      {mutation.isError && (
+        <p className="text-sm mt-2" style={{ color: "var(--tint-red-text)" }}>
+          Could not create account. Try again.
+        </p>
+      )}
+    </Card>
+  );
+}
+
+function CategoriesCard() {
+  const metaQuery = useMeta();
+  const mutation = useCreateCategory();
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<CategoryFormValues>({ resolver: zodResolver(categorySchema), defaultValues: { name: "" } });
+
+  if (!metaQuery.data) return null;
+
+  return (
+    <Card>
+      <h2 className="text-sm font-semibold mb-2" style={{ color: "var(--text-heading)" }}>
+        Transaction Categories
+      </h2>
+      <p className="text-sm mb-2 flex flex-wrap gap-1" style={{ color: "var(--text-secondary)" }}>
+        {metaQuery.data.categories.join(", ")}
+      </p>
+      <form
+        onSubmit={handleSubmit((values) => {
+          mutation.mutate(values.name, { onSuccess: () => reset() });
+        })}
+        className="flex flex-wrap items-end gap-2"
+      >
+        <label className="flex flex-col gap-1">
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            New category
+          </span>
+          <Input {...register("name")} placeholder="e.g. Pet Care" />
+          {errors.name && (
+            <span className="text-xs" style={{ color: "var(--tint-red-text)" }}>
+              {errors.name.message}
+            </span>
+          )}
+        </label>
+        <Button type="submit" variant="primary" disabled={isSubmitting || mutation.isPending}>
+          {mutation.isPending ? "Adding…" : "＋ Add Category"}
+        </Button>
+      </form>
+      {mutation.isError && (
+        <p className="text-sm mt-2" style={{ color: "var(--tint-red-text)" }}>
+          Could not create category — it may already exist.
+        </p>
+      )}
+    </Card>
+  );
+}
 
 export function SettingsPage() {
   const { email, telegramLinked, refreshMe } = useAuth();
@@ -69,6 +227,9 @@ export function SettingsPage() {
           )}
         </div>
       </Card>
+
+      <AccountsCard />
+      <CategoriesCard />
     </div>
   );
 }

@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from supabase import create_client
 
+from utils.constants import CATEGORIES
 from utils.logger import get_logger
 
 load_dotenv()
@@ -188,6 +189,25 @@ def create_account(user_id: str, name: str, type_: str, currency: str) -> dict:
     )
     logger.info("create_account: user_id=%s name=%s type=%s currency=%s", user_id, name, type_, currency)
     return result.data[0]
+
+
+def create_custom_category(user_id: str, name: str) -> dict:
+    db = get_client(use_service_key=True)
+    result = db.table("custom_categories").insert({"user_id": user_id, "name": name}).execute()
+    logger.info("create_custom_category: user_id=%s name=%s", user_id, name)
+    return result.data[0]
+
+
+def get_custom_categories(user_id: str) -> list[str]:
+    db = get_client()
+    rows = db.table("custom_categories").select("name").eq("user_id", user_id).execute().data
+    return [r["name"] for r in rows]
+
+
+def get_categories_for_user(user_id: str) -> list[str]:
+    """Built-in CATEGORIES plus this user's own custom categories — the one list every
+    caller (extraction prompts, GET /api/meta, transaction category validation) uses."""
+    return CATEGORIES + get_custom_categories(user_id)
 
 
 def get_portfolio_events(start_date: str | None = None, end_date: str | None = None, user_id: str | None = None):

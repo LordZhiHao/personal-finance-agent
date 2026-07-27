@@ -23,6 +23,7 @@ export function HoldingsTable({
     account: (h) => h.account_name,
     quantity: (h) => h.quantity,
     avg_cost: (h) => h.avg_cost,
+    price: (h) => h.price,
     market_value: (h) => h.market_value,
     cost_basis: (h) => h.cost_basis,
     gain: (h) => h.unrealized_gain,
@@ -47,6 +48,9 @@ export function HoldingsTable({
         </Th>
         <Th align="right" sortDirection={directionFor("avg_cost")} onSort={() => requestSort("avg_cost")}>
           Avg Cost
+        </Th>
+        <Th align="right" sortDirection={directionFor("price")} onSort={() => requestSort("price")}>
+          Latest Price
         </Th>
         <Th align="right" sortDirection={directionFor("market_value")} onSort={() => requestSort("market_value")}>
           Market Value
@@ -90,6 +94,9 @@ export function HoldingsTable({
               <Td align="right">{h.quantity.toFixed(2)}</Td>
               <Td align="right">
                 {h.avg_cost.toFixed(2)} {h.cost_currency}
+              </Td>
+              <Td align="right">
+                {h.price === null ? "—" : `${h.price.toFixed(2)} ${h.price_currency ?? ""}`}
               </Td>
               <Td align="right">{noPrice ? "no price available" : formatMoney(h.market_value!, currency)}</Td>
               <Td align="right">{formatMoney(h.cost_basis, currency)}</Td>

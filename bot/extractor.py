@@ -18,7 +18,8 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 MODEL = "gemini-3.5-flash"  # multimodal extraction (extract_from_image / extract_from_pdf_images)
 DEEPSEEK_EXTRACTOR_MODEL = os.getenv("DEEPSEEK_EXTRACTOR_MODEL", "deepseek-v4-pro")  # text-only extraction
 
-SYSTEM_PROMPT = f"""
+def _build_system_prompt(categories: list[str]) -> str:
+    return f"""
 You are a financial document parser for a user based in Singapore.
 Extract ALL transactions visible in the provided document (image or text).
 
@@ -34,7 +35,7 @@ Schema:
       "date": "YYYY-MM-DD",
       "description": "string",
       "amount": float,
-      "category": one of {CATEGORIES},
+      "category": one of {categories},
       "confidence": float between 0 and 1
     }}
   ],
@@ -68,7 +69,7 @@ REQUIRED_TXN_FIELDS = {"date", "description", "amount", "category", "confidence"
 REQUIRED_EVENT_FIELDS = {"ticker", "action", "quantity", "price", "currency", "date"}
 
 
-def _validate_schema(obj: dict) -> None:
+def _validate_schema(obj: dict, categories: list[str]) -> None:
     """Raises ValueError with a specific message if Gemini's JSON doesn't match the
     expected schema — catching this here, right after the call, avoids a bare KeyError
     surfacing later in unrelated formatting code (or a bad row reaching Supabase)."""
@@ -87,8 +88,8 @@ def _validate_schema(obj: dict) -> None:
             raise ValueError(f"transactions[{i}] missing field(s): {missing}")
         if not isinstance(t["amount"], (int, float)):
             raise ValueError(f"transactions[{i}].amount is not numeric: {t['amount']!r}")
-        if t["category"] not in CATEGORIES:
-            raise ValueError(f"transactions[{i}].category {t['category']!r} not in CATEGORIES")
+        if t["category"] not in categories:
+            raise ValueError(f"transactions[{i}].category {t['category']!r} not in {categories}")
 
     for i, e in enumerate(events):
         if not isinstance(e, dict):
@@ -100,7 +101,7 @@ def _validate_schema(obj: dict) -> None:
             raise ValueError(f"portfolio_events[{i}].action {e['action']!r} not in {PORTFOLIO_ACTIONS}")
 
 
-def _parse_response(raw: str) -> dict:
+def _parse_response(raw: str, categories: list[str]) -> dict:
     raw = raw.strip()
     if raw.startswith("```"):
         raw = raw.split("```")[1]
@@ -114,11 +115,11 @@ def _parse_response(raw: str) -> dict:
     except json.JSONDecodeError:
         logger.exception("LLM response could not be parsed as JSON (length=%d)", len(raw))
         raise
-    _validate_schema(obj)
+    _validate_schema(obj, categories)
     return obj
 
 
-def extract_from_pdf_images(pdf_bytes: bytes) -> dict:
+def extract_from_pdf_images(pdf_bytes: bytes, categories: list[str] = CATEGORIES) -> dict:
     from utils.pdf_converter import pdf_to_images
 
     page_images = pdf_to_images(pdf_bytes)
@@ -126,7 +127,7 @@ def extract_from_pdf_images(pdf_bytes: bytes) -> dict:
 
     merged: dict = {"document_type": None, "account_hint": None, "currency": None, "transactions": [], "portfolio_events": []}
     for i, img in enumerate(page_images, 1):
-        page_data = extract_from_image(img, mime_type="image/jpeg")
+        page_data = extract_from_image(img, mime_type="image/jpeg", categories=categories)
         logger.info("extract_from_pdf_images: page %d — %d txn(s), %d event(s)", i, len(page_data.get("transactions", [])), len(page_data.get("portfolio_events", [])))
         for key in ("document_type", "account_hint", "currency"):
             if merged[key] is None and page_data.get(key):
@@ -141,20 +142,21 @@ def extract_from_pdf_images(pdf_bytes: bytes) -> dict:
     return merged
 
 
-def extract_from_image(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
+def extract_from_image(image_bytes: bytes, mime_type: str = "image/jpeg", categories: list[str] = CATEGORIES) -> dict:
     logger.info("extract_from_image: calling %s (%d bytes, %s)", MODEL, len(image_bytes), mime_type)
+    today = date.today().isoformat()
     response = client.models.generate_content(
         model=MODEL,
         contents=[
             types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-            "Extract all transactions from this financial document.",
+            f"Today's date is {today}. Extract all transactions from this financial document.",
         ],
         config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
+            system_instruction=_build_system_prompt(categories),
             response_mime_type="application/json",
         ),
     )
-    data = _parse_response(response.text)
+    data = _parse_response(response.text, categories)
     logger.info(
         "extract_from_image: document_type=%s, %d transaction(s), %d portfolio event(s)",
         data.get("document_type"), len(data.get("transactions", [])), len(data.get("portfolio_events", [])),
@@ -162,18 +164,18 @@ def extract_from_image(image_bytes: bytes, mime_type: str = "image/jpeg") -> dic
     return data
 
 
-def extract_from_text(text: str) -> dict:
+def extract_from_text(text: str, categories: list[str] = CATEGORIES) -> dict:
     logger.info("extract_from_text: calling %s (%d chars)", DEEPSEEK_EXTRACTOR_MODEL, len(text))
     today = date.today().isoformat()
     response = deepseek_client.chat.completions.create(
         model=DEEPSEEK_EXTRACTOR_MODEL,
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": _build_system_prompt(categories)},
             {"role": "user", "content": f"Today's date is {today}. Extract all transactions from this text:\n\n{text}"},
         ],
         response_format={"type": "json_object"},
     )
-    data = _parse_response(response.choices[0].message.content)
+    data = _parse_response(response.choices[0].message.content, categories)
     logger.info(
         "extract_from_text: document_type=%s, %d transaction(s), %d portfolio event(s)",
         data.get("document_type"), len(data.get("transactions", [])), len(data.get("portfolio_events", [])),

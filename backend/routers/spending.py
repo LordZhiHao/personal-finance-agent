@@ -2,7 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from backend.auth import get_current_user
 from backend.schemas import TransactionCreate, TransactionUpdate
-from db.supabase import delete_transactions, get_transactions, insert_transactions, update_transaction
+from db.supabase import (
+    delete_transactions,
+    get_categories_for_user,
+    get_transactions,
+    insert_transactions,
+    update_transaction,
+)
 from scheduler.report_builder import summarize_transactions
 
 router = APIRouter(prefix="/api/transactions", tags=["spending"])
@@ -28,6 +34,8 @@ def expense_summary(
 
 @router.post("", status_code=201)
 def create_transaction(payload: TransactionCreate, user_id: str = Depends(get_current_user)):
+    if payload.category not in get_categories_for_user(user_id):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unknown category.")
     row = payload.model_dump(mode="json")
     row["source"] = "manual"
     result = insert_transactions([row], user_id)

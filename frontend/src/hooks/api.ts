@@ -10,6 +10,7 @@ import type {
   Meta,
   PortfolioEvent,
   Transaction,
+  UploadResult,
 } from "../types";
 
 export function useMeta() {
@@ -111,8 +112,68 @@ export function useGenerateTelegramLinkCode() {
   });
 }
 
+export function useCreateAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { name: string; type: string; currency: string }) =>
+      api.post<Account>("/api/accounts", payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+    },
+  });
+}
+
+export function useCreateCategory() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => api.post<{ id: string; name: string }>("/api/categories", { name }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["meta"] });
+    },
+  });
+}
+
 export function useSendChatMessage() {
   return useMutation({
     mutationFn: (message: string) => api.post<{ reply: string }>("/api/chat", { message }),
+  });
+}
+
+const UPLOAD_AFFECTED_QUERY_KEYS = [
+  ["transactions"],
+  ["expense-summary"],
+  ["portfolio-events"],
+  ["holdings"],
+  ["balances"],
+  ["snapshots"],
+];
+
+export function useUploadChatFile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ file, accountId }: { file: File; accountId: string }) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("account_id", accountId);
+      return api.upload<UploadResult>("/api/chat/upload", formData);
+    },
+    onSuccess: () => {
+      for (const queryKey of UPLOAD_AFFECTED_QUERY_KEYS) queryClient.invalidateQueries({ queryKey });
+    },
+  });
+}
+
+export function useUndoUpload() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ transactionIds, portfolioEventIds }: { transactionIds: string[]; portfolioEventIds: string[] }) => {
+      await Promise.all([
+        ...transactionIds.map((id) => api.delete(`/api/transactions/${id}`)),
+        ...portfolioEventIds.map((id) => api.delete(`/api/portfolio-events/${id}`)),
+      ]);
+    },
+    onSuccess: () => {
+      for (const queryKey of UPLOAD_AFFECTED_QUERY_KEYS) queryClient.invalidateQueries({ queryKey });
+    },
   });
 }

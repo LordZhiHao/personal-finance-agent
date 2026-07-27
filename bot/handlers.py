@@ -15,6 +15,7 @@ from db.supabase import (
     delete_portfolio_events,
     delete_transactions,
     get_accounts,
+    get_categories_for_user,
     get_held_positions,
     get_latest_snapshots,
     get_recent_transactions,
@@ -35,10 +36,7 @@ from utils.portfolio import compute_holdings_summary
 
 logger = get_logger(__name__)
 
-# In-memory pending store: telegram user_id → extracted data awaiting confirmation
-pending = {}
-
-# In-memory last-saved store: telegram user_id → ids from the most recent confirm, for /undo
+# In-memory last-saved store: telegram user_id → ids from the most recent auto-save, for /undo
 last_saved = {}
 
 TELEGRAM_MESSAGE_LIMIT = 4000  # headroom under Telegram's hard 4096-char cap
@@ -46,6 +44,12 @@ TELEGRAM_MESSAGE_LIMIT = 4000  # headroom under Telegram's hard 4096-char cap
 UNLINKED_MSG = (
     "🔒 This Telegram account isn't linked yet. Log into the web dashboard, "
     "open *Link Telegram* in Settings, and send the code here as `/link 123456`."
+)
+
+NO_ACCOUNTS_MSG = (
+    "⚠️ You don't have any accounts yet. Create one first, e.g.\n"
+    "/newaccount DBS bank SGD\n\n"
+    "Then resend the receipt/message to save it."
 )
 
 
@@ -60,8 +64,8 @@ def _escape_md(text: str) -> str:
     return text
 
 
-def build_confirmation_lines(data: dict) -> list[str]:
-    lines = [f"📄 *{_escape_md(data['document_type'])}* — {_escape_md(data.get('currency', ''))}", ""]
+def build_saved_lines(data: dict) -> list[str]:
+    lines = [f"✅ *Saved* — {_escape_md(data.get('document_type') or 'entry')} ({_escape_md(data.get('currency', ''))})", ""]
     for i, t in enumerate(data.get("transactions", []), 1):
         flag = "⚠️" if t["confidence"] < 0.7 else "✅"
         sign = "+" if t["amount"] > 0 else ""
@@ -75,7 +79,7 @@ def build_confirmation_lines(data: dict) -> list[str]:
             f"@ {t['price']} {t['currency']}"
         )
     lines.append("")
-    lines.append("Reply `confirm` to save, `cancel` to discard, or `edit 3` to fix a row.")
+    lines.append("Reply /undo to revert.")
     return lines
 
 
@@ -95,9 +99,74 @@ def chunk_lines(lines: list[str], limit: int = TELEGRAM_MESSAGE_LIMIT) -> list[s
     return chunks
 
 
-async def send_confirmation(update: Update, data: dict):
-    for chunk in chunk_lines(build_confirmation_lines(data)):
+async def send_saved(update: Update, data: dict):
+    for chunk in chunk_lines(build_saved_lines(data)):
         await update.message.reply_text(chunk, parse_mode="Markdown")
+
+
+def save_extraction(data: dict, user_id: str, account_id: str) -> dict:
+    """Builds transaction/portfolio_event rows from extracted `data` and commits them
+    immediately to Supabase against `account_id` — no confirm step. Shared by the
+    Telegram handlers below and the web dashboard's chat-upload endpoint
+    (backend/routers/chat.py), so both save through the exact same logic."""
+    txn_rows = [
+        {
+            "account_id": account_id,
+            "date": t["date"],
+            "description": t["description"],
+            "amount": t["amount"],
+            "category": t["category"],
+            "currency": data.get("currency", "SGD"),
+            "raw_text": data.get("raw_text"),
+            "source": data.get("source", "manual"),
+        }
+        for t in data.get("transactions", [])
+    ]
+    trade_rows = [
+        {
+            "account_id": account_id,
+            "date": t["date"],
+            "ticker": t["ticker"],
+            "action": t["action"],
+            "quantity": t["quantity"],
+            "price": t["price"],
+            "currency": t["currency"],
+            "fees": t.get("fees", 0),
+        }
+        for t in data.get("portfolio_events", [])
+    ]
+    saved_txn_ids, saved_trade_ids = [], []
+    if txn_rows:
+        saved_txn_ids = [r["id"] for r in insert_transactions(txn_rows, user_id).data]
+    if trade_rows:
+        saved_trade_ids = [r["id"] for r in insert_portfolio_events(trade_rows, user_id).data]
+    return {
+        "transaction_ids": saved_txn_ids,
+        "portfolio_event_ids": saved_trade_ids,
+        "transactions": data.get("transactions", []),
+        "portfolio_events": data.get("portfolio_events", []),
+    }
+
+
+async def _commit_and_reply(update: Update, data: dict, user_id: str, uid: int) -> None:
+    """Shared tail end of handle_photo/handle_document/handle_text's record path:
+    resolves the caller's default account, auto-commits via save_extraction (no
+    confirm step), records ids in last_saved for /undo, and replies with a summary."""
+    accounts = get_accounts(user_id=user_id)
+    if not accounts:
+        logger.info("_commit_and_reply: no accounts for user_id=%s", uid)
+        await update.message.reply_text(NO_ACCOUNTS_MSG)
+        return
+    result = save_extraction(data, user_id, accounts[0]["id"])
+    last_saved[uid] = {
+        "transaction_ids": result["transaction_ids"],
+        "portfolio_event_ids": result["portfolio_event_ids"],
+    }
+    logger.info(
+        "_commit_and_reply: saved %d transaction(s), %d portfolio event(s) for user_id=%s",
+        len(result["transaction_ids"]), len(result["portfolio_event_ids"]), uid,
+    )
+    await send_saved(update, data)
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -111,7 +180,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     photo = await update.message.photo[-1].get_file()
     image_bytes = await photo.download_as_bytearray()
     try:
-        data = extract_from_image(bytes(image_bytes))
+        data = extract_from_image(bytes(image_bytes), categories=get_categories_for_user(user["id"]))
     except (json.JSONDecodeError, ValueError):
         logger.exception("handle_photo: extraction failed for user_id=%s", uid)
         await update.message.reply_text(
@@ -121,12 +190,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     data["raw_text"] = str(data)
     data["source"] = "telegram_image"
-    pending[uid] = data
     logger.info(
         "handle_photo: extracted %d transaction(s), %d portfolio event(s) for user_id=%s",
         len(data.get("transactions", [])), len(data.get("portfolio_events", [])), uid,
     )
-    await send_confirmation(update, data)
+    await _commit_and_reply(update, data, user["id"], uid)
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -142,12 +210,13 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("⏳ Processing document...")
 
+    categories = get_categories_for_user(user["id"])
     try:
         if doc.mime_type == "application/pdf":
-            data = extract_from_pdf_images(bytes(file_bytes))
+            data = extract_from_pdf_images(bytes(file_bytes), categories=categories)
             data["source"] = "telegram_pdf"
         else:
-            data = extract_from_image(bytes(file_bytes))
+            data = extract_from_image(bytes(file_bytes), categories=categories)
             data["source"] = "telegram_image"
     except (json.JSONDecodeError, ValueError):
         logger.exception("handle_document: extraction failed for user_id=%s", uid)
@@ -158,12 +227,11 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     data["raw_text"] = str(data)
-    pending[uid] = data
     logger.info(
         "handle_document: extracted %d transaction(s), %d portfolio event(s) for user_id=%s",
         len(data.get("transactions", [])), len(data.get("portfolio_events", [])), uid,
     )
-    await send_confirmation(update, data)
+    await _commit_and_reply(update, data, user["id"], uid)
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -173,111 +241,40 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     user_id = user["id"]
     raw_text = update.message.text.strip()
-    text = raw_text.lower()
     uid = update.effective_user.id
 
-    if text == "confirm":
-        data = pending.get(uid)
-        if not data:
-            logger.info("handle_text: confirm with nothing pending for user_id=%s", uid)
-            await update.message.reply_text("Nothing pending to confirm.")
-            return
-        accounts = get_accounts(user_id=user_id)
-        if not accounts:
-            logger.info("handle_text: confirm with no accounts for user_id=%s", uid)
-            await update.message.reply_text(
-                "⚠️ You don't have any accounts yet. Create one first, e.g.\n"
-                "/newaccount DBS bank SGD\n\n"
-                "Then reply `confirm` again — your pending entry is still saved."
-            )
-            return
-        pending.pop(uid, None)
-        default_account_id = accounts[0]["id"]
+    intent = classify_intent(raw_text)
+    logger.info("handle_text: intent=%s for user_id=%s", intent, uid)
 
-        txn_rows = [
-            {
-                "account_id": default_account_id,
-                "date": t["date"],
-                "description": t["description"],
-                "amount": t["amount"],
-                "category": t["category"],
-                "currency": data.get("currency", "SGD"),
-                "raw_text": data.get("raw_text"),
-                "source": data.get("source", "manual"),
-            }
-            for t in data.get("transactions", [])
-        ]
-        trade_rows = [
-            {
-                "account_id": default_account_id,
-                "date": t["date"],
-                "ticker": t["ticker"],
-                "action": t["action"],
-                "quantity": t["quantity"],
-                "price": t["price"],
-                "currency": t["currency"],
-                "fees": t.get("fees", 0),
-            }
-            for t in data.get("portfolio_events", [])
-        ]
-        saved_txn_ids, saved_trade_ids = [], []
-        if txn_rows:
-            saved_txn_ids = [r["id"] for r in insert_transactions(txn_rows, user_id).data]
-        if trade_rows:
-            saved_trade_ids = [r["id"] for r in insert_portfolio_events(trade_rows, user_id).data]
-        last_saved[uid] = {"transaction_ids": saved_txn_ids, "portfolio_event_ids": saved_trade_ids}
-        total = len(txn_rows) + len(trade_rows)
-        logger.info(
-            "handle_text: confirmed by user_id=%s — saved %d transaction(s), %d portfolio event(s)",
-            uid, len(txn_rows), len(trade_rows),
-        )
-        await update.message.reply_text(f"✅ Saved {total} entries to database. Reply /undo to revert.")
+    if intent == "chat":
+        reply = answer_question(uid, raw_text, user_id)
+        for chunk in chunk_lines(reply.split("\n")):
+            await update.message.reply_text(chunk)
+        return
 
-    elif text == "cancel":
-        had_pending = uid in pending
-        pending.pop(uid, None)
-        logger.info("handle_text: cancelled by user_id=%s (had_pending=%s)", uid, had_pending)
-        await update.message.reply_text("❌ Cancelled. Nothing was saved.")
-
-    elif text.startswith("edit"):
-        logger.info("handle_text: edit requested by user_id=%s", uid)
+    logger.info("handle_text: parsing free-text entry from user_id=%s", uid)
+    try:
+        data = extract_from_text(raw_text, categories=get_categories_for_user(user_id))
+    except (json.JSONDecodeError, ValueError):
+        logger.exception("handle_text: extraction failed for user_id=%s", uid)
         await update.message.reply_text(
-            "To edit, resend the image with corrections, or manually fix in the dashboard."
+            "⚠️ Couldn't parse that — try rephrasing, e.g. 'spent 12 on lunch'."
         )
-    else:
-        intent = classify_intent(raw_text)
-        logger.info("handle_text: intent=%s for user_id=%s", intent, uid)
-
-        if intent == "chat":
-            reply = answer_question(uid, raw_text, user_id)
-            for chunk in chunk_lines(reply.split("\n")):
-                await update.message.reply_text(chunk)
-            return
-
-        logger.info("handle_text: parsing free-text entry from user_id=%s", uid)
-        try:
-            data = extract_from_text(raw_text)
-        except (json.JSONDecodeError, ValueError):
-            logger.exception("handle_text: extraction failed for user_id=%s", uid)
-            await update.message.reply_text(
-                "⚠️ Couldn't parse that — try rephrasing, e.g. 'spent 12 on lunch'."
-            )
-            return
-        if not data.get("transactions") and not data.get("portfolio_events"):
-            logger.info("handle_text: no transaction found in free-text from user_id=%s", uid)
-            await update.message.reply_text(
-                "I couldn't find a transaction in that. Try something like "
-                "'Spent 0.5+3.5 on meals today', or send a screenshot/PDF."
-            )
-            return
-        data["raw_text"] = str(data)
-        data["source"] = "telegram_text"
-        pending[uid] = data
-        logger.info(
-            "handle_text: extracted %d transaction(s), %d portfolio event(s) for user_id=%s",
-            len(data.get("transactions", [])), len(data.get("portfolio_events", [])), uid,
+        return
+    if not data.get("transactions") and not data.get("portfolio_events"):
+        logger.info("handle_text: no transaction found in free-text from user_id=%s", uid)
+        await update.message.reply_text(
+            "I couldn't find a transaction in that. Try something like "
+            "'Spent 0.5+3.5 on meals today', or send a screenshot/PDF."
         )
-        await send_confirmation(update, data)
+        return
+    data["raw_text"] = str(data)
+    data["source"] = "telegram_text"
+    logger.info(
+        "handle_text: extracted %d transaction(s), %d portfolio event(s) for user_id=%s",
+        len(data.get("transactions", [])), len(data.get("portfolio_events", [])), uid,
+    )
+    await _commit_and_reply(update, data, user_id, uid)
 
 
 async def handle_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -396,7 +393,8 @@ async def handle_portfolio_command(update: Update, context: ContextTypes.DEFAULT
         gain_pct = f" ({format_pct(h['unrealized_gain_pct'])})" if h["unrealized_gain_pct"] is not None else ""
         lines.append(
             f"▪️ {h['ticker']} ({h['account_name']}): {h['quantity']:g} units @ avg "
-            f"{h['avg_cost']:.2f} {h['cost_currency']} → {format_money(h['market_value'], DEFAULT_CURRENCY)} | "
+            f"{h['avg_cost']:.2f} {h['cost_currency']} | now {h['price']:.2f} {h['price_currency']} → "
+            f"{format_money(h['market_value'], DEFAULT_CURRENCY)} | "
             f"{format_money(h['unrealized_gain'], DEFAULT_CURRENCY)}{gain_pct}"
         )
     lines.append("")

@@ -27,7 +27,14 @@ MAX_HISTORY_TURNS = 6  # rolling window: 6 user+assistant pairs = 12 messages ke
 # the two key types never collide, so the channels naturally stay in separate threads.
 chat_history: dict[int | str, list[dict]] = {}
 
-_SHARED_PROMPT_BODY = f"""Answer questions about their spending, holdings, balances, and recent transactions by
+def _shared_prompt_body() -> str:
+    # Computed per call, not baked in at import time — the bot/backend process runs
+    # continuously across days, so "today" must be re-read on every request.
+    today = date.today().isoformat()
+    return f"""Today's date is {today}. Use this as the anchor for any date-relative reasoning
+(e.g. judging whether a dividend's ex-date or a due date is upcoming or already past).
+
+Answer questions about their spending, holdings, balances, and recent transactions by
 calling the provided tools — never guess figures from memory. All monetary values from tools are already
 in {DEFAULT_CURRENCY} unless a tool result states otherwise. Default to the "week" period when a question
 doesn't specify a timeframe. When a question refers to "this month" or "the current month," use the
@@ -40,11 +47,12 @@ whether the position is in the green (unrealized_gain > 0) or red (unrealized_ga
 
 
 def _build_system_prompt(channel: str) -> str:
+    shared = _shared_prompt_body()
     if channel == "web":
         return f"""You are a personal finance assistant for a user based in Singapore, integrated into
 their web dashboard. Keep replies concise and use plain text with line breaks where helpful.
 
-{_SHARED_PROMPT_BODY}"""
+{shared}"""
     return f"""You are a personal finance assistant for a user based in Singapore, built into
 their Telegram bot. Keep replies concise and use plain text
 (no Markdown formatting — the message is sent unformatted).
@@ -52,7 +60,7 @@ their Telegram bot. Keep replies concise and use plain text
 If asked for the web dashboard link or how to get to the dashboard, answer directly with this URL —
 no tool call needed: {DASHBOARD_URL}
 
-{_SHARED_PROMPT_BODY}"""
+{shared}"""
 
 TOOLS = [
     {

@@ -3,7 +3,7 @@ from datetime import date as _date
 
 from pydantic import BaseModel, field_validator, model_validator
 
-from utils.constants import ACCOUNT_TYPES, CATEGORIES, CURRENCIES, PORTFOLIO_ACTIONS
+from utils.constants import ACCOUNT_TYPES, CURRENCIES, PORTFOLIO_ACTIONS
 
 
 class LoginRequest(BaseModel):
@@ -62,9 +62,24 @@ class TransactionCreate(BaseModel):
 
     @field_validator("category")
     @classmethod
-    def category_valid(cls, v: str) -> str:
-        if v not in CATEGORIES:
-            raise ValueError(f"category must be one of {CATEGORIES}")
+    def category_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("category is required")
+        return v
+    # Membership against the user's full category list (built-in + custom) can't be
+    # checked here — this validator has no access to user_id — so it's enforced in
+    # backend/routers/spending.py::create_transaction instead, via get_categories_for_user.
+
+
+class CategoryCreate(BaseModel):
+    name: str
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Category name is required.")
         return v
 
 

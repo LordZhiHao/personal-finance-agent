@@ -70,6 +70,7 @@ def compute_holdings_summary(user_id: str, display_currency: str = "SGD") -> dic
             "account_name": account["name"],
             "ticker": ticker,
             "name": price_info["name"] if price_info else None,
+            "price": price_info["price"] if price_info else None,
             "price_currency": price_info["currency"] if price_info else None,
             "quantity": qty,
             "avg_cost": state["avg_cost"],
