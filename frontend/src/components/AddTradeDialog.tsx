@@ -5,7 +5,7 @@ import { z } from "zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Account, Meta } from "../types";
 import { api } from "../api/client";
-import { Button, Input, Overlay, Select } from "./ui";
+import { Button, Field, Input, Overlay, Select } from "./ui";
 
 const schema = z
   .object({
@@ -173,21 +173,5 @@ export function AddTradeDialog({
         </div>
       </form>
     </Overlay>
-  );
-}
-
-function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1">
-      <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-        {label}
-      </span>
-      {children}
-      {error && (
-        <span className="text-xs" style={{ color: "var(--tint-red-text)" }}>
-          {error}
-        </span>
-      )}
-    </label>
   );
 }

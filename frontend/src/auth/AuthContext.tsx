@@ -1,12 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api, clearToken, getToken, setToken, ApiError } from "../api/client";
-
-interface Me {
-  id: string;
-  email: string;
-  telegram_linked: boolean;
-  main_currency: string;
-}
+import type { Me } from "../types";
 
 interface AuthContextValue {
   isAuthenticated: boolean;
@@ -14,11 +8,13 @@ interface AuthContextValue {
   email: string | null;
   telegramLinked: boolean;
   mainCurrency: string;
+  onboardingCompleted: boolean;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string) => Promise<void>;
   logout: () => void;
   refreshMe: () => Promise<void>;
+  completeOnboarding: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -29,6 +25,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState<string | null>(null);
   const [telegramLinked, setTelegramLinked] = useState(false);
   const [mainCurrency, setMainCurrency] = useState("SGD");
+  const [onboardingCompleted, setOnboardingCompleted] = useState(false);
   const [loading, setLoading] = useState(() => Boolean(getToken()));
 
   const refreshMe = useCallback(async () => {
@@ -38,6 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setEmail(me.email);
       setTelegramLinked(me.telegram_linked);
       setMainCurrency(me.main_currency);
+      setOnboardingCompleted(me.onboarding_completed);
       setIsAuthenticated(true);
     } catch {
       setIsAuthenticated(false);
@@ -45,10 +43,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setEmail(null);
       setTelegramLinked(false);
       setMainCurrency("SGD");
+      setOnboardingCompleted(false);
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const completeOnboarding = useCallback(async () => {
+    await api.post("/api/auth/complete-onboarding", {});
+    await refreshMe();
+  }, [refreshMe]);
 
   useEffect(() => {
     if (getToken()) {
@@ -99,11 +103,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setEmail(null);
     setTelegramLinked(false);
     setMainCurrency("SGD");
+    setOnboardingCompleted(false);
   }, []);
 
   return (
     <AuthContext.Provider
-      value={{ isAuthenticated, userId, email, telegramLinked, mainCurrency, loading, login, signup, logout, refreshMe }}
+      value={{
+        isAuthenticated,
+        userId,
+        email,
+        telegramLinked,
+        mainCurrency,
+        onboardingCompleted,
+        loading,
+        login,
+        signup,
+        logout,
+        refreshMe,
+        completeOnboarding,
+      }}
     >
       {children}
     </AuthContext.Provider>

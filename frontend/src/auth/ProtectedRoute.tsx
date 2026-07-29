@@ -2,9 +2,10 @@ import { useState, type ReactNode } from "react";
 import { useAuth } from "./AuthContext";
 import { LoginPage } from "./LoginPage";
 import { SignupPage } from "./SignupPage";
+import { OnboardingWizard } from "../onboarding/OnboardingWizard";
 
 export function ProtectedRoute({ children }: { children: ReactNode }) {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, onboardingCompleted, loading } = useAuth();
   const [mode, setMode] = useState<"login" | "signup">("login");
 
   if (loading) return null;
@@ -15,6 +16,10 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
     ) : (
       <SignupPage onSwitchToLogin={() => setMode("login")} />
     );
+  }
+
+  if (!onboardingCompleted) {
+    return <OnboardingWizard />;
   }
 
   return <>{children}</>;

@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Card } from "../components/ui/Card";
-import { Button, Input, Overlay, Select } from "../components/ui";
+import { Button, Field, Input, Overlay, Select } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
 import {
   useAccounts,
@@ -32,22 +32,6 @@ const categorySchema = z.object({
   name: z.string().min(1, "Category name is required."),
 });
 type CategoryFormValues = z.infer<typeof categorySchema>;
-
-function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1">
-      <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-        {label}
-      </span>
-      {children}
-      {error && (
-        <span className="text-xs" style={{ color: "var(--tint-red-text)" }}>
-          {error}
-        </span>
-      )}
-    </label>
-  );
-}
 
 function AccountDialog({
   account,

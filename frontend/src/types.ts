@@ -103,6 +103,14 @@ export interface Meta {
   portfolio_actions: string[];
 }
 
+export interface Me {
+  id: string;
+  email: string;
+  telegram_linked: boolean;
+  main_currency: string;
+  onboarding_completed: boolean;
+}
+
 export interface AccountCandidate {
   id: string;
   name: string;

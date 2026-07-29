@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from backend.auth import create_access_token, get_current_user, hash_password, verify_password
@@ -31,17 +33,22 @@ def login(payload: LoginRequest):
     return {"access_token": token, "token_type": "bearer"}
 
 
-@router.get("/me")
-def me(user_id: str = Depends(get_current_user)):
-    user = get_user_by_id(user_id)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+def _me_response(user: dict) -> dict:
     return {
         "id": user["id"],
         "email": user["email"],
         "telegram_linked": user["telegram_chat_id"] is not None,
         "main_currency": user["main_currency"],
+        "onboarding_completed": user["onboarding_completed_at"] is not None,
     }
+
+
+@router.get("/me")
+def me(user_id: str = Depends(get_current_user)):
+    user = get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    return _me_response(user)
 
 
 @router.patch("/me")
@@ -50,9 +57,13 @@ def update_me(payload: MeUpdate, user_id: str = Depends(get_current_user)):
     if not updates:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
     user = update_user(user_id, updates)
-    return {
-        "id": user["id"],
-        "email": user["email"],
-        "telegram_linked": user["telegram_chat_id"] is not None,
-        "main_currency": user["main_currency"],
-    }
+    return _me_response(user)
+
+
+@router.post("/complete-onboarding")
+def complete_onboarding(user_id: str = Depends(get_current_user)):
+    """Marks the post-signup onboarding wizard as done (finished or skipped) —
+    a one-way action, not a general profile edit, so it's its own endpoint
+    rather than a MeUpdate field."""
+    user = update_user(user_id, {"onboarding_completed_at": datetime.now(timezone.utc).isoformat()})
+    return _me_response(user)
