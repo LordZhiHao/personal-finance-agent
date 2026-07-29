@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Card } from "../components/ui/Card";
-import { Button, Input, Select } from "../components/ui";
+import { Button, Input, Overlay, Select } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
 import {
   useAccounts,
@@ -24,6 +24,7 @@ const accountSchema = z.object({
   name: z.string().min(1, "Name is required."),
   type: z.string().min(1),
   currency: z.string().min(1),
+  comments: z.string().optional(),
 });
 type AccountFormValues = z.infer<typeof accountSchema>;
 
@@ -32,25 +33,120 @@ const categorySchema = z.object({
 });
 type CategoryFormValues = z.infer<typeof categorySchema>;
 
-function AccountRow({ account, meta }: { account: Account; meta: Meta }) {
+function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+        {label}
+      </span>
+      {children}
+      {error && (
+        <span className="text-xs" style={{ color: "var(--tint-red-text)" }}>
+          {error}
+        </span>
+      )}
+    </label>
+  );
+}
+
+function AccountDialog({
+  account,
+  meta,
+  onClose,
+}: {
+  account?: Account;
+  meta: Meta;
+  onClose: () => void;
+}) {
+  const isEdit = Boolean(account);
+  const createMutation = useCreateAccount();
   const updateMutation = useUpdateAccount();
-  const deleteMutation = useDeleteAccount();
-  const [draft, setDraft] = useState<{ name: string; type: string; currency: string; comments: string }>({
-    name: account.name,
-    type: account.type,
-    currency: account.currency,
-    comments: account.comments ?? "",
+  const mutation = isEdit ? updateMutation : createMutation;
+  const [serverError, setServerError] = useState<string | null>(null);
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<AccountFormValues>({
+    resolver: zodResolver(accountSchema),
+    defaultValues: {
+      name: account?.name ?? "",
+      type: account?.type ?? meta.account_types[0] ?? "",
+      currency: account?.currency ?? meta.currencies[0] ?? "",
+      comments: account?.comments ?? "",
+    },
   });
 
-  const dirty =
-    draft.name !== account.name ||
-    draft.type !== account.type ||
-    draft.currency !== account.currency ||
-    draft.comments !== (account.comments ?? "");
-
-  function handleSave() {
-    updateMutation.mutate({ id: account.id, ...draft });
+  function onSubmit(values: AccountFormValues) {
+    setServerError(null);
+    if (account) {
+      updateMutation.mutate(
+        { id: account.id, ...values },
+        { onSuccess: onClose, onError: (err) => setServerError(err instanceof Error ? err.message : "Failed to save.") },
+      );
+    } else {
+      createMutation.mutate(values, {
+        onSuccess: onClose,
+        onError: (err) => setServerError(err instanceof Error ? err.message : "Failed to save."),
+      });
+    }
   }
+
+  return (
+    <Overlay onClose={onClose}>
+      <h2 className="text-lg font-semibold mb-4" style={{ color: "var(--text-heading)" }}>
+        {isEdit ? "Edit Account" : "Add Account"}
+      </h2>
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
+        <Field label="Name" error={errors.name?.message}>
+          <Input {...register("name")} placeholder="e.g. DBS" className="w-full" />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Type">
+            <Select {...register("type")} className="w-full">
+              {meta.account_types.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Currency">
+            <Select {...register("currency")} className="w-full">
+              {meta.currencies.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+        <Field label="Notes">
+          <Input {...register("comments")} placeholder="e.g. for US stock trades" className="w-full" />
+        </Field>
+
+        {serverError && (
+          <p className="text-sm" style={{ color: "var(--tint-red-text)" }}>
+            {serverError}
+          </p>
+        )}
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={isSubmitting || mutation.isPending}>
+            {mutation.isPending ? "Saving…" : isEdit ? "Save Changes" : "Add Account"}
+          </Button>
+        </div>
+      </form>
+    </Overlay>
+  );
+}
+
+function AccountRow({ account, meta }: { account: Account; meta: Meta }) {
+  const deleteMutation = useDeleteAccount();
+  const [editing, setEditing] = useState(false);
 
   function handleDelete() {
     if (
@@ -63,132 +159,63 @@ function AccountRow({ account, meta }: { account: Account; meta: Meta }) {
   }
 
   return (
-    <div className="flex flex-wrap items-end gap-2 py-2" style={{ borderBottom: "1px solid var(--gridline)" }}>
-      <Input
-        value={draft.name}
-        onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-        className="w-32"
-      />
-      <Select value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value })} className="w-28">
-        {meta.account_types.map((t) => (
-          <option key={t} value={t}>
-            {t}
-          </option>
-        ))}
-      </Select>
-      <Select
-        value={draft.currency}
-        onChange={(e) => setDraft({ ...draft, currency: e.target.value })}
-        className="w-20"
-      >
-        {meta.currencies.map((c) => (
-          <option key={c} value={c}>
-            {c}
-          </option>
-        ))}
-      </Select>
-      <Input
-        value={draft.comments}
-        onChange={(e) => setDraft({ ...draft, comments: e.target.value })}
-        placeholder="e.g. for US stock trades"
-        className="flex-1 min-w-[10rem]"
-      />
-      <Button variant="outline" onClick={handleSave} disabled={!dirty || updateMutation.isPending}>
-        {updateMutation.isPending ? "Saving…" : "Save"}
-      </Button>
-      <Button
-        variant="ghost"
-        onClick={handleDelete}
-        disabled={deleteMutation.isPending}
-        style={{ color: "var(--tint-red-text)" }}
-      >
-        Delete
-      </Button>
-    </div>
+    <>
+      <div className="flex items-center justify-between gap-2 py-2" style={{ borderBottom: "1px solid var(--gridline)" }}>
+        <div className="min-w-0">
+          <div className="text-sm font-medium truncate" style={{ color: "var(--text-primary)" }}>
+            {account.name}
+          </div>
+          <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
+            {account.type} · {account.currency}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" onClick={() => setEditing(true)}>
+            Edit
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={handleDelete}
+            disabled={deleteMutation.isPending}
+            style={{ color: "var(--tint-red-text)" }}
+          >
+            Delete
+          </Button>
+        </div>
+      </div>
+      {editing && <AccountDialog account={account} meta={meta} onClose={() => setEditing(false)} />}
+    </>
   );
 }
 
 function AccountsCard() {
   const accountsQuery = useAccounts();
   const metaQuery = useMeta();
-  const mutation = useCreateAccount();
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors, isSubmitting },
-  } = useForm<AccountFormValues>({
-    resolver: zodResolver(accountSchema),
-    defaultValues: { name: "", type: metaQuery.data?.account_types[0] ?? "", currency: metaQuery.data?.currencies[0] ?? "" },
-  });
+  const [adding, setAdding] = useState(false);
 
   if (!metaQuery.data) return null;
 
   return (
     <Card>
-      <h2 className="text-sm font-semibold mb-2" style={{ color: "var(--text-heading)" }}>
-        Your Accounts
-      </h2>
-      <div className="mb-3">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-sm font-semibold" style={{ color: "var(--text-heading)" }}>
+          Your Accounts
+        </h2>
+        <Button variant="outline" onClick={() => setAdding(true)}>
+          ＋ Add Account
+        </Button>
+      </div>
+      <div>
         {(accountsQuery.data ?? []).map((a) => (
           <AccountRow key={a.id} account={a} meta={metaQuery.data} />
         ))}
         {accountsQuery.data?.length === 0 && (
           <p className="text-sm py-1" style={{ color: "var(--text-secondary)" }}>
-            No accounts yet — create one below.
+            No accounts yet — tap "＋ Add Account" to create one.
           </p>
         )}
       </div>
-      <form
-        onSubmit={handleSubmit((values) => {
-          mutation.mutate(values, { onSuccess: () => reset() });
-        })}
-        className="flex flex-wrap items-end gap-2"
-      >
-        <label className="flex flex-col gap-1">
-          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-            Name
-          </span>
-          <Input {...register("name")} placeholder="e.g. DBS" />
-          {errors.name && (
-            <span className="text-xs" style={{ color: "var(--tint-red-text)" }}>
-              {errors.name.message}
-            </span>
-          )}
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-            Type
-          </span>
-          <Select {...register("type")}>
-            {metaQuery.data.account_types.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </Select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-            Currency
-          </span>
-          <Select {...register("currency")}>
-            {metaQuery.data.currencies.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </Select>
-        </label>
-        <Button type="submit" variant="primary" disabled={isSubmitting || mutation.isPending}>
-          {mutation.isPending ? "Adding…" : "＋ Add Account"}
-        </Button>
-      </form>
-      {mutation.isError && (
-        <p className="text-sm mt-2" style={{ color: "var(--tint-red-text)" }}>
-          Could not create account. Try again.
-        </p>
-      )}
+      {adding && <AccountDialog meta={metaQuery.data} onClose={() => setAdding(false)} />}
     </Card>
   );
 }
