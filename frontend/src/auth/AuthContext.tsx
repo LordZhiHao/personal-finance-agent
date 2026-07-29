@@ -5,6 +5,7 @@ interface Me {
   id: string;
   email: string;
   telegram_linked: boolean;
+  main_currency: string;
 }
 
 interface AuthContextValue {
@@ -12,6 +13,7 @@ interface AuthContextValue {
   userId: string | null;
   email: string | null;
   telegramLinked: boolean;
+  mainCurrency: string;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string) => Promise<void>;
@@ -26,6 +28,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [userId, setUserId] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
   const [telegramLinked, setTelegramLinked] = useState(false);
+  const [mainCurrency, setMainCurrency] = useState("SGD");
   const [loading, setLoading] = useState(() => Boolean(getToken()));
 
   const refreshMe = useCallback(async () => {
@@ -34,12 +37,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUserId(me.id);
       setEmail(me.email);
       setTelegramLinked(me.telegram_linked);
+      setMainCurrency(me.main_currency);
       setIsAuthenticated(true);
     } catch {
       setIsAuthenticated(false);
       setUserId(null);
       setEmail(null);
       setTelegramLinked(false);
+      setMainCurrency("SGD");
     } finally {
       setLoading(false);
     }
@@ -93,11 +98,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUserId(null);
     setEmail(null);
     setTelegramLinked(false);
+    setMainCurrency("SGD");
   }, []);
 
   return (
     <AuthContext.Provider
-      value={{ isAuthenticated, userId, email, telegramLinked, loading, login, signup, logout, refreshMe }}
+      value={{ isAuthenticated, userId, email, telegramLinked, mainCurrency, loading, login, signup, logout, refreshMe }}
     >
       {children}
     </AuthContext.Provider>

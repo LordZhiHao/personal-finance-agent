@@ -27,7 +27,7 @@ export function Card({
 } & HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={clsx("rounded-card", padding && "p-5", className)}
+      className={clsx("rounded-card", padding && "p-4", className)}
       style={{
         background: TINT_BG[tint],
         boxShadow: "var(--shadow-card)",

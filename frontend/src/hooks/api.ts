@@ -114,6 +114,13 @@ export function useGenerateTelegramLinkCode() {
   });
 }
 
+export function useUpdateMainCurrency() {
+  return useMutation({
+    mutationFn: (main_currency: string) =>
+      api.patch<{ main_currency: string }>("/api/auth/me", { main_currency }),
+  });
+}
+
 export function useCreateAccount() {
   const queryClient = useQueryClient();
   return useMutation({

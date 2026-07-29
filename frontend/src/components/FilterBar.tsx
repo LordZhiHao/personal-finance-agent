@@ -7,17 +7,15 @@ export interface FilterValue {
   endDate: string;
   account: string; // account name, or "All"
   type?: "all" | "income" | "expense";
-  currency?: string;
 }
 
 interface FilterBarProps {
   accounts: Account[];
   value: FilterValue;
   onChange: (value: FilterValue) => void;
-  currencies?: string[];
 }
 
-export function FilterBar({ accounts, value, onChange, currencies }: FilterBarProps) {
+export function FilterBar({ accounts, value, onChange }: FilterBarProps) {
   const [pending, setPending] = useState<FilterValue>(value);
 
   return (
@@ -69,20 +67,6 @@ export function FilterBar({ accounts, value, onChange, currencies }: FilterBarPr
             <option value="all">All</option>
             <option value="income">Income</option>
             <option value="expense">Expense</option>
-          </Select>
-        </div>
-      )}
-      {currencies && pending.currency !== undefined && (
-        <div className="flex flex-col gap-1">
-          <label className="text-xs" style={{ color: "var(--text-muted)" }}>
-            Display currency
-          </label>
-          <Select value={pending.currency} onChange={(e) => setPending({ ...pending, currency: e.target.value })}>
-            {currencies.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
           </Select>
         </div>
       )}

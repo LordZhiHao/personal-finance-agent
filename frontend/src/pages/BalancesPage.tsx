@@ -1,30 +1,19 @@
-import { useState } from "react";
-import { useBalances, useMeta } from "../hooks/api";
+import { useBalances } from "../hooks/api";
+import { useAuth } from "../auth/AuthContext";
 import { StatCard } from "../components/StatCard";
 import { ChartCard } from "../components/ChartCard";
 import { BalancesTable } from "../components/charts/BalancesTable";
 import { formatMoney } from "../lib/format";
-import { Select } from "../components/ui";
 
 export function BalancesPage() {
-  const metaQuery = useMeta();
-  const [currency, setCurrency] = useState("SGD");
+  const { mainCurrency: currency } = useAuth();
   const balancesQuery = useBalances(currency);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold" style={{ color: "var(--text-heading)" }}>
-          💳 Balances
-        </h1>
-        <Select value={currency} onChange={(e) => setCurrency(e.target.value)}>
-          {(metaQuery.data?.currencies ?? ["SGD"]).map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </Select>
-      </div>
+    <div className="space-y-3">
+      <h1 className="text-xl font-semibold" style={{ color: "var(--text-heading)" }}>
+        💳 Balances
+      </h1>
 
       {balancesQuery.isLoading ? (
         <p style={{ color: "var(--text-secondary)" }}>Loading…</p>

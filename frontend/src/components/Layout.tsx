@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
+import clsx from "clsx";
 import {
   Bot,
   PieChart,
@@ -9,6 +10,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
+import { useScrollDirection } from "../hooks/useScrollDirection";
 import { Button } from "./ui/Button";
 
 interface NavItem {
@@ -36,14 +38,14 @@ function NavIconLink({ item }: { item: NavItem }) {
       title={item.label}
       className="relative flex items-center justify-center shrink-0 transition-colors"
       style={({ isActive }) => ({
-        width: 40,
-        height: 40,
+        width: 48,
+        height: 48,
         borderRadius: "var(--radius-control)",
         background: isActive ? "var(--brand-tint)" : "transparent",
         color: isActive ? "var(--brand)" : "var(--text-secondary)",
       })}
     >
-      {({ isActive }) => <Icon size={20} strokeWidth={isActive ? 2.25 : 2} />}
+      {({ isActive }) => <Icon size={24} strokeWidth={isActive ? 2.25 : 2} />}
     </NavLink>
   );
 }
@@ -55,6 +57,7 @@ function NavDivider() {
 export function Layout() {
   const { logout, email } = useAuth();
   const initial = email ? email.trim()[0]?.toUpperCase() : "?";
+  const scrollingDown = useScrollDirection();
 
   return (
     <div className="min-h-screen" style={{ background: "var(--page)" }}>
@@ -107,7 +110,10 @@ export function Layout() {
 
       {/* Mobile: slim top bar (logo + account), nav lives in the fixed bottom bar below */}
       <header
-        className="md:hidden sticky top-0 z-30 flex items-center justify-between gap-3 px-4 py-3"
+        className={clsx(
+          "md:hidden sticky top-0 z-30 flex items-center justify-between gap-3 px-4 py-3 transition-transform duration-300",
+          scrollingDown && "-translate-y-full"
+        )}
         style={{ background: "var(--surface-1)", boxShadow: "var(--shadow-card)" }}
       >
         <h1 className="flex items-center gap-2 text-base font-semibold">
@@ -129,12 +135,15 @@ export function Layout() {
         </div>
       </header>
 
-      <main className="p-4 pb-24 md:p-6 overflow-x-hidden max-w-[1400px] mx-auto">
+      <main className="p-3 pb-28 md:p-4 overflow-x-hidden max-w-[1400px] mx-auto">
         <Outlet />
       </main>
 
       <nav
-        className="md:hidden fixed bottom-0 inset-x-0 z-40 flex items-center justify-around px-2 py-2"
+        className={clsx(
+          "md:hidden fixed bottom-0 inset-x-0 z-40 flex items-center justify-around px-2 py-3 transition-transform duration-300",
+          scrollingDown && "translate-y-full"
+        )}
         style={{
           background: "var(--surface-1)",
           boxShadow: "var(--shadow-card)",

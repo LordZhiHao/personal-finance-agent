@@ -133,7 +133,7 @@ export function TradeHistoryTable({
             <Th sortDirection={directionFor("date")} onSort={() => requestSort("date")}>
               Date
             </Th>
-            <Th sortDirection={directionFor("ticker")} onSort={() => requestSort("ticker")}>
+            <Th sticky className="min-w-[110px]" sortDirection={directionFor("ticker")} onSort={() => requestSort("ticker")}>
               Ticker
             </Th>
             <Th sortDirection={directionFor("action")} onSort={() => requestSort("action")}>
@@ -170,7 +170,7 @@ export function TradeHistoryTable({
                       className="w-full"
                     />
                   </Td>
-                  <Td>
+                  <Td sticky className="min-w-[110px]">
                     <Input
                       value={edit.ticker}
                       onChange={(ev) => updateField(e, { ticker: ev.target.value })}

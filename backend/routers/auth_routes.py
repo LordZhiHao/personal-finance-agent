@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from backend.auth import create_access_token, get_current_user, hash_password, verify_password
-from backend.schemas import LoginRequest, SignupRequest
-from db.supabase import create_user, get_user_by_email, get_user_by_id
+from backend.schemas import LoginRequest, MeUpdate, SignupRequest
+from db.supabase import create_user, get_user_by_email, get_user_by_id, update_user
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -40,4 +40,19 @@ def me(user_id: str = Depends(get_current_user)):
         "id": user["id"],
         "email": user["email"],
         "telegram_linked": user["telegram_chat_id"] is not None,
+        "main_currency": user["main_currency"],
+    }
+
+
+@router.patch("/me")
+def update_me(payload: MeUpdate, user_id: str = Depends(get_current_user)):
+    updates = payload.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+    user = update_user(user_id, updates)
+    return {
+        "id": user["id"],
+        "email": user["email"],
+        "telegram_linked": user["telegram_chat_id"] is not None,
+        "main_currency": user["main_currency"],
     }

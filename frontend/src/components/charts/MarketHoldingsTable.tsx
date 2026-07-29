@@ -3,31 +3,18 @@ import { formatMoney, formatPct } from "../../lib/format";
 import { Table, Thead, Tbody, Tr, Th, Td } from "../ui/Table";
 import { useSortableRows } from "../../lib/sort";
 
-export function HoldingsTable({
-  holdings,
-  currency,
-  totalMarketValue,
-}: {
-  holdings: Holding[];
-  currency: string;
-  totalMarketValue?: number;
-}) {
-  const showPortfolioShare = totalMarketValue !== undefined && totalMarketValue > 0;
-
-  function portfolioShareFor(h: Holding): number | null {
-    return h.market_value !== null && showPortfolioShare ? (h.market_value / totalMarketValue!) * 100 : null;
-  }
-
+/** Like HoldingsTable, but every money column is that market's own native currency
+ * (native_cost_basis/native_market_value/native_unrealized_gain) rather than the
+ * app-wide main-currency-converted amounts HoldingsTable shows. */
+export function MarketHoldingsTable({ holdings, currency }: { holdings: Holding[]; currency: string }) {
   const { sorted, requestSort, directionFor } = useSortableRows(holdings, {
     ticker: (h) => h.ticker,
     account: (h) => h.account_name,
     quantity: (h) => h.quantity,
     avg_cost: (h) => h.avg_cost,
-    price: (h) => h.price,
-    market_value: (h) => h.market_value,
-    cost_basis: (h) => h.cost_basis,
-    gain: (h) => h.unrealized_gain,
-    portfolio_share: (h) => portfolioShareFor(h),
+    market_value: (h) => h.native_market_value,
+    cost_basis: (h) => h.native_cost_basis,
+    gain: (h) => h.native_unrealized_gain,
   });
 
   if (holdings.length === 0) {
@@ -49,34 +36,23 @@ export function HoldingsTable({
         <Th align="right" sortDirection={directionFor("avg_cost")} onSort={() => requestSort("avg_cost")}>
           Avg Cost
         </Th>
-        <Th align="right" sortDirection={directionFor("price")} onSort={() => requestSort("price")}>
-          Latest Price
-        </Th>
         <Th align="right" sortDirection={directionFor("market_value")} onSort={() => requestSort("market_value")}>
           Market Value
         </Th>
         <Th align="right" sortDirection={directionFor("cost_basis")} onSort={() => requestSort("cost_basis")}>
-          Cost Basis
+          Amount Invested
         </Th>
         <Th align="right" sortDirection={directionFor("gain")} onSort={() => requestSort("gain")}>
-          Gain/Loss
+          Return
         </Th>
-        {showPortfolioShare && (
-          <Th align="right" sortDirection={directionFor("portfolio_share")} onSort={() => requestSort("portfolio_share")}>
-            % of Portfolio
-          </Th>
-        )}
       </Thead>
       <Tbody>
         {sorted.map((h) => {
-          const noPrice = h.market_value === null;
+          const noPrice = h.native_market_value === null;
+          const gain = h.native_unrealized_gain;
+          const gainPct = gain !== null && h.native_cost_basis ? (gain / h.native_cost_basis) * 100 : null;
           const gainColor =
-            h.unrealized_gain === null
-              ? "var(--text-secondary)"
-              : h.unrealized_gain >= 0
-                ? "var(--tint-green-text)"
-                : "var(--tint-red-text)";
-          const portfolioShare = portfolioShareFor(h);
+            gain === null ? "var(--text-secondary)" : gain >= 0 ? "var(--tint-green-text)" : "var(--tint-red-text)";
           return (
             <Tr key={`${h.account_name}-${h.ticker}`}>
               <Td sticky className="min-w-[110px]">
@@ -92,20 +68,14 @@ export function HoldingsTable({
               </Td>
               <Td style={{ color: "var(--text-secondary)" }}>{h.account_name}</Td>
               <Td align="right">{h.quantity.toFixed(2)}</Td>
+              <Td align="right">{h.avg_cost.toFixed(2)}</Td>
               <Td align="right">
-                {h.avg_cost.toFixed(2)} {h.cost_currency}
+                {noPrice ? "no price available" : formatMoney(h.native_market_value!, currency)}
               </Td>
-              <Td align="right">
-                {h.price === null ? "—" : `${h.price.toFixed(2)} ${h.price_currency ?? ""}`}
-              </Td>
-              <Td align="right">{noPrice ? "no price available" : formatMoney(h.market_value!, currency)}</Td>
-              <Td align="right">{formatMoney(h.cost_basis, currency)}</Td>
+              <Td align="right">{formatMoney(h.native_cost_basis, currency)}</Td>
               <Td align="right" style={{ color: gainColor }} className="font-medium">
-                {h.unrealized_gain === null
-                  ? "—"
-                  : `${formatMoney(h.unrealized_gain, currency)} (${formatPct(h.unrealized_gain_pct ?? 0)})`}
+                {gain === null ? "—" : `${formatMoney(gain, currency)} (${formatPct(gainPct ?? 0)})`}
               </Td>
-              {showPortfolioShare && <Td align="right">{portfolioShare === null ? "—" : `${portfolioShare.toFixed(1)}%`}</Td>}
             </Tr>
           );
         })}

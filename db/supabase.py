@@ -491,6 +491,15 @@ def get_user_by_id(user_id: str) -> dict | None:
     return rows[0] if rows else None
 
 
+def update_user(user_id: str, fields: dict) -> dict:
+    db = get_client(use_service_key=True)
+    result = db.table("users").update(fields).eq("id", user_id).execute()
+    if not result.data:
+        raise LookupError(f"User {user_id} not found")
+    logger.info("update_user: id=%s fields=%s", user_id, list(fields.keys()))
+    return result.data[0]
+
+
 def get_user_by_telegram_chat_id(telegram_chat_id: int) -> dict | None:
     db = get_client(use_service_key=True)
     rows = db.table("users").select("*").eq("telegram_chat_id", telegram_chat_id).execute().data

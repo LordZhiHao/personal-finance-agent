@@ -31,17 +31,22 @@ export function Tr({ className, children, ...rest }: HTMLAttributes<HTMLTableRow
   );
 }
 
+const STICKY_SHADOW = "2px 0 4px -2px rgba(0,0,0,0.15)";
+
 export function Th({
   align = "left",
   className,
   children,
   sortDirection,
   onSort,
+  sticky,
+  style,
   ...rest
 }: {
   align?: "left" | "right";
   sortDirection?: "asc" | "desc" | null;
   onSort?: () => void;
+  sticky?: boolean;
 } & ThHTMLAttributes<HTMLTableCellElement>) {
   return (
     <th
@@ -49,9 +54,14 @@ export function Th({
         "text-xs font-medium uppercase tracking-wide py-3 px-3",
         align === "right" ? "text-right" : "text-left",
         onSort && "cursor-pointer select-none hover:opacity-75",
+        sticky && "sticky left-0 z-10",
         className
       )}
-      style={{ color: "var(--text-secondary)" }}
+      style={{
+        color: "var(--text-secondary)",
+        ...(sticky ? { background: "var(--tint-peach-header)", boxShadow: STICKY_SHADOW } : {}),
+        ...style,
+      }}
       onClick={onSort}
       {...rest}
     >
@@ -67,16 +77,23 @@ export function Td({
   align = "left",
   className,
   children,
+  sticky,
+  style,
   ...rest
-}: { align?: "left" | "right" } & TdHTMLAttributes<HTMLTableCellElement>) {
+}: { align?: "left" | "right"; sticky?: boolean } & TdHTMLAttributes<HTMLTableCellElement>) {
   return (
     <td
       className={clsx(
         "text-sm py-3 px-3 tabular-nums",
         align === "right" ? "text-right" : "text-left",
+        sticky && "sticky left-0 z-10",
         className
       )}
-      style={{ color: "var(--text-primary)" }}
+      style={{
+        color: "var(--text-primary)",
+        ...(sticky ? { background: "var(--surface-1)", boxShadow: STICKY_SHADOW } : {}),
+        ...style,
+      }}
       {...rest}
     >
       {children}

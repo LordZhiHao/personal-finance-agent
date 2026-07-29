@@ -62,6 +62,9 @@ export interface Holding {
   cost_basis: number;
   unrealized_gain: number | null;
   unrealized_gain_pct: number | null;
+  native_market_value: number | null;
+  native_cost_basis: number;
+  native_unrealized_gain: number | null;
 }
 
 export interface HoldingsSummary {

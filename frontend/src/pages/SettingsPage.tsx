@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -16,6 +16,7 @@ import {
   useMeta,
   useUpdateAccount,
   useUpdateCategory,
+  useUpdateMainCurrency,
 } from "../hooks/api";
 import type { Account, CustomCategory, Meta } from "../types";
 
@@ -291,6 +292,48 @@ function CategoriesCard() {
   );
 }
 
+function MainCurrencyCard() {
+  const { mainCurrency, refreshMe } = useAuth();
+  const metaQuery = useMeta();
+  const mutation = useUpdateMainCurrency();
+  const [draft, setDraft] = useState(mainCurrency);
+  const dirty = draft !== mainCurrency;
+
+  useEffect(() => {
+    if (!dirty) setDraft(mainCurrency);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mainCurrency]);
+
+  if (!metaQuery.data) return null;
+
+  return (
+    <Card>
+      <h2 className="text-sm font-semibold mb-1" style={{ color: "var(--text-heading)" }}>
+        Main Currency
+      </h2>
+      <p className="text-sm mb-3" style={{ color: "var(--text-secondary)" }}>
+        All amounts across the app are converted to this currency.
+      </p>
+      <div className="flex items-center gap-2">
+        <Select value={draft} onChange={(e) => setDraft(e.target.value)} className="w-24">
+          {metaQuery.data.currencies.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </Select>
+        <Button
+          variant="outline"
+          disabled={!dirty || mutation.isPending}
+          onClick={() => mutation.mutate(draft, { onSuccess: () => refreshMe() })}
+        >
+          {mutation.isPending ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 export function SettingsPage() {
   const { email, telegramLinked, refreshMe } = useAuth();
   const mutation = useGenerateTelegramLinkCode();
@@ -300,7 +343,7 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-xl">
+    <div className="space-y-4 max-w-xl">
       <h1 className="text-lg font-semibold" style={{ color: "var(--text-heading)" }}>
         Settings
       </h1>
@@ -313,6 +356,8 @@ export function SettingsPage() {
           {email}
         </p>
       </Card>
+
+      <MainCurrencyCard />
 
       <Card>
         <h2 className="text-sm font-semibold mb-2" style={{ color: "var(--text-heading)" }}>

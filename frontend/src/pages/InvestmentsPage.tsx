@@ -10,6 +10,7 @@ import {
   useSnapshotHistory,
   useSnapshots,
 } from "../hooks/api";
+import { useAuth } from "../auth/AuthContext";
 import { FilterBar, type FilterValue } from "../components/FilterBar";
 import { StatCard } from "../components/StatCard";
 import { ChartCard } from "../components/ChartCard";
@@ -29,7 +30,6 @@ const defaultFilters: FilterValue = {
   startDate: format(subDays(new Date(), 180), "yyyy-MM-dd"),
   endDate: today,
   account: "All",
-  currency: "SGD",
 };
 
 type Period = "1W" | "1M" | "1Y" | "All";
@@ -53,7 +53,7 @@ export function InvestmentsPage() {
   const [selectedBrokerAccountId, setSelectedBrokerAccountId] = useState<string>("");
   const [allocationView, setAllocationView] = useState<AllocationView>("broker");
 
-  const displayCurrency = filters.currency ?? "SGD";
+  const { mainCurrency: displayCurrency } = useAuth();
   const accountsQuery = useAccounts(["brokerage"]);
   const metaQuery = useMeta();
   const snapshotsQuery = useSnapshots(displayCurrency);
@@ -141,14 +141,13 @@ export function InvestmentsPage() {
   const eventsSorted = useMemo(() => [...events].sort((a, b) => b.date.localeCompare(a.date)), [events]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <h1 className="text-xl font-semibold" style={{ color: "var(--text-heading)" }}>
         📈 Investments
       </h1>
       <FilterBar
         accounts={accountsQuery.data ?? []}
         value={filters}
-        currencies={metaQuery.data?.currencies}
         onChange={(v) => {
           setFilters(v);
           setHasCustomFilters(true);
@@ -161,29 +160,17 @@ export function InvestmentsPage() {
         icon="💰"
         tint="brand"
         headerRight={
-          <div className="flex items-center gap-2">
-            {metaQuery.data && (
-              <TabToggle
-                options={metaQuery.data.currencies.map((c) => ({ value: c, label: c }))}
-                value={displayCurrency}
-                onChange={(c) => {
-                  setFilters({ ...filters, currency: c });
-                  setHasCustomFilters(true);
-                }}
-              />
-            )}
-            <Button
-              variant="ghost"
-              onClick={() => refreshPricesMutation.mutate()}
-              disabled={refreshPricesMutation.isPending}
-            >
-              {refreshPricesMutation.isPending ? "Refreshing…" : "🔄 Refresh Prices"}
-            </Button>
-          </div>
+          <Button
+            variant="ghost"
+            onClick={() => refreshPricesMutation.mutate()}
+            disabled={refreshPricesMutation.isPending}
+          >
+            {refreshPricesMutation.isPending ? "Refreshing…" : "🔄 Refresh Prices"}
+          </Button>
         }
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard
           title="Net Worth Over Time"
           headerRight={
@@ -226,7 +213,7 @@ export function InvestmentsPage() {
         </ChartCard>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard title="Top Holdings">
           {topHoldings.length > 0 ? (
             <div className="max-h-[420px] overflow-y-auto">

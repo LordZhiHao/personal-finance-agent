@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { format, subDays } from "date-fns";
 import { useAccounts, useMeta, useTransactions } from "../hooks/api";
+import { useAuth } from "../auth/AuthContext";
 import { FilterBar, type FilterValue } from "../components/FilterBar";
 import { StatCard } from "../components/StatCard";
 import { ChartCard } from "../components/ChartCard";
@@ -24,6 +25,7 @@ const defaultFilters: FilterValue = {
 };
 
 export function SpendingPage() {
+  const { mainCurrency } = useAuth();
   const [filters, setFilters] = useState<FilterValue>(defaultFilters);
   const [dialogOpen, setDialogOpen] = useState(false);
   const accountsQuery = useAccounts(["bank", "ewallet"]);
@@ -60,7 +62,7 @@ export function SpendingPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold" style={{ color: "var(--text-heading)" }}>
           💸 Spending
@@ -77,7 +79,7 @@ export function SpendingPage() {
         </p>
       ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <StatCard
               label="Monthly Income"
               value={`SGD ${monthlyIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
@@ -93,7 +95,7 @@ export function SpendingPage() {
             <StatCard label="Savings Rate" value={`${savingsRate}%`} icon="🏦" tint="amber" />
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <ChartCard title="Monthly Spend by Category">
               <MonthlySpendBarChart transactions={filtered} categories={categories} />
             </ChartCard>
@@ -102,7 +104,7 @@ export function SpendingPage() {
             </ChartCard>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <ChartCard title="Income vs Spend Over Time">
               <IncomeVsSpendLineChart transactions={filtered} />
             </ChartCard>
@@ -111,9 +113,9 @@ export function SpendingPage() {
             </ChartCard>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <ChartCard title="Spending Calendar">
-              <SpendingHeatmap daily={dailySpendTotals(filtered)} transactions={filtered} currency="SGD" />
+              <SpendingHeatmap daily={dailySpendTotals(filtered)} transactions={filtered} currency={mainCurrency} />
             </ChartCard>
             <ChartCard title="Month-over-Month by Category">
               <MonthComparisonBarChart transactions={filtered} />

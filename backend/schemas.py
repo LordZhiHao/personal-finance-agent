@@ -83,6 +83,18 @@ class AccountUpdate(BaseModel):
         return v
 
 
+class MeUpdate(BaseModel):
+    """Partial update for the current user's own profile fields (Settings page)."""
+    main_currency: str | None = None
+
+    @field_validator("main_currency")
+    @classmethod
+    def currency_valid(cls, v: str | None) -> str | None:
+        if v is not None and v not in CURRENCIES:
+            raise ValueError(f"main_currency must be one of {CURRENCIES}")
+        return v
+
+
 class CustomCategoryUpdate(BaseModel):
     name: str
 

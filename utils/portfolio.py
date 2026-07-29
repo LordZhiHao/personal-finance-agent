@@ -53,16 +53,24 @@ def compute_holdings_summary(user_id: str, display_currency: str = "SGD") -> dic
         ticker = p["ticker"]
         qty = p["quantity"]
         state = cost_state.get((p["account_id"], ticker), {"avg_cost": 0.0, "currency": display_currency})
-        cost_basis = convert(qty * state["avg_cost"], state["currency"], display_currency)
+        native_cost_basis = qty * state["avg_cost"]
+        cost_basis = convert(native_cost_basis, state["currency"], display_currency)
 
         price_info = prices.get(ticker)
         market_value = None
         unrealized_gain = None
         unrealized_gain_pct = None
+        native_market_value = None
+        native_unrealized_gain = None
         if price_info:
-            market_value = convert(qty * price_info["price"], price_info["currency"], display_currency)
+            native_market_value = qty * price_info["price"]
+            market_value = convert(native_market_value, price_info["currency"], display_currency)
             unrealized_gain = market_value - cost_basis
             unrealized_gain_pct = (unrealized_gain / cost_basis * 100) if cost_basis else None
+            # Native gain is only meaningful when price and cost share a currency
+            # (the normal case) — otherwise leave it None rather than mix currencies.
+            if price_info["currency"] == state["currency"]:
+                native_unrealized_gain = native_market_value - native_cost_basis
         else:
             logger.warning("compute_holdings_summary: no price available for ticker=%s", ticker)
 
@@ -79,6 +87,9 @@ def compute_holdings_summary(user_id: str, display_currency: str = "SGD") -> dic
             "cost_basis": cost_basis,
             "unrealized_gain": unrealized_gain,
             "unrealized_gain_pct": unrealized_gain_pct,
+            "native_market_value": native_market_value,
+            "native_cost_basis": native_cost_basis,
+            "native_unrealized_gain": native_unrealized_gain,
         })
 
         if market_value is not None:
