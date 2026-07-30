@@ -199,7 +199,14 @@ class ChatRequest(BaseModel):
 
 
 class ChatResponse(BaseModel):
-    reply: str
+    reply: str | None = None
+    needs_account_selection: bool = False
+    data: dict | None = None
+    candidates: list[dict] | None = None
+    summary: str | None = None
+    lines: list[str] | None = None
+    transaction_ids: list[str] | None = None
+    portfolio_event_ids: list[str] | None = None
 
 
 class ChatCommitRequest(BaseModel):

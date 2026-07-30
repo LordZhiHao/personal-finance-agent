@@ -1,12 +1,15 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
 
 from backend.auth import get_current_user
 from backend.schemas import ChatCommitRequest, ChatRequest, ChatResponse
 from bot.account_matcher import match_account
-from bot.extractor import extract_from_image, extract_from_pdf_images
+from bot.extractor import extract_from_image, extract_from_pdf_images, extract_from_text
 from bot.finance_agent import answer_question
 from bot.handlers import save_extraction
+from bot.router import classify_intent
 from db.supabase import get_accounts, get_categories_for_user
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -14,10 +17,51 @@ router = APIRouter(prefix="/api", tags=["chat"])
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(payload: ChatRequest, user_id: str = Depends(get_current_user)):
-    """answer_question runs a blocking DeepSeek tool-calling loop, so it's invoked in a
-    threadpool, same reason as /api/refresh-prices and /api/dividend-forecast in investments.py."""
-    reply = await run_in_threadpool(answer_question, user_id, payload.message, user_id, channel="web")
-    return ChatResponse(reply=reply)
+    """Mirrors bot/handlers.py::handle_text's routing: classify_intent decides chat (Q&A,
+    via answer_question, run in a threadpool same as /api/refresh-prices/
+    /api/dividend-forecast in investments.py) vs record (an expense/trade to log, via
+    extract_from_text -> match_account -> save_extraction, same building blocks as
+    /chat/upload below). Unlike the bot, there's no Telegram inline keyboard for an unsure
+    account match, so an unsure match returns needs_account_selection the same way
+    /chat/upload already does, for the frontend to resolve via POST /api/chat/commit."""
+    intent = await run_in_threadpool(classify_intent, payload.message)
+
+    if intent == "chat":
+        reply = await run_in_threadpool(answer_question, user_id, payload.message, user_id, channel="web")
+        return ChatResponse(reply=reply)
+
+    categories = get_categories_for_user(user_id)
+    try:
+        data = await run_in_threadpool(extract_from_text, payload.message, categories)
+    except (json.JSONDecodeError, ValueError):
+        return ChatResponse(reply="Couldn't parse that — try rephrasing, e.g. 'spent 12 on lunch'.")
+
+    if not data.get("transactions") and not data.get("portfolio_events"):
+        return ChatResponse(
+            reply="I couldn't find a transaction in that. Try something like "
+            "'Spent 0.5+3.5 on meals today', or attach a screenshot/PDF."
+        )
+
+    data["raw_text"] = str(data)
+    data["source"] = "web_text"
+
+    accounts = get_accounts(user_id=user_id)
+    if not accounts:
+        return ChatResponse(reply="You don't have any accounts yet — create one in Settings first.")
+
+    match = await run_in_threadpool(match_account, data, accounts)
+    if not match["account_id"]:
+        return ChatResponse(
+            needs_account_selection=True,
+            data=data,
+            candidates=[
+                {"id": a["id"], "name": a["name"], "type": a["type"], "currency": a["currency"]}
+                for a in match["candidates"]
+            ],
+        )
+
+    result = save_extraction(data, user_id, match["account_id"])
+    return ChatResponse(**_build_saved_response(data, result))
 
 
 def _format_saved_lines(data: dict) -> list[str]:

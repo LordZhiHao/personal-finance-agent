@@ -134,6 +134,17 @@ export interface UploadNeedsAccount {
 
 export type UploadResult = UploadSaved | UploadNeedsAccount;
 
+export interface ChatResult {
+  reply: string | null;
+  needs_account_selection: boolean;
+  data: Record<string, unknown> | null;
+  candidates: AccountCandidate[] | null;
+  summary: string | null;
+  lines: string[] | null;
+  transaction_ids: string[] | null;
+  portfolio_event_ids: string[] | null;
+}
+
 export interface DividendForecast {
   ticker: string;
   ex_dividend_date: string | null;

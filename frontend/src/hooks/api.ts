@@ -4,6 +4,7 @@ import type {
   Account,
   AssetSnapshot,
   BalancesSummary,
+  ChatResult,
   CustomCategory,
   DividendForecast,
   ExpenseSummary,
@@ -194,12 +195,6 @@ export function useDeleteCategory() {
   });
 }
 
-export function useSendChatMessage() {
-  return useMutation({
-    mutationFn: (message: string) => api.post<{ reply: string }>("/api/chat", { message }),
-  });
-}
-
 const UPLOAD_AFFECTED_QUERY_KEYS = [
   ["transactions"],
   ["expense-summary"],
@@ -208,6 +203,18 @@ const UPLOAD_AFFECTED_QUERY_KEYS = [
   ["balances"],
   ["snapshots"],
 ];
+
+export function useSendChatMessage() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (message: string) => api.post<ChatResult>("/api/chat", { message }),
+    onSuccess: (result) => {
+      if (!result.needs_account_selection && result.summary != null) {
+        for (const queryKey of UPLOAD_AFFECTED_QUERY_KEYS) queryClient.invalidateQueries({ queryKey });
+      }
+    },
+  });
+}
 
 export function useUploadChatFile() {
   const queryClient = useQueryClient();

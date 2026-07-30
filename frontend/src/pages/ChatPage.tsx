@@ -23,6 +23,9 @@ const THINKING_PHRASES = [
   "Almost there…",
 ];
 
+// Textarea grows with content (WhatsApp-style) up to this height, then scrolls internally.
+const MAX_TEXTAREA_HEIGHT = 128;
+
 function FinnAvatar({ size = 28 }: { size?: number }) {
   return (
     <img
@@ -72,6 +75,7 @@ export function ChatPage() {
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sendMutation = useSendChatMessage();
   const uploadMutation = useUploadChatFile();
   const commitMutation = useCommitUpload();
@@ -81,13 +85,48 @@ export function ChatPage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, sendMutation.isPending, uploadMutation.isPending]);
 
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`;
+  }, [draft]);
+
   function handleSend() {
     const text = draft.trim();
     if (!text || sendMutation.isPending) return;
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setDraft("");
     sendMutation.mutate(text, {
-      onSuccess: (data) => setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]),
+      onSuccess: (data) => {
+        if (data.needs_account_selection && data.data && data.candidates) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "assistant",
+              content: "Which account should I log this to?",
+              accountChoice: { data: data.data!, candidates: data.candidates! },
+            },
+          ]);
+        } else if (data.summary != null) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "assistant",
+              content: data.summary!,
+              upload: {
+                needs_account_selection: false,
+                summary: data.summary!,
+                lines: data.lines ?? [],
+                transaction_ids: data.transaction_ids ?? [],
+                portfolio_event_ids: data.portfolio_event_ids ?? [],
+              },
+            },
+          ]);
+        } else {
+          setMessages((prev) => [...prev, { role: "assistant", content: data.reply ?? "" }]);
+        }
+      },
       onError: () =>
         setMessages((prev) => [
           ...prev,
@@ -175,132 +214,118 @@ export function ChatPage() {
   const isBusy = sendMutation.isPending || uploadMutation.isPending;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-6.5rem)]">
-      <div className="flex items-center gap-2 mb-3">
-        <FinnAvatar size={36} />
-        <div>
-          <h1 className="text-lg font-semibold leading-tight" style={{ color: "var(--text-heading)" }}>
-            Finn
-          </h1>
-          <p className="text-xs leading-tight" style={{ color: "var(--text-secondary)" }}>
-            your finance buddy
-          </p>
-        </div>
+    <div className="flex flex-col h-[calc(100vh-4.75rem)] md:h-[calc(100vh-5.5rem)] -mx-3 md:-mx-4 -mt-3 md:-mt-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+        {messages.length === 0 && (
+          <div className="flex items-start gap-2">
+            <FinnAvatar />
+            <p
+              className="max-w-[85%] px-3 py-2 text-sm"
+              style={{ ...BUBBLE_STYLE.assistant, borderRadius: "var(--radius-control)" }}
+            >
+              Hey, I'm Finn! Ask me anything about your spending, holdings, or balances — attach a
+              receipt/screenshot to record it, or just type it, like "spent 12 on lunch", and I'll log it
+              directly.
+            </p>
+          </div>
+        )}
+        {messages.map((m, i) => (
+          <div key={i} className={`flex items-start gap-2 ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+            {m.role !== "user" && <FinnAvatar />}
+            <div
+              className="max-w-[85%] px-3 py-2 text-sm whitespace-pre-wrap"
+              style={{ ...BUBBLE_STYLE[m.role], borderRadius: "var(--radius-control)" }}
+            >
+              {m.content}
+              {m.upload && m.upload.lines.length > 0 && (
+                <div className="mt-1 text-xs space-y-0.5" style={{ color: "var(--text-secondary)" }}>
+                  {m.upload.lines.map((line, li) => (
+                    <div key={li}>{line}</div>
+                  ))}
+                </div>
+              )}
+              {m.upload && (
+                <div className="mt-2">
+                  {m.upload.undone ? (
+                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                      ↩️ Undone
+                    </span>
+                  ) : (
+                    <Button variant="ghost" onClick={() => handleUndo(i)} disabled={undoMutation.isPending}>
+                      {undoMutation.isPending ? "Undoing…" : "↩️ Undo"}
+                    </Button>
+                  )}
+                </div>
+              )}
+              {m.accountChoice && !m.accountChoice.resolved && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {m.accountChoice.candidates.map((a) => (
+                    <Button
+                      key={a.id}
+                      variant="outline"
+                      onClick={() => handleAccountChoice(i, a.id)}
+                      disabled={commitMutation.isPending}
+                    >
+                      {a.name}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+        {isBusy && (
+          <div className="flex items-start gap-2">
+            <FinnAvatar />
+            <div
+              className="max-w-[85%] px-3 py-2"
+              style={{ ...BUBBLE_STYLE.assistant, borderRadius: "var(--radius-control)" }}
+            >
+              <ThinkingIndicator />
+            </div>
+          </div>
+        )}
       </div>
-      <div
-        className="flex flex-col flex-1 min-h-0 overflow-hidden"
-        style={{
-          background: "var(--surface-1)",
-          borderRadius: "var(--radius-card)",
-          boxShadow: "var(--shadow-card)",
-        }}
-      >
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
-          {messages.length === 0 && (
-            <div className="flex items-start gap-2">
-              <FinnAvatar />
-              <p
-                className="max-w-[85%] px-3 py-2 text-sm"
-                style={{ ...BUBBLE_STYLE.assistant, borderRadius: "var(--radius-control)" }}
-              >
-                Hey, I'm Finn! Ask me anything about your spending, holdings, or balances — or attach a
-                receipt/screenshot to record it directly.
-              </p>
-            </div>
-          )}
-          {messages.map((m, i) => (
-            <div key={i} className={`flex items-start gap-2 ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-              {m.role !== "user" && <FinnAvatar />}
-              <div
-                className="max-w-[85%] px-3 py-2 text-sm whitespace-pre-wrap"
-                style={{ ...BUBBLE_STYLE[m.role], borderRadius: "var(--radius-control)" }}
-              >
-                {m.content}
-                {m.upload && m.upload.lines.length > 0 && (
-                  <div className="mt-1 text-xs space-y-0.5" style={{ color: "var(--text-secondary)" }}>
-                    {m.upload.lines.map((line, li) => (
-                      <div key={li}>{line}</div>
-                    ))}
-                  </div>
-                )}
-                {m.upload && (
-                  <div className="mt-2">
-                    {m.upload.undone ? (
-                      <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                        ↩️ Undone
-                      </span>
-                    ) : (
-                      <Button variant="ghost" onClick={() => handleUndo(i)} disabled={undoMutation.isPending}>
-                        {undoMutation.isPending ? "Undoing…" : "↩️ Undo"}
-                      </Button>
-                    )}
-                  </div>
-                )}
-                {m.accountChoice && !m.accountChoice.resolved && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {m.accountChoice.candidates.map((a) => (
-                      <Button
-                        key={a.id}
-                        variant="outline"
-                        onClick={() => handleAccountChoice(i, a.id)}
-                        disabled={commitMutation.isPending}
-                      >
-                        {a.name}
-                      </Button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-          {isBusy && (
-            <div className="flex items-start gap-2">
-              <FinnAvatar />
-              <div
-                className="max-w-[85%] px-3 py-2"
-                style={{ ...BUBBLE_STYLE.assistant, borderRadius: "var(--radius-control)" }}
-              >
-                <ThinkingIndicator />
-              </div>
-            </div>
-          )}
-        </div>
 
-        <div className="flex items-end gap-2 px-3 py-3 shrink-0" style={{ borderTop: "1px solid var(--border)" }}>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,application/pdf"
-            className="hidden"
-            onChange={handleFileSelected}
-          />
-          <Button
-            variant="outline"
-            onClick={handleAttachClick}
-            disabled={isBusy}
-            aria-label="Attach receipt or screenshot"
-          >
-            📎
-          </Button>
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Type a question…"
-            rows={1}
-            className="flex-1 px-3 py-2 text-sm outline-none resize-none focus:border-[var(--brand)]"
-            style={{
-              background: "var(--field-bg)",
-              color: "var(--text-primary)",
-              border: "1px solid transparent",
-              borderRadius: "var(--radius-control)",
-              maxHeight: "5rem",
-            }}
-          />
-          <Button variant="primary" onClick={handleSend} disabled={isBusy || !draft.trim()}>
-            Send
-          </Button>
-        </div>
+      <div
+        className="flex items-end gap-2 px-3 py-3 shrink-0"
+        style={{ borderTop: "1px solid var(--border)", background: "var(--surface-1)" }}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,application/pdf"
+          className="hidden"
+          onChange={handleFileSelected}
+        />
+        <Button
+          variant="outline"
+          onClick={handleAttachClick}
+          disabled={isBusy}
+          aria-label="Attach receipt or screenshot"
+        >
+          📎
+        </Button>
+        <textarea
+          ref={textareaRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Ask a question or log a transaction…"
+          rows={1}
+          className="flex-1 px-3 py-2 text-sm outline-none resize-none focus:border-[var(--brand)]"
+          style={{
+            background: "var(--field-bg)",
+            color: "var(--text-primary)",
+            border: "1px solid transparent",
+            borderRadius: "var(--radius-control)",
+            maxHeight: MAX_TEXTAREA_HEIGHT,
+            overflowY: "auto",
+          }}
+        />
+        <Button variant="primary" onClick={handleSend} disabled={isBusy || !draft.trim()}>
+          Send
+        </Button>
       </div>
     </div>
   );

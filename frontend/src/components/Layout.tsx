@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import clsx from "clsx";
 import {
   Bot,
@@ -54,10 +54,36 @@ function NavDivider() {
   return <div aria-hidden="true" style={{ width: 1, height: 24, background: "var(--border)" }} />;
 }
 
+/** Swaps the FinanceKu wordmark for the Finn chat-buddy branding while on /chat. */
+function BrandMark({ isChatPage, imgClassName }: { isChatPage: boolean; imgClassName: string }) {
+  if (isChatPage) {
+    return (
+      <>
+        <img
+          src="/logo-mark.png"
+          alt="Finn"
+          className={clsx(imgClassName, "rounded-full")}
+          style={{ background: "var(--brand-tint)" }}
+        />
+        <span style={{ color: "var(--text-heading)" }}>Finn</span>
+      </>
+    );
+  }
+  return (
+    <>
+      <img src="/logo-mark.png" alt="" className={imgClassName} />
+      <span style={{ color: "var(--text-heading)" }}>
+        Finance<span style={{ color: "var(--brand)" }}>Ku</span>
+      </span>
+    </>
+  );
+}
+
 export function Layout() {
   const { logout, email } = useAuth();
   const initial = email ? email.trim()[0]?.toUpperCase() : "?";
   const scrollingDown = useScrollDirection();
+  const isChatPage = useLocation().pathname === "/chat";
 
   return (
     <div className="min-h-screen" style={{ background: "var(--page)" }}>
@@ -71,10 +97,7 @@ export function Layout() {
             className="flex items-center gap-2 text-base font-semibold px-4 py-2 rounded-full"
             style={{ background: "var(--surface-1)", boxShadow: "var(--shadow-card)" }}
           >
-            <img src="/logo-mark.png" alt="" className="h-6 w-6" />
-            <span style={{ color: "var(--text-heading)" }}>
-              Finance<span style={{ color: "var(--brand)" }}>Ku</span>
-            </span>
+            <BrandMark isChatPage={isChatPage} imgClassName="h-6 w-6" />
           </h1>
         </div>
 
@@ -111,25 +134,27 @@ export function Layout() {
       {/* Mobile: slim top bar (logo + account), nav lives in the fixed bottom bar below */}
       <header
         className={clsx(
-          "md:hidden sticky top-0 z-30 flex items-center justify-between gap-3 px-4 py-3 transition-transform duration-300",
+          "md:hidden sticky top-0 z-30 flex items-center justify-between gap-3 px-4 transition-transform duration-300",
           scrollingDown && "-translate-y-full"
         )}
-        style={{ background: "var(--surface-1)", boxShadow: "var(--shadow-card)" }}
+        style={{
+          background: "var(--surface-1)",
+          boxShadow: "var(--shadow-card)",
+          paddingTop: "max(0.75rem, env(safe-area-inset-top))",
+          paddingBottom: "0.75rem",
+        }}
       >
         <h1 className="flex items-center gap-2 text-base font-semibold">
-          <img src="/logo-mark.png" alt="" className="h-7 w-7" />
-          <span style={{ color: "var(--text-heading)" }}>
-            Finance<span style={{ color: "var(--brand)" }}>Ku</span>
-          </span>
+          <BrandMark isChatPage={isChatPage} imgClassName="h-8 w-8" />
         </h1>
         <div className="flex items-center gap-2">
           <div
-            className="flex items-center justify-center rounded-full text-xs font-semibold"
-            style={{ width: 32, height: 32, background: "var(--brand-tint)", color: "var(--brand-hover)" }}
+            className="flex items-center justify-center rounded-full text-sm font-semibold"
+            style={{ width: 40, height: 40, background: "var(--brand-tint)", color: "var(--brand-hover)" }}
           >
             {initial}
           </div>
-          <Button variant="outline" onClick={logout}>
+          <Button variant="outline" onClick={logout} style={{ paddingTop: "0.7rem", paddingBottom: "0.7rem" }}>
             Logout
           </Button>
         </div>
