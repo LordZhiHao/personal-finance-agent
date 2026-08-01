@@ -352,7 +352,7 @@ export function ChatPage() {
         </div>
       </div>
 
-      <div className="px-3 pb-3 pt-2 shrink-0">{inputBar}</div>
+      <div className="px-3 pb-8 md:pb-3 pt-2 shrink-0">{inputBar}</div>
     </div>
   );
 }

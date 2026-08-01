@@ -21,13 +21,13 @@
   --radius-control: 13px;
   --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.05);
 
-  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: "Source Serif 4", Georgia, "Times New Roman", serif;
 }
 
 :root {
   color-scheme: light;
   --surface-1: #ffffff;
-  --page: linear-gradient(135deg, #e3f6ec 0%, #f7fdfa 50%, #d8f1e4 100%);
+  --page: linear-gradient(135deg, #b3e6cc 0%, #eafbf1 50%, #a0ddbb 100%);
   --text-heading: #16233d;
   --text-primary: #1f2937;
   --text-secondary: #6b7280;

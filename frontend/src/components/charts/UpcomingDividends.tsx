@@ -1,6 +1,7 @@
 import type { DividendForecast } from "../../types";
 import { Table, Thead, Tbody, Tr, Th, Td } from "../ui/Table";
 import { formatMoney } from "../../lib/format";
+import { useSortableRows } from "../../lib/sort";
 
 export interface TickerCostBasis {
   avgCost: number;
@@ -16,6 +17,21 @@ export function UpcomingDividends({
   names?: Record<string, string>;
   costBasis?: Record<string, TickerCostBasis>;
 }) {
+  function effectiveYieldFor(f: DividendForecast): number | null {
+    const cost = costBasis?.[f.ticker];
+    return f.dividend_rate !== null && cost && cost.avgCost > 0 && (!f.currency || f.currency === cost.currency)
+      ? (f.dividend_rate / cost.avgCost) * 100
+      : null;
+  }
+
+  const { sorted, requestSort, directionFor } = useSortableRows(forecast, {
+    ticker: (f) => f.ticker,
+    ex_dividend_date: (f) => f.ex_dividend_date,
+    dividend_rate: (f) => f.dividend_rate,
+    dividend_yield: (f) => f.dividend_yield,
+    effective_yield: (f) => effectiveYieldFor(f),
+  });
+
   if (forecast.length === 0) {
     return <p style={{ color: "var(--text-secondary)" }}>No held tickers yet.</p>;
   }
@@ -24,19 +40,29 @@ export function UpcomingDividends({
     <div className="max-h-[400px] overflow-y-auto">
       <Table>
         <Thead>
-          <Th>Ticker</Th>
-          <Th>Next Ex-Dividend</Th>
-          <Th align="right">Rate / Share</Th>
-          <Th align="right">Dividend Yield</Th>
-          <Th align="right">Effective Yield</Th>
+          <Th sortDirection={directionFor("ticker")} onSort={() => requestSort("ticker")}>
+            Ticker
+          </Th>
+          <Th sortDirection={directionFor("ex_dividend_date")} onSort={() => requestSort("ex_dividend_date")}>
+            Next Ex-Dividend
+          </Th>
+          <Th align="right" sortDirection={directionFor("dividend_rate")} onSort={() => requestSort("dividend_rate")}>
+            Rate / Share
+          </Th>
+          <Th align="right" sortDirection={directionFor("dividend_yield")} onSort={() => requestSort("dividend_yield")}>
+            Dividend Yield
+          </Th>
+          <Th
+            align="right"
+            sortDirection={directionFor("effective_yield")}
+            onSort={() => requestSort("effective_yield")}
+          >
+            Effective Yield
+          </Th>
         </Thead>
         <Tbody>
-          {forecast.map((f) => {
-            const cost = costBasis?.[f.ticker];
-            const effectiveYield =
-              f.dividend_rate !== null && cost && cost.avgCost > 0 && (!f.currency || f.currency === cost.currency)
-                ? (f.dividend_rate / cost.avgCost) * 100
-                : null;
+          {sorted.map((f) => {
+            const effectiveYield = effectiveYieldFor(f);
             return (
               <Tr key={f.ticker}>
                 <Td>
