@@ -15,6 +15,7 @@ import { SavingsRateLineChart } from "../components/charts/SavingsRateLineChart"
 import { SpendingHeatmap } from "../components/charts/SpendingHeatmap";
 import { MonthComparisonBarChart } from "../components/charts/MonthComparisonBarChart";
 import { dailySpendTotals, monthKey } from "../lib/dates";
+import { formatMoney } from "../lib/format";
 import { Button } from "../components/ui";
 import { LoadingFinn } from "../components/LoadingFinn";
 
@@ -92,13 +93,13 @@ export function SpendingPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <StatCard
               label="Monthly Income"
-              value={`SGD ${monthlyIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              value={formatMoney(monthlyIncome, mainCurrency)}
               icon={<Banknote size={20} />}
               tint="green"
             />
             <StatCard
               label="Monthly Spend"
-              value={`SGD ${monthlySpend.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              value={formatMoney(monthlySpend, mainCurrency)}
               icon={<Receipt size={20} />}
               tint="peach"
             />
