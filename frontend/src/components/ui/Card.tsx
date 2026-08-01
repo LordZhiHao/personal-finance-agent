@@ -32,6 +32,7 @@ export function Card({
         background: TINT_BG[tint],
         boxShadow: "var(--shadow-card)",
         borderRadius: "var(--radius-card)",
+        border: tint === "white" ? "none" : "1px solid rgba(17, 24, 39, 0.06)",
       }}
       {...rest}
     >
