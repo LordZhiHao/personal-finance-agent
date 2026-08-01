@@ -9,6 +9,7 @@ import { useSortableRows } from "../lib/sort";
 
 interface EditState {
   description: string;
+  amount: number;
   category: string;
   account_id: string;
 }
@@ -45,8 +46,9 @@ export function TransactionsTable({
         changedIds.map((id) => {
           const original = sorted.find((t) => t.id === id)!;
           const edit = edits[id];
-          const fields: Record<string, string> = {};
+          const fields: Record<string, string | number> = {};
           if (edit.description !== original.description) fields.description = edit.description;
+          if (edit.amount !== original.amount) fields.amount = edit.amount;
           if (edit.category !== original.category) fields.category = edit.category;
           if (edit.account_id !== original.account_id) fields.account_id = edit.account_id;
           return api.patch(`/api/transactions/${id}`, fields);
@@ -71,7 +73,14 @@ export function TransactionsTable({
   }
 
   function fieldFor(t: Transaction): EditState {
-    return edits[t.id] ?? { description: t.description, category: t.category, account_id: t.account_id };
+    return (
+      edits[t.id] ?? {
+        description: t.description,
+        amount: t.amount,
+        category: t.category,
+        account_id: t.account_id,
+      }
+    );
   }
 
   function updateField(t: Transaction, patch: Partial<EditState>) {
@@ -83,6 +92,7 @@ export function TransactionsTable({
     return (
       original &&
       (edit.description !== original.description ||
+        edit.amount !== original.amount ||
         edit.category !== original.category ||
         edit.account_id !== original.account_id)
     );
@@ -123,12 +133,23 @@ export function TransactionsTable({
                       className="w-full"
                     />
                   </Td>
-                  <Td
-                    align="right"
-                    className="font-medium"
-                    style={{ color: t.amount >= 0 ? "var(--tint-green-text)" : "var(--text-primary)" }}
-                  >
-                    {formatMoney(t.amount, t.currency)}
+                  <Td align="right">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                        {t.currency}
+                      </span>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={edit.amount}
+                        onChange={(e) => {
+                          const value = e.target.valueAsNumber;
+                          updateField(t, { amount: Number.isNaN(value) ? 0 : value });
+                        }}
+                        className="w-24 text-right font-medium"
+                        style={{ color: edit.amount >= 0 ? "var(--tint-green-text)" : "var(--text-primary)" }}
+                      />
+                    </div>
                   </Td>
                   <Td>
                     <Select

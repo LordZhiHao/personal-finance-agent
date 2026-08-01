@@ -108,10 +108,13 @@ class CustomCategoryUpdate(BaseModel):
 
 
 class TransactionUpdate(BaseModel):
-    """description/category/account_id are editable from the frontend's transactions
-    table (amount/date remain read-only, matching dashboard/views/spending.py, which
-    stays untouched and only ever sends description/category)."""
+    """description/amount/category/account_id are editable from the frontend's
+    transactions table (date remains read-only, matching dashboard/views/spending.py,
+    which stays untouched and only ever sends description/category). amount keeps the
+    existing sign convention (negative = expense) — the frontend sends the raw signed
+    value, unchanged here."""
     description: str | None = None
+    amount: float | None = None
     category: str | None = None
     account_id: str | None = None
 
