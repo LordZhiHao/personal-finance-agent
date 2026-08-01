@@ -33,7 +33,7 @@ export function IncomeVsSpendLineChart({ transactions }: { transactions: Transac
         <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} />
         <Tooltip {...tooltipStyle} />
         <Legend wrapperStyle={legendStyle} />
-        <Line type="monotone" dataKey="Income" stroke="var(--series-2)" strokeWidth={2} dot={{ r: 4 }} />
+        <Line type="monotone" dataKey="Income" stroke="var(--series-7)" strokeWidth={2} dot={{ r: 4 }} />
         <Line type="monotone" dataKey="Spend" stroke="var(--series-1)" strokeWidth={2} dot={{ r: 4 }} />
       </LineChart>
     </ResponsiveContainer>

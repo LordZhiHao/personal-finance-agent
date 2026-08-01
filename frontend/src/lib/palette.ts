@@ -1,6 +1,9 @@
 // Categorical hues in fixed order — never cycled/reassigned per filter state.
-// Values are CSS custom properties (see index.css) so charts follow light/dark
-// mode automatically without re-render.
+// Values are CSS custom properties (see index.css) so charts follow the
+// user's orange/green theme automatically without re-render. As of the
+// theme-coverage pass these are a monochrome ramp (light -> dark shades of
+// the brand hue), not distinct hues — see the rationale comment on index.css's
+// --series-1..8.
 export const CATEGORICAL = [
   "var(--series-1)",
   "var(--series-2)",
@@ -16,8 +19,16 @@ export const CATEGORICAL = [
 // entities the same color) — it folds to this neutral instead.
 export const NEUTRAL_FALLBACK = "var(--text-muted)";
 
+// Bit-spread traversal of the 8 ramp slots so a low item count (the common
+// case — 2-4 brokers/currencies, up to 8 expense categories) lands on
+// well-separated shades instead of clustering at the lightest end, now that
+// CATEGORICAL is a monochrome ramp rather than 8 distinct hues. A pure fixed
+// reindex — colorForKey's "stable by key" guarantee is unaffected.
+const SPREAD_ORDER = [0, 7, 3, 5, 1, 6, 2, 4];
+
 export function categoricalColor(index: number): string {
-  return index >= 0 && index < CATEGORICAL.length ? CATEGORICAL[index] : NEUTRAL_FALLBACK;
+  if (index < 0 || index >= CATEGORICAL.length) return NEUTRAL_FALLBACK;
+  return CATEGORICAL[SPREAD_ORDER[index]];
 }
 
 // Stable key -> color assignment so a series keeps its color across

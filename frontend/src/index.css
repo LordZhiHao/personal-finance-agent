@@ -57,16 +57,27 @@
   --radius-control: 13px;
   --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.05);
 
-  /* Chart categorical series — validated 8-hue CVD-safe order (dataviz skill),
-     orange kept at slot 2 for on-brand prominence without breaking separation. */
-  --series-1: #2a78d6; /* blue */
-  --series-2: #eb6834; /* orange */
-  --series-3: #1baf7a; /* aqua */
-  --series-4: #eda100; /* yellow */
-  --series-5: #e87ba4; /* magenta */
-  --series-6: #008300; /* green */
-  --series-7: #4a3aa7; /* violet */
-  --series-8: #e34948; /* red */
+  /* Chart categorical series — a theme-driven monochrome ramp (brand hue,
+     light -> dark), by deliberate choice: charts should visually match the
+     user's orange/green theme, including the multi-category donut/bar charts.
+     This trades away the distinct-hue CVD-safe separation a categorical
+     palette normally needs for identity data, so it's validated against the
+     dataviz skill's *ordinal*-ramp checks instead (lightness monotone,
+     adjacent ΔL >= 0.06, light-end contrast >= 2:1, single hue spread <= 40°)
+     — all four pass for this ramp — rather than the categorical/CVD checks,
+     which a single-hue ramp fails by design, not by mistake. Per-category
+     separation now leans on the legend + direct labels every consuming chart
+     already renders (the skill's documented allowance for a reduced-contrast
+     palette). See categoricalColor() in lib/palette.ts for how low item
+     counts are spread across these 8 steps rather than clustering light. */
+  --series-1: #45c284;
+  --series-2: #3bac74;
+  --series-3: #329665;
+  --series-4: #298055;
+  --series-5: #206b47;
+  --series-6: #175738;
+  --series-7: #0f442a;
+  --series-8: #07311d;
 
   --status-good: #059669;
   --status-warning: #d97706;
@@ -86,20 +97,36 @@
 }
 
 /* Orange theme — selected from Settings, applied via <html data-theme="orange">
-   in AuthContext. Only brand-identity vars change per theme (buttons, active nav,
-   hero cards, the heatmap's sequential ramp); the --series-1..8 categorical set
-   stays the same across themes, since it identifies transaction categories, not
-   brand, and is already CVD-validated (dataviz skill) — reshuffling it per theme
-   would just be extra risk for no user-facing benefit. --tint-amber/peach/green/
-   red/neutral-* and --status-* are likewise semantic, not brand-driven, and are
-   intentionally left untouched here. */
+   in AuthContext. Brand-identity vars, the page background, and the categorical/
+   sequential chart ramps all re-theme here; --tint-amber/peach/green/red/neutral-*
+   and --status-* are semantic (gain/loss/warning/error), not brand-driven, and
+   are intentionally left untouched so those meanings stay fixed regardless of
+   the cosmetic theme choice. */
 [data-theme="orange"] {
-  /* eb6834 is this app's existing validated --series-2 orange, reused as brand
-     for continuity; -hover is a mechanical ~20% darken; -tint reuses the
-     existing --tint-peach-bg wash already in this file. */
+  /* eb6834 is this app's original validated brand orange (previously --series-2
+     in the old distinct-hue palette), reused as brand for continuity; -hover is
+     a mechanical ~20% darken; -tint reuses the existing --tint-peach-bg wash
+     already in this file. */
   --brand: #eb6834;
   --brand-hover: #bc532a;
   --brand-tint: #ffedd5;
+
+  /* Pastel gradient re-rendered at the orange hue, matched to the default
+     theme's --page stops' own OKLCH lightness/chroma (dataviz skill tooling)
+     for a perceptually equivalent, not just visually similar, background. */
+  --page: linear-gradient(135deg, #fecbb9 0%, #fff2eb 50%, #fabca6 100%);
+
+  /* Monochrome categorical ramp — see the rationale comment on :root's
+     --series-1..8 above; same design, orange hue, independently validated
+     against the same ordinal checks. */
+  --series-1: #fb7f51;
+  --series-2: #de7046;
+  --series-3: #c2613c;
+  --series-4: #a75232;
+  --series-5: #8d4328;
+  --series-6: #73361e;
+  --series-7: #5b2815;
+  --series-8: #431c0c;
 
   --sequential-1: #ffedd5;
   --sequential-2: #fdba74;
