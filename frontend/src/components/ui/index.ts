@@ -3,6 +3,8 @@ export type { CardTint } from "./Card";
 export { Button } from "./Button";
 export type { ButtonVariant } from "./Button";
 export { Input, Select } from "./Input";
+export { MultiSelect } from "./MultiSelect";
+export type { MultiSelectOption } from "./MultiSelect";
 export { Badge, Pill } from "./Badge";
 export type { BadgeTint } from "./Badge";
 export { IconBadge } from "./IconBadge";

@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState } from "react";
+import { format } from "date-fns";
+import { ArrowUp, Paperclip } from "lucide-react";
 import { Button } from "../components/ui/Button";
+import { FinnAvatar } from "../components/FinnAvatar";
+import { useCyclingPhrase } from "../hooks/useCyclingPhrase";
 import { useCommitUpload, useSendChatMessage, useUndoUpload, useUploadChatFile } from "../hooks/api";
 import type { AccountCandidate, UploadSaved } from "../types";
 
 interface ChatMessage {
   role: "user" | "assistant" | "error";
   content: string;
+  timestamp: string;
   upload?: UploadSaved & { undone?: boolean };
   accountChoice?: { data: Record<string, unknown>; candidates: AccountCandidate[]; resolved?: boolean };
 }
@@ -26,26 +31,12 @@ const THINKING_PHRASES = [
 // Textarea grows with content (WhatsApp-style) up to this height, then scrolls internally.
 const MAX_TEXTAREA_HEIGHT = 128;
 
-function FinnAvatar({ size = 28 }: { size?: number }) {
-  return (
-    <img
-      src="/logo-mark.png"
-      alt="Finn"
-      className="rounded-full shrink-0"
-      style={{ width: size, height: size, background: "var(--brand-tint)" }}
-    />
-  );
+function now(): string {
+  return format(new Date(), "h:mm a");
 }
 
 function ThinkingIndicator() {
-  const [phraseIndex, setPhraseIndex] = useState(0);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setPhraseIndex((i) => (i + 1) % THINKING_PHRASES.length);
-    }, 1500);
-    return () => clearInterval(interval);
-  }, []);
+  const phrase = useCyclingPhrase(THINKING_PHRASES);
 
   return (
     <div className="flex items-center gap-2">
@@ -64,7 +55,7 @@ function ThinkingIndicator() {
         ))}
       </div>
       <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
-        {THINKING_PHRASES[phraseIndex]}
+        {phrase}
       </span>
     </div>
   );
@@ -95,7 +86,7 @@ export function ChatPage() {
   function handleSend() {
     const text = draft.trim();
     if (!text || sendMutation.isPending) return;
-    setMessages((prev) => [...prev, { role: "user", content: text }]);
+    setMessages((prev) => [...prev, { role: "user", content: text, timestamp: now() }]);
     setDraft("");
     sendMutation.mutate(text, {
       onSuccess: (data) => {
@@ -105,6 +96,7 @@ export function ChatPage() {
             {
               role: "assistant",
               content: "Which account should I log this to?",
+              timestamp: now(),
               accountChoice: { data: data.data!, candidates: data.candidates! },
             },
           ]);
@@ -114,6 +106,7 @@ export function ChatPage() {
             {
               role: "assistant",
               content: data.summary!,
+              timestamp: now(),
               upload: {
                 needs_account_selection: false,
                 summary: data.summary!,
@@ -124,13 +117,13 @@ export function ChatPage() {
             },
           ]);
         } else {
-          setMessages((prev) => [...prev, { role: "assistant", content: data.reply ?? "" }]);
+          setMessages((prev) => [...prev, { role: "assistant", content: data.reply ?? "", timestamp: now() }]);
         }
       },
       onError: () =>
         setMessages((prev) => [
           ...prev,
-          { role: "error", content: "Something went wrong sending that — please try again." },
+          { role: "error", content: "Something went wrong sending that — please try again.", timestamp: now() },
         ]),
     });
   }
@@ -143,7 +136,7 @@ export function ChatPage() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    setMessages((prev) => [...prev, { role: "user", content: `📎 ${file.name}` }]);
+    setMessages((prev) => [...prev, { role: "user", content: `📎 ${file.name}`, timestamp: now() }]);
     uploadMutation.mutate(file, {
       onSuccess: (result) => {
         if (result.needs_account_selection) {
@@ -152,17 +145,21 @@ export function ChatPage() {
             {
               role: "assistant",
               content: "Which account should I log this to?",
+              timestamp: now(),
               accountChoice: { data: result.data, candidates: result.candidates },
             },
           ]);
         } else {
-          setMessages((prev) => [...prev, { role: "assistant", content: result.summary, upload: result }]);
+          setMessages((prev) => [
+            ...prev,
+            { role: "assistant", content: result.summary, timestamp: now(), upload: result },
+          ]);
         }
       },
       onError: () =>
         setMessages((prev) => [
           ...prev,
-          { role: "error", content: "Couldn't parse that file — try again, or a clearer photo/PDF." },
+          { role: "error", content: "Couldn't parse that file — try again, or a clearer photo/PDF.", timestamp: now() },
         ]),
     });
   }
@@ -184,7 +181,7 @@ export function ChatPage() {
         onError: () =>
           setMessages((prev) => [
             ...prev,
-            { role: "error", content: "Couldn't save that — please try again." },
+            { role: "error", content: "Couldn't save that — please try again.", timestamp: now() },
           ]),
       },
     );
@@ -271,6 +268,9 @@ export function ChatPage() {
                   ))}
                 </div>
               )}
+              <div className="mt-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
+                {m.timestamp}
+              </div>
             </div>
           </div>
         ))}
@@ -288,44 +288,55 @@ export function ChatPage() {
       </div>
 
       <div
-        className="flex items-end gap-2 px-3 py-3 shrink-0"
+        className="px-3 py-3 shrink-0"
         style={{ borderTop: "1px solid var(--border)", background: "var(--surface-1)" }}
       >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*,application/pdf"
-          className="hidden"
-          onChange={handleFileSelected}
-        />
-        <Button
-          variant="outline"
-          onClick={handleAttachClick}
-          disabled={isBusy}
-          aria-label="Attach receipt or screenshot"
+        <div
+          className="flex items-end gap-1 px-2 py-1.5"
+          style={{ background: "var(--field-bg)", borderRadius: 9999 }}
         >
-          📎
-        </Button>
-        <textarea
-          ref={textareaRef}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Ask a question or log a transaction…"
-          rows={1}
-          className="flex-1 px-3 py-2 text-sm outline-none resize-none focus:border-[var(--brand)]"
-          style={{
-            background: "var(--field-bg)",
-            color: "var(--text-primary)",
-            border: "1px solid transparent",
-            borderRadius: "var(--radius-control)",
-            maxHeight: MAX_TEXTAREA_HEIGHT,
-            overflowY: "auto",
-          }}
-        />
-        <Button variant="primary" onClick={handleSend} disabled={isBusy || !draft.trim()}>
-          Send
-        </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,application/pdf"
+            className="hidden"
+            onChange={handleFileSelected}
+          />
+          <button
+            type="button"
+            onClick={handleAttachClick}
+            disabled={isBusy}
+            aria-label="Attach receipt or screenshot"
+            className="flex items-center justify-center shrink-0 transition-colors disabled:opacity-50 disabled:cursor-not-allowed hover:bg-black/[0.04]"
+            style={{ width: 36, height: 36, borderRadius: 9999, color: "var(--text-secondary)" }}
+          >
+            <Paperclip size={18} />
+          </button>
+          <textarea
+            ref={textareaRef}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Message Finn…"
+            rows={1}
+            className="flex-1 px-2 py-1.5 text-sm outline-none resize-none bg-transparent"
+            style={{
+              color: "var(--text-primary)",
+              maxHeight: MAX_TEXTAREA_HEIGHT,
+              overflowY: "auto",
+            }}
+          />
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={isBusy || !draft.trim()}
+            aria-label="Send message"
+            className="flex items-center justify-center shrink-0 transition-colors disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-95"
+            style={{ width: 36, height: 36, borderRadius: 9999, background: "var(--brand)", color: "white" }}
+          >
+            <ArrowUp size={18} />
+          </button>
+        </div>
       </div>
     </div>
   );

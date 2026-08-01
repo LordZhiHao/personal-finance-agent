@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { format, subDays, subMonths, subYears } from "date-fns";
+import { format, getMonth, parseISO, subDays, subMonths, subYears } from "date-fns";
+import { TrendingUp, Wallet } from "lucide-react";
 import {
   useAccounts,
   useDividendForecast,
@@ -29,7 +30,8 @@ const today = format(new Date(), "yyyy-MM-dd");
 const defaultFilters: FilterValue = {
   startDate: format(subDays(new Date(), 180), "yyyy-MM-dd"),
   endDate: today,
-  account: "All",
+  accounts: [],
+  months: [],
 };
 
 type Period = "1W" | "1M" | "1Y" | "All";
@@ -68,15 +70,21 @@ export function InvestmentsPage() {
 
   const snapshots = useMemo(() => {
     const rows = snapshotsQuery.data ?? [];
-    if (filters.account === "All") return rows;
-    return rows.filter((s) => s.accounts?.name === filters.account);
-  }, [snapshotsQuery.data, filters.account]);
+    return rows.filter((s) => {
+      if (filters.accounts.length > 0 && !filters.accounts.includes(s.accounts?.name ?? "")) return false;
+      if (filters.months.length > 0 && !filters.months.includes(getMonth(parseISO(s.snapshot_date)))) return false;
+      return true;
+    });
+  }, [snapshotsQuery.data, filters.accounts, filters.months]);
 
   const events = useMemo(() => {
     const rows = eventsQuery.data ?? [];
-    if (filters.account === "All") return rows;
-    return rows.filter((e) => e.accounts?.name === filters.account);
-  }, [eventsQuery.data, filters.account]);
+    return rows.filter((e) => {
+      if (filters.accounts.length > 0 && !filters.accounts.includes(e.accounts?.name ?? "")) return false;
+      if (filters.months.length > 0 && !filters.months.includes(getMonth(parseISO(e.date)))) return false;
+      return true;
+    });
+  }, [eventsQuery.data, filters.accounts, filters.months]);
 
   const netWorth = snapshots.reduce((sum, s) => sum + s.converted_value, 0);
 
@@ -142,8 +150,9 @@ export function InvestmentsPage() {
 
   return (
     <div className="space-y-3">
-      <h1 className="text-xl font-semibold" style={{ color: "var(--text-heading)" }}>
-        📈 Investments
+      <h1 className="flex items-center gap-2 text-xl font-semibold font-serif" style={{ color: "var(--text-heading)" }}>
+        <TrendingUp size={22} />
+        Investments
       </h1>
       <FilterBar
         accounts={accountsQuery.data ?? []}
@@ -157,7 +166,7 @@ export function InvestmentsPage() {
       <StatCard
         label="Net Worth"
         value={formatMoney(netWorth, displayCurrency)}
-        icon="💰"
+        icon={<Wallet size={20} />}
         tint="brand"
         headerRight={
           <Button

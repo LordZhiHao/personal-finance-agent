@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { format, subDays } from "date-fns";
+import { format, getMonth, parseISO, subDays } from "date-fns";
+import { Banknote, PiggyBank, Receipt } from "lucide-react";
 import { useAccounts, useMeta, useTransactions } from "../hooks/api";
 import { useAuth } from "../auth/AuthContext";
 import { FilterBar, type FilterValue } from "../components/FilterBar";
@@ -15,13 +16,15 @@ import { SpendingHeatmap } from "../components/charts/SpendingHeatmap";
 import { MonthComparisonBarChart } from "../components/charts/MonthComparisonBarChart";
 import { dailySpendTotals, monthKey } from "../lib/dates";
 import { Button } from "../components/ui";
+import { LoadingFinn } from "../components/LoadingFinn";
 
 const today = format(new Date(), "yyyy-MM-dd");
 const defaultFilters: FilterValue = {
   startDate: format(subDays(new Date(), 180), "yyyy-MM-dd"),
   endDate: today,
-  account: "All",
-  type: "all",
+  accounts: [],
+  months: [],
+  types: [],
 };
 
 export function SpendingPage() {
@@ -35,12 +38,15 @@ export function SpendingPage() {
   const filtered = useMemo(() => {
     const txns = txQuery.data ?? [];
     return txns.filter((t) => {
-      if (filters.account !== "All" && t.accounts?.name !== filters.account) return false;
-      if (filters.type === "income" && t.amount <= 0) return false;
-      if (filters.type === "expense" && t.amount >= 0) return false;
+      if (filters.accounts.length > 0 && !filters.accounts.includes(t.accounts?.name ?? "")) return false;
+      if (filters.months.length > 0 && !filters.months.includes(getMonth(parseISO(t.date)))) return false;
+      if (filters.types && filters.types.length > 0) {
+        const type = t.amount > 0 ? "income" : "expense";
+        if (!filters.types.includes(type)) return false;
+      }
       return true;
     });
-  }, [txQuery.data, filters.account, filters.type]);
+  }, [txQuery.data, filters.accounts, filters.months, filters.types]);
 
   const { monthlyIncome, monthlySpend, savingsRate } = useMemo(() => {
     if (filtered.length === 0) return { monthlyIncome: 0, monthlySpend: 0, savingsRate: 0 };
@@ -58,14 +64,18 @@ export function SpendingPage() {
   const categories = metaQuery.data?.categories ?? [];
 
   if (txQuery.isLoading || accountsQuery.isLoading) {
-    return <p style={{ color: "var(--text-secondary)" }}>Loading…</p>;
+    return <LoadingFinn />;
   }
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold" style={{ color: "var(--text-heading)" }}>
-          💸 Spending
+        <h1
+          className="flex items-center gap-2 text-xl font-semibold font-serif"
+          style={{ color: "var(--text-heading)" }}
+        >
+          <Receipt size={22} />
+          Spending
         </h1>
         <Button variant="primary" onClick={() => setDialogOpen(true)}>
           ＋ Add Transaction
@@ -83,16 +93,16 @@ export function SpendingPage() {
             <StatCard
               label="Monthly Income"
               value={`SGD ${monthlyIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-              icon="💵"
+              icon={<Banknote size={20} />}
               tint="green"
             />
             <StatCard
               label="Monthly Spend"
               value={`SGD ${monthlySpend.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-              icon="🧾"
+              icon={<Receipt size={20} />}
               tint="peach"
             />
-            <StatCard label="Savings Rate" value={`${savingsRate}%`} icon="🏦" tint="amber" />
+            <StatCard label="Savings Rate" value={`${savingsRate}%`} icon={<PiggyBank size={20} />} tint="amber" />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

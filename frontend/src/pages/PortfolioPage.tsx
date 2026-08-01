@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Briefcase, PieChart as PieChartIcon, Receipt, TrendingDown, TrendingUp } from "lucide-react";
 import type { Holding } from "../types";
 import { useHoldings } from "../hooks/api";
 import { useAuth } from "../auth/AuthContext";
@@ -9,6 +10,7 @@ import { MarketHoldingsTable } from "../components/charts/MarketHoldingsTable";
 import { formatMoney, formatPct } from "../lib/format";
 import { CURRENCY_MARKET } from "../lib/markets";
 import { Input, TabToggle, Card } from "../components/ui";
+import { LoadingFinn } from "../components/LoadingFinn";
 
 type HoldingFilter = "all" | "gainers" | "losers";
 
@@ -45,26 +47,32 @@ export function PortfolioPage() {
 
   return (
     <div className="space-y-3">
-      <h1 className="text-xl font-semibold" style={{ color: "var(--text-heading)" }}>
-        📊 Portfolio
+      <h1 className="flex items-center gap-2 text-xl font-semibold font-serif" style={{ color: "var(--text-heading)" }}>
+        <PieChartIcon size={22} />
+        Portfolio
       </h1>
 
       {holdingsQuery.isLoading ? (
-        <p style={{ color: "var(--text-secondary)" }}>Loading…</p>
+        <LoadingFinn />
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <StatCard
               label="Total Market Value"
               value={formatMoney(holdingsQuery.data?.total_market_value ?? 0, currency)}
-              icon="💼"
+              icon={<Briefcase size={20} />}
               tint="brand"
             />
-            <StatCard label="Total Cost Basis" value={formatMoney(costBasis, currency)} icon="🧾" tint="amber" />
+            <StatCard
+              label="Total Cost Basis"
+              value={formatMoney(costBasis, currency)}
+              icon={<Receipt size={20} />}
+              tint="amber"
+            />
             <StatCard
               label="Unrealized Gain"
               value={formatMoney(gain, currency)}
-              icon={gain >= 0 ? "📈" : "📉"}
+              icon={gain >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
               tint={gain >= 0 ? "green" : "red"}
               delta={{ value: formatPct(gainPct), direction: gain >= 0 ? "up" : "down" }}
             />
@@ -108,19 +116,19 @@ export function PortfolioPage() {
                   <StatCard
                     label="Amount Invested"
                     value={formatMoney(marketCostBasis, group.currency)}
-                    icon="🧾"
+                    icon={<Receipt size={20} />}
                     tint="amber"
                   />
                   <StatCard
                     label="Market Value"
                     value={formatMoney(marketMarketValue, group.currency)}
-                    icon="💼"
+                    icon={<Briefcase size={20} />}
                     tint="brand"
                   />
                   <StatCard
                     label="Return"
                     value={formatMoney(marketGain, group.currency)}
-                    icon={marketGain >= 0 ? "📈" : "📉"}
+                    icon={marketGain >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
                     tint={marketGain >= 0 ? "green" : "red"}
                     delta={{ value: formatPct(marketGainPct), direction: marketGain >= 0 ? "up" : "down" }}
                   />

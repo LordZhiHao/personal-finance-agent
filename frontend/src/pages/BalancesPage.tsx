@@ -1,9 +1,11 @@
+import { Wallet } from "lucide-react";
 import { useBalances } from "../hooks/api";
 import { useAuth } from "../auth/AuthContext";
 import { StatCard } from "../components/StatCard";
 import { ChartCard } from "../components/ChartCard";
 import { BalancesTable } from "../components/charts/BalancesTable";
 import { formatMoney } from "../lib/format";
+import { LoadingFinn } from "../components/LoadingFinn";
 
 export function BalancesPage() {
   const { mainCurrency: currency } = useAuth();
@@ -11,18 +13,19 @@ export function BalancesPage() {
 
   return (
     <div className="space-y-3">
-      <h1 className="text-xl font-semibold" style={{ color: "var(--text-heading)" }}>
-        💳 Balances
+      <h1 className="flex items-center gap-2 text-xl font-semibold font-serif" style={{ color: "var(--text-heading)" }}>
+        <Wallet size={22} />
+        Balances
       </h1>
 
       {balancesQuery.isLoading ? (
-        <p style={{ color: "var(--text-secondary)" }}>Loading…</p>
+        <LoadingFinn />
       ) : (
         <>
           <StatCard
             label="Total Net Worth"
             value={formatMoney(balancesQuery.data?.total ?? 0, currency)}
-            icon="🏦"
+            icon={<Wallet size={20} />}
             tint="brand"
           />
           <ChartCard title="Accounts">

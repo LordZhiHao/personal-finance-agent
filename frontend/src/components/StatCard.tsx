@@ -29,7 +29,10 @@ export function StatCard({
           <div className="text-sm" style={{ color: "var(--text-secondary)" }}>
             {label}
           </div>
-          <div className="text-2xl font-semibold tabular-nums mt-1" style={{ color: "var(--text-heading)" }}>
+          <div
+            className="text-2xl font-semibold font-serif tabular-nums mt-1"
+            style={{ color: "var(--text-heading)" }}
+          >
             {value}
           </div>
           {delta && (
