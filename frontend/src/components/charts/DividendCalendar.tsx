@@ -15,7 +15,7 @@ import type { PortfolioEvent } from "../../types";
 
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
 
-export function DividendCalendar({ events }: { events: PortfolioEvent[] }) {
+export function DividendCalendar({ events, fill = false }: { events: PortfolioEvent[]; fill?: boolean }) {
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
 
   const dividendDates = useMemo(
@@ -30,7 +30,7 @@ export function DividendCalendar({ events }: { events: PortfolioEvent[] }) {
   }, [month]);
 
   return (
-    <div>
+    <div className={fill ? "flex-1 min-h-0 flex flex-col justify-center" : undefined}>
       <div className="flex items-center justify-between mb-3">
         <button
           type="button"

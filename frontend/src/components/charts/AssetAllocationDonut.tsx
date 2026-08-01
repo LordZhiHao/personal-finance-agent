@@ -7,11 +7,11 @@ export interface AllocationSlice {
   value: number;
 }
 
-export function AssetAllocationDonut({ data }: { data: AllocationSlice[] }) {
+export function AssetAllocationDonut({ data, fill = false }: { data: AllocationSlice[]; fill?: boolean }) {
   const names = data.map((d) => d.name);
 
   return (
-    <ResponsiveContainer width="100%" height={280}>
+    <ResponsiveContainer width="100%" height={fill ? "100%" : 280} minHeight={fill ? 280 : undefined}>
       <PieChart>
         <Pie data={data} dataKey="value" nameKey="name" innerRadius={60} outerRadius={100} paddingAngle={1}>
           {data.map((d) => (

@@ -125,39 +125,35 @@ export function SpendingPage() {
         </p>
       ) : (
         <>
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-            <div className="lg:col-span-7">
-              <StatCard
-                label="Monthly Spend"
-                value={formatMoney(monthlySpend, mainCurrency)}
-                icon={<Receipt size={20} />}
-                hero
-              />
-            </div>
-            <div className="lg:col-span-5 flex flex-col gap-4">
-              <StatCard
-                label="Monthly Income"
-                value={formatMoney(monthlyIncome, mainCurrency)}
-                icon={<Banknote size={20} />}
-                tint="green"
-              />
-              <StatCard label="Savings Rate" value={`${savingsRate}%`} icon={<PiggyBank size={20} />} tint="amber" />
-              <StatCard
-                label="Spend Trend"
-                value={`${trendDelta >= 0 ? "+" : ""}${formatMoney(trendDelta, mainCurrency)}`}
-                icon={trendDelta >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
-                tint={trendDelta >= 0 ? "red" : "green"}
-                delta={
-                  trendPct !== null
-                    ? {
-                        value: `${formatPct(trendPct)} vs last month`,
-                        direction: trendDelta >= 0 ? "up" : "down",
-                        sentiment: trendDelta >= 0 ? "bad" : "good",
-                      }
-                    : undefined
-                }
-              />
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <StatCard
+              label="Monthly Spend"
+              value={formatMoney(monthlySpend, mainCurrency)}
+              icon={<Receipt size={20} />}
+              hero
+            />
+            <StatCard
+              label="Monthly Income"
+              value={formatMoney(monthlyIncome, mainCurrency)}
+              icon={<Banknote size={20} />}
+              tint="green"
+            />
+            <StatCard label="Savings Rate" value={`${savingsRate}%`} icon={<PiggyBank size={20} />} tint="amber" />
+            <StatCard
+              label="Spend Trend"
+              value={`${trendDelta >= 0 ? "+" : ""}${formatMoney(trendDelta, mainCurrency)}`}
+              icon={trendDelta >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
+              tint={trendDelta >= 0 ? "red" : "green"}
+              delta={
+                trendPct !== null
+                  ? {
+                      value: `${formatPct(trendPct)} vs last month`,
+                      direction: trendDelta >= 0 ? "up" : "down",
+                      sentiment: trendDelta >= 0 ? "bad" : "good",
+                    }
+                  : undefined
+              }
+            />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">

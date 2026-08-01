@@ -197,7 +197,7 @@ export function InvestmentsPage() {
         }
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
         <div className="lg:col-span-8">
           <ChartCard
             title="Net Worth Over Time"
@@ -224,6 +224,7 @@ export function InvestmentsPage() {
         <div className="lg:col-span-4">
           <ChartCard
             title="Asset Allocation"
+            fill
             headerRight={
               <TabToggle
                 options={[
@@ -236,7 +237,7 @@ export function InvestmentsPage() {
             }
           >
             {allocationData.length > 0 ? (
-              <AssetAllocationDonut data={allocationData} />
+              <AssetAllocationDonut data={allocationData} fill />
             ) : (
               <p style={{ color: "var(--text-secondary)" }}>No asset snapshots yet.</p>
             )}
@@ -244,7 +245,7 @@ export function InvestmentsPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
         <div className="lg:col-span-8">
           <ChartCard title="Top Holdings">
             {topHoldings.length > 0 ? (
@@ -257,8 +258,8 @@ export function InvestmentsPage() {
           </ChartCard>
         </div>
         <div className="lg:col-span-4">
-          <ChartCard title="Dividend Calendar">
-            <DividendCalendar events={events} />
+          <ChartCard title="Dividend Calendar" fill>
+            <DividendCalendar events={events} fill />
           </ChartCard>
         </div>
       </div>
