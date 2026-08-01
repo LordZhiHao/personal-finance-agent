@@ -29,7 +29,7 @@ const THINKING_PHRASES = [
 ];
 
 // Textarea grows with content (WhatsApp-style) up to this height, then scrolls internally.
-const MAX_TEXTAREA_HEIGHT = 128;
+const MAX_TEXTAREA_HEIGHT = 200;
 
 function now(): string {
   return format(new Date(), "h:mm a");
@@ -289,8 +289,15 @@ export function ChatPage() {
 
       <div className="px-3 pb-3 pt-2 shrink-0">
         <div
-          className="flex items-end gap-1 px-2 py-1.5 mx-auto w-full max-w-2xl"
-          style={{ background: "var(--surface-1)", borderRadius: 9999, boxShadow: "var(--shadow-card)" }}
+          className="flex items-end gap-1 px-2 py-3 mx-auto w-full max-w-2xl"
+          style={{
+            background: "rgba(255, 255, 255, 0.55)",
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+            border: "1px solid rgba(255, 255, 255, 0.6)",
+            borderRadius: 28,
+            boxShadow: "var(--shadow-card)",
+          }}
         >
           <input
             ref={fileInputRef}
@@ -319,6 +326,7 @@ export function ChatPage() {
             className="flex-1 px-2 py-1.5 text-sm outline-none resize-none bg-transparent"
             style={{
               color: "var(--text-primary)",
+              minHeight: 72,
               maxHeight: MAX_TEXTAREA_HEIGHT,
               overflowY: "auto",
             }}
