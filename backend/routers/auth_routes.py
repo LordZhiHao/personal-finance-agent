@@ -39,6 +39,7 @@ def _me_response(user: dict) -> dict:
         "email": user["email"],
         "telegram_linked": user["telegram_chat_id"] is not None,
         "main_currency": user["main_currency"],
+        "theme": user["theme"],
         "onboarding_completed": user["onboarding_completed_at"] is not None,
     }
 

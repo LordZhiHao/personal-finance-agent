@@ -17,6 +17,7 @@ import {
   useUpdateAccount,
   useUpdateCategory,
   useUpdateMainCurrency,
+  useUpdateTheme,
 } from "../hooks/api";
 import type { Account, CustomCategory, Meta } from "../types";
 
@@ -345,6 +346,64 @@ function MainCurrencyCard() {
   );
 }
 
+const THEME_SWATCHES: { value: string; label: string; color: string }[] = [
+  { value: "green", label: "Green", color: "#00ad6c" },
+  { value: "orange", label: "Orange", color: "#eb6834" },
+];
+
+function ThemeCard() {
+  const { theme, refreshMe } = useAuth();
+  const mutation = useUpdateTheme();
+  const [draft, setDraft] = useState(theme);
+  const dirty = draft !== theme;
+
+  useEffect(() => {
+    if (!dirty) setDraft(theme);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [theme]);
+
+  return (
+    <Card>
+      <h2 className="text-sm font-semibold mb-1" style={{ color: "var(--text-heading)" }}>
+        Theme
+      </h2>
+      <p className="text-sm mb-3" style={{ color: "var(--text-secondary)" }}>
+        Choose the accent color used across charts and the dashboard.
+      </p>
+      <div className="flex items-center gap-3">
+        {THEME_SWATCHES.map((swatch) => (
+          <button
+            key={swatch.value}
+            type="button"
+            onClick={() => setDraft(swatch.value)}
+            className="flex items-center gap-2 px-3 py-2"
+            style={{
+              borderRadius: "var(--radius-control)",
+              border: draft === swatch.value ? `2px solid ${swatch.color}` : "1px solid var(--border)",
+              background: "var(--surface-1)",
+            }}
+          >
+            <span
+              className="inline-block rounded-full"
+              style={{ width: 18, height: 18, background: swatch.color }}
+            />
+            <span className="text-sm" style={{ color: "var(--text-primary)" }}>
+              {swatch.label}
+            </span>
+          </button>
+        ))}
+        <Button
+          variant="outline"
+          disabled={!dirty || mutation.isPending}
+          onClick={() => mutation.mutate(draft, { onSuccess: () => refreshMe() })}
+        >
+          {mutation.isPending ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 export function SettingsPage() {
   const { email, telegramLinked, refreshMe } = useAuth();
   const mutation = useGenerateTelegramLinkCode();
@@ -369,6 +428,7 @@ export function SettingsPage() {
       </Card>
 
       <MainCurrencyCard />
+      <ThemeCard />
 
       <Card>
         <h2 className="text-sm font-semibold mb-2" style={{ color: "var(--text-heading)" }}>

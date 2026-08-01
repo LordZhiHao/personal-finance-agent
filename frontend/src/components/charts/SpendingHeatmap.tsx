@@ -2,7 +2,7 @@ import { useState } from "react";
 import { addDays, differenceInCalendarDays, format, parseISO, startOfWeek } from "date-fns";
 import type { DailyTotal } from "../../lib/dates";
 import type { Transaction } from "../../types";
-import { SEQUENTIAL_ORANGE } from "../../lib/palette";
+import { SEQUENTIAL } from "../../lib/palette";
 import { formatMoney } from "../../lib/format";
 import { Overlay, Table, Thead, Tbody, Tr, Th, Td } from "../ui";
 
@@ -16,10 +16,10 @@ function levelColor(total: number, max: number): string {
   if (total <= 0) return EMPTY_CELL;
   if (max <= 0) return EMPTY_CELL;
   const ratio = total / max;
-  if (ratio <= 0.25) return SEQUENTIAL_ORANGE[1];
-  if (ratio <= 0.5) return SEQUENTIAL_ORANGE[2];
-  if (ratio <= 0.75) return SEQUENTIAL_ORANGE[3];
-  return SEQUENTIAL_ORANGE[4];
+  if (ratio <= 0.25) return SEQUENTIAL[1];
+  if (ratio <= 0.5) return SEQUENTIAL[2];
+  if (ratio <= 0.75) return SEQUENTIAL[3];
+  return SEQUENTIAL[4];
 }
 
 // Two darkest buckets need light text for contrast; everything else (including
@@ -95,7 +95,7 @@ export function SpendingHeatmap({
       </div>
       <div className="flex items-center gap-2 mt-3 text-xs" style={{ color: "var(--text-muted)" }}>
         <span>Less</span>
-        {[EMPTY_CELL, SEQUENTIAL_ORANGE[1], SEQUENTIAL_ORANGE[2], SEQUENTIAL_ORANGE[3], SEQUENTIAL_ORANGE[4]].map(
+        {[EMPTY_CELL, SEQUENTIAL[1], SEQUENTIAL[2], SEQUENTIAL[3], SEQUENTIAL[4]].map(
           (c, i) => (
             <div key={i} style={{ width: CELL_SIZE, height: CELL_SIZE, borderRadius: 3, background: c }} />
           ),

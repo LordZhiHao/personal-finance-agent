@@ -17,9 +17,9 @@
   --color-tint-neutral-text: #6b6a9c;
   --color-tint-peach-header: #fff7ed;
 
-  --radius-card: 22px;
+  --radius-card: 26px;
   --radius-control: 13px;
-  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.05);
+  --shadow-card: 0 10px 30px rgba(17, 24, 39, 0.08);
 
   --font-sans: "Source Serif 4", Georgia, "Times New Roman", serif;
 }
@@ -72,6 +72,40 @@
   --status-warning: #d97706;
   --status-serious: #ea580c;
   --status-critical: #dc2626;
+
+  /* Sequential single-hue ramp (brand hue), light -> dark, for the spending
+     heatmap. Sequential ramps encode magnitude, not identity, so they aren't
+     subject to the categorical CVD-separation check (dataviz skill). Reuses
+     this theme's own existing green tokens (tint-green-bg/-text, status-good)
+     for continuity rather than inventing new hex values. */
+  --sequential-1: #d1fae5;
+  --sequential-2: #6ee7b7;
+  --sequential-3: #34d399;
+  --sequential-4: #059669;
+  --sequential-5: #065f46;
+}
+
+/* Orange theme — selected from Settings, applied via <html data-theme="orange">
+   in AuthContext. Only brand-identity vars change per theme (buttons, active nav,
+   hero cards, the heatmap's sequential ramp); the --series-1..8 categorical set
+   stays the same across themes, since it identifies transaction categories, not
+   brand, and is already CVD-validated (dataviz skill) — reshuffling it per theme
+   would just be extra risk for no user-facing benefit. --tint-amber/peach/green/
+   red/neutral-* and --status-* are likewise semantic, not brand-driven, and are
+   intentionally left untouched here. */
+[data-theme="orange"] {
+  /* eb6834 is this app's existing validated --series-2 orange, reused as brand
+     for continuity; -hover is a mechanical ~20% darken; -tint reuses the
+     existing --tint-peach-bg wash already in this file. */
+  --brand: #eb6834;
+  --brand-hover: #bc532a;
+  --brand-tint: #ffedd5;
+
+  --sequential-1: #ffedd5;
+  --sequential-2: #fdba74;
+  --sequential-3: #fb923c;
+  --sequential-4: #ea580c;
+  --sequential-5: #9a3412;
 }
 
 * {

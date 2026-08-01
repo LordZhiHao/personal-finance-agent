@@ -108,6 +108,7 @@ export interface Me {
   email: string;
   telegram_linked: boolean;
   main_currency: string;
+  theme: string;
   onboarding_completed: boolean;
 }
 

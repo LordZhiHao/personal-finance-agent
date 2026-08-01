@@ -3,12 +3,13 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+from utils.constants import THEME_COLORS
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 
-def build_html(data: dict) -> str:
+def build_html(data: dict, accent: str) -> str:
     cat_rows = "".join(
         f"<tr><td style='padding:4px 12px 4px 0'>{cat}</td>"
         f"<td>SGD {amt:,.2f}</td></tr>"
@@ -21,11 +22,11 @@ def build_html(data: dict) -> str:
     )
     return f"""
     <html><body style="font-family:sans-serif;color:#222;max-width:600px;margin:auto">
-    <h2>📊 Weekly Financial Update</h2>
+    <h2 style="color:{accent}">📊 Weekly Financial Update</h2>
     <p style="color:#666">{data['week_start'].strftime('%d %b')} –
        {data['week_end'].strftime('%d %b %Y')}</p>
 
-    <h3>💰 Income & Expenses</h3>
+    <h3 style="color:{accent}">💰 Income & Expenses</h3>
     <table>
       <tr><td>Income</td><td><b>SGD {data['income']:,.2f}</b></td></tr>
       <tr><td>Spent</td><td><b>SGD {data['expenses']:,.2f}</b></td></tr>
@@ -33,22 +34,23 @@ def build_html(data: dict) -> str:
       <tr><td>Savings Rate</td><td><b>{data['savings_rate']}%</b></td></tr>
     </table>
 
-    <h3>🧾 Spend by Category</h3>
+    <h3 style="color:{accent}">🧾 Spend by Category</h3>
     <table>{cat_rows}</table>
 
-    <h3>🏦 Portfolio Snapshot</h3>
+    <h3 style="color:{accent}">🏦 Portfolio Snapshot</h3>
     <table>{snap_rows}</table>
     <p><b>Total Assets: SGD {data['total_assets']:,.2f}</b></p>
     </body></html>
     """
 
 
-def send_email(data: dict, to_email: str):
+def send_email(data: dict, to_email: str, theme: str = "green"):
+    accent = THEME_COLORS.get(theme, THEME_COLORS["green"])
     msg = MIMEMultipart("alternative")
     msg["Subject"] = f"💰 Weekly Update — w/e {data['week_end'].strftime('%d %b %Y')}"
     msg["From"] = os.getenv("GMAIL_USER")
     msg["To"] = to_email
-    msg.attach(MIMEText(build_html(data), "html"))
+    msg.attach(MIMEText(build_html(data, accent), "html"))
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(os.getenv("GMAIL_USER"), os.getenv("GMAIL_APP_PASSWORD"))
         server.send_message(msg)

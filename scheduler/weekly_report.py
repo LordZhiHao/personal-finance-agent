@@ -61,7 +61,7 @@ async def send_weekly_report(bot):
 
         if user.get("notify_email"):
             try:
-                send_email(data, to_email=user["notify_email"])
+                send_email(data, to_email=user["notify_email"], theme=user.get("theme", "green"))
             except Exception:
                 logger.exception("send_weekly_report: email send failed for user_id=%s", user["id"])
 

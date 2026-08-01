@@ -1,5 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { api, clearToken, getToken, setToken, ApiError } from "../api/client";
+import {
+  api,
+  clearStoredTheme,
+  clearToken,
+  getStoredTheme,
+  getToken,
+  setStoredTheme,
+  setToken,
+  ApiError,
+} from "../api/client";
 import type { Me } from "../types";
 
 interface AuthContextValue {
@@ -8,6 +17,7 @@ interface AuthContextValue {
   email: string | null;
   telegramLinked: boolean;
   mainCurrency: string;
+  theme: string;
   onboardingCompleted: boolean;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
@@ -19,14 +29,32 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+// "green" is the implicit default (:root, no attribute needed) — only "orange"
+// gets a [data-theme="orange"] attribute (see index.css).
+function applyTheme(theme: string): void {
+  if (theme === "orange") {
+    document.documentElement.setAttribute("data-theme", "orange");
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+  }
+  setStoredTheme(theme);
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(getToken()));
   const [userId, setUserId] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
   const [telegramLinked, setTelegramLinked] = useState(false);
   const [mainCurrency, setMainCurrency] = useState("SGD");
+  const [theme, setTheme] = useState(() => getStoredTheme() ?? "green");
   const [onboardingCompleted, setOnboardingCompleted] = useState(false);
   const [loading, setLoading] = useState(() => Boolean(getToken()));
+
+  // Apply the cached theme immediately on first mount, before /api/auth/me
+  // resolves, so there's no flash of the wrong theme.
+  useEffect(() => {
+    applyTheme(getStoredTheme() ?? "green");
+  }, []);
 
   const refreshMe = useCallback(async () => {
     try {
@@ -35,6 +63,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setEmail(me.email);
       setTelegramLinked(me.telegram_linked);
       setMainCurrency(me.main_currency);
+      setTheme(me.theme);
+      applyTheme(me.theme);
       setOnboardingCompleted(me.onboarding_completed);
       setIsAuthenticated(true);
     } catch {
@@ -98,11 +128,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     clearToken();
+    clearStoredTheme();
+    applyTheme("green");
     setIsAuthenticated(false);
     setUserId(null);
     setEmail(null);
     setTelegramLinked(false);
     setMainCurrency("SGD");
+    setTheme("green");
     setOnboardingCompleted(false);
   }, []);
 
@@ -114,6 +147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email,
         telegramLinked,
         mainCurrency,
+        theme,
         onboardingCompleted,
         loading,
         login,

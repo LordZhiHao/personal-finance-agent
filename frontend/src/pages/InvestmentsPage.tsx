@@ -185,7 +185,7 @@ export function InvestmentsPage() {
         label="Net Worth"
         value={formatMoney(netWorth, displayCurrency)}
         icon={<Wallet size={20} />}
-        tint="brand"
+        hero
         headerRight={
           <Button
             variant="ghost"
@@ -197,62 +197,70 @@ export function InvestmentsPage() {
         }
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ChartCard
-          title="Net Worth Over Time"
-          headerRight={
-            <Select value={period} onChange={(e) => setPeriod(e.target.value as Period)} className="w-24">
-              {PERIODS.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </Select>
-          }
-        >
-          <div className="mb-3">
-            <TabToggle options={brokerOptions} value={selectedBrokerAccountId} onChange={setSelectedBrokerAccountId} />
-          </div>
-          {filteredNetWorthPoints.length > 0 ? (
-            <NetWorthLineChart points={filteredNetWorthPoints} />
-          ) : (
-            <p style={{ color: "var(--text-secondary)" }}>No asset snapshots yet.</p>
-          )}
-        </ChartCard>
-        <ChartCard
-          title="Asset Allocation"
-          headerRight={
-            <TabToggle
-              options={[
-                { value: "broker", label: "Broker" },
-                { value: "currency", label: "Currency" },
-              ]}
-              value={allocationView}
-              onChange={setAllocationView}
-            />
-          }
-        >
-          {allocationData.length > 0 ? (
-            <AssetAllocationDonut data={allocationData} />
-          ) : (
-            <p style={{ color: "var(--text-secondary)" }}>No asset snapshots yet.</p>
-          )}
-        </ChartCard>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <div className="lg:col-span-8">
+          <ChartCard
+            title="Net Worth Over Time"
+            headerRight={
+              <Select value={period} onChange={(e) => setPeriod(e.target.value as Period)} className="w-24">
+                {PERIODS.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </Select>
+            }
+          >
+            <div className="mb-3">
+              <TabToggle options={brokerOptions} value={selectedBrokerAccountId} onChange={setSelectedBrokerAccountId} />
+            </div>
+            {filteredNetWorthPoints.length > 0 ? (
+              <NetWorthLineChart points={filteredNetWorthPoints} />
+            ) : (
+              <p style={{ color: "var(--text-secondary)" }}>No asset snapshots yet.</p>
+            )}
+          </ChartCard>
+        </div>
+        <div className="lg:col-span-4">
+          <ChartCard
+            title="Asset Allocation"
+            headerRight={
+              <TabToggle
+                options={[
+                  { value: "broker", label: "Broker" },
+                  { value: "currency", label: "Currency" },
+                ]}
+                value={allocationView}
+                onChange={setAllocationView}
+              />
+            }
+          >
+            {allocationData.length > 0 ? (
+              <AssetAllocationDonut data={allocationData} />
+            ) : (
+              <p style={{ color: "var(--text-secondary)" }}>No asset snapshots yet.</p>
+            )}
+          </ChartCard>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ChartCard title="Top Holdings">
-          {topHoldings.length > 0 ? (
-            <div className="max-h-[420px] overflow-y-auto">
-              <AllocationBarChart data={topHoldings} currency={displayCurrency} />
-            </div>
-          ) : (
-            <p style={{ color: "var(--text-secondary)" }}>No holdings yet.</p>
-          )}
-        </ChartCard>
-        <ChartCard title="Dividend Calendar">
-          <DividendCalendar events={events} />
-        </ChartCard>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <div className="lg:col-span-7">
+          <ChartCard title="Top Holdings">
+            {topHoldings.length > 0 ? (
+              <div className="max-h-[420px] overflow-y-auto">
+                <AllocationBarChart data={topHoldings} currency={displayCurrency} />
+              </div>
+            ) : (
+              <p style={{ color: "var(--text-secondary)" }}>No holdings yet.</p>
+            )}
+          </ChartCard>
+        </div>
+        <div className="lg:col-span-5">
+          <ChartCard title="Dividend Calendar">
+            <DividendCalendar events={events} />
+          </ChartCard>
+        </div>
       </div>
 
       <ChartCard title="Upcoming Dividends">

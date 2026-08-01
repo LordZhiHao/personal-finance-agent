@@ -122,6 +122,12 @@ export function useUpdateMainCurrency() {
   });
 }
 
+export function useUpdateTheme() {
+  return useMutation({
+    mutationFn: (theme: string) => api.patch<{ theme: string }>("/api/auth/me", { theme }),
+  });
+}
+
 export function useCreateAccount() {
   const queryClient = useQueryClient();
   return useMutation({

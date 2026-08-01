@@ -56,26 +56,30 @@ export function PortfolioPage() {
         <LoadingFinn />
       ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <StatCard
-              label="Total Market Value"
-              value={formatMoney(holdingsQuery.data?.total_market_value ?? 0, currency)}
-              icon={<Briefcase size={20} />}
-              tint="brand"
-            />
-            <StatCard
-              label="Total Cost Basis"
-              value={formatMoney(costBasis, currency)}
-              icon={<Receipt size={20} />}
-              tint="amber"
-            />
-            <StatCard
-              label="Unrealized Gain"
-              value={formatMoney(gain, currency)}
-              icon={gain >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
-              tint={gain >= 0 ? "green" : "red"}
-              delta={{ value: formatPct(gainPct), direction: gain >= 0 ? "up" : "down" }}
-            />
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <div className="lg:col-span-6">
+              <StatCard
+                label="Total Market Value"
+                value={formatMoney(holdingsQuery.data?.total_market_value ?? 0, currency)}
+                icon={<Briefcase size={20} />}
+                hero
+              />
+            </div>
+            <div className="lg:col-span-6 flex flex-col gap-4">
+              <StatCard
+                label="Total Cost Basis"
+                value={formatMoney(costBasis, currency)}
+                icon={<Receipt size={20} />}
+                tint="amber"
+              />
+              <StatCard
+                label="Unrealized Gain"
+                value={formatMoney(gain, currency)}
+                icon={gain >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
+                tint={gain >= 0 ? "green" : "red"}
+                delta={{ value: formatPct(gainPct), direction: gain >= 0 ? "up" : "down" }}
+              />
+            </div>
           </div>
 
           <Card>

@@ -1,5 +1,6 @@
 const API_URL = (import.meta.env.VITE_API_URL as string).replace(/\/+$/, "");
 const TOKEN_KEY = "finance_token";
+const THEME_KEY = "finance_theme";
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -11,6 +12,21 @@ export function setToken(token: string): void {
 
 export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
+}
+
+// Cached alongside the token so the correct theme can be applied to <html>
+// synchronously on load, before GET /api/auth/me resolves — avoids a flash of
+// the wrong theme.
+export function getStoredTheme(): string | null {
+  return localStorage.getItem(THEME_KEY);
+}
+
+export function setStoredTheme(theme: string): void {
+  localStorage.setItem(THEME_KEY, theme);
+}
+
+export function clearStoredTheme(): void {
+  localStorage.removeItem(THEME_KEY);
 }
 
 export class ApiError extends Error {

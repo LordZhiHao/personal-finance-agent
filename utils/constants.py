@@ -20,6 +20,15 @@ DASHBOARD_URL = "https://personal-finance-agent-kappa.vercel.app/"
 
 ACCOUNT_TYPES = ["bank", "brokerage", "ewallet"]
 
+# Accent color per user theme choice, used only by scheduler/emailer.py's weekly
+# report HTML (the frontend gets its own copy of these values as CSS custom
+# properties in frontend/src/index.css — keep both in sync by hand, there's no
+# shared source of truth across Python and CSS).
+THEME_COLORS = {
+    "orange": "#eb6834",
+    "green": "#00ad6c",
+}
+
 PORTFOLIO_ACTIONS = ["BUY", "SELL", "DIVIDEND"]
 
 # Maps a raw ticker (as extracted by Gemini from a broker screenshot, e.g. "CSPX")

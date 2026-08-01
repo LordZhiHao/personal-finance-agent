@@ -90,47 +90,63 @@ export function SpendingPage() {
         </p>
       ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <StatCard
-              label="Monthly Income"
-              value={formatMoney(monthlyIncome, mainCurrency)}
-              icon={<Banknote size={20} />}
-              tint="green"
-            />
-            <StatCard
-              label="Monthly Spend"
-              value={formatMoney(monthlySpend, mainCurrency)}
-              icon={<Receipt size={20} />}
-              tint="peach"
-            />
-            <StatCard label="Savings Rate" value={`${savingsRate}%`} icon={<PiggyBank size={20} />} tint="amber" />
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <div className="lg:col-span-7">
+              <StatCard
+                label="Monthly Spend"
+                value={formatMoney(monthlySpend, mainCurrency)}
+                icon={<Receipt size={20} />}
+                hero
+              />
+            </div>
+            <div className="lg:col-span-5 flex flex-col gap-4">
+              <StatCard
+                label="Monthly Income"
+                value={formatMoney(monthlyIncome, mainCurrency)}
+                icon={<Banknote size={20} />}
+                tint="green"
+              />
+              <StatCard label="Savings Rate" value={`${savingsRate}%`} icon={<PiggyBank size={20} />} tint="amber" />
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <ChartCard title="Monthly Spend by Category">
-              <MonthlySpendBarChart transactions={filtered} categories={categories} />
-            </ChartCard>
-            <ChartCard title="Spend by Category">
-              <SpendByCategoryDonut transactions={filtered} />
-            </ChartCard>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <div className="lg:col-span-7">
+              <ChartCard title="Monthly Spend by Category">
+                <MonthlySpendBarChart transactions={filtered} categories={categories} />
+              </ChartCard>
+            </div>
+            <div className="lg:col-span-5">
+              <ChartCard title="Spend by Category">
+                <SpendByCategoryDonut transactions={filtered} />
+              </ChartCard>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <ChartCard title="Income vs Spend Over Time">
-              <IncomeVsSpendLineChart transactions={filtered} />
-            </ChartCard>
-            <ChartCard title="Savings Rate Over Time (%)">
-              <SavingsRateLineChart transactions={filtered} />
-            </ChartCard>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <div className="lg:col-span-8">
+              <ChartCard title="Income vs Spend Over Time">
+                <IncomeVsSpendLineChart transactions={filtered} />
+              </ChartCard>
+            </div>
+            <div className="lg:col-span-4">
+              <ChartCard title="Savings Rate Over Time (%)">
+                <SavingsRateLineChart transactions={filtered} />
+              </ChartCard>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <ChartCard title="Spending Calendar">
-              <SpendingHeatmap daily={dailySpendTotals(filtered)} transactions={filtered} currency={mainCurrency} />
-            </ChartCard>
-            <ChartCard title="Month-over-Month by Category">
-              <MonthComparisonBarChart transactions={filtered} />
-            </ChartCard>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <div className="lg:col-span-8">
+              <ChartCard title="Spending Calendar">
+                <SpendingHeatmap daily={dailySpendTotals(filtered)} transactions={filtered} currency={mainCurrency} />
+              </ChartCard>
+            </div>
+            <div className="lg:col-span-4">
+              <ChartCard title="Month-over-Month by Category">
+                <MonthComparisonBarChart transactions={filtered} />
+              </ChartCard>
+            </div>
           </div>
 
           <ChartCard title="Recent Transactions">

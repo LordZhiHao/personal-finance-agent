@@ -26,7 +26,7 @@ export function BalancesPage() {
             label="Total Net Worth"
             value={formatMoney(balancesQuery.data?.total ?? 0, currency)}
             icon={<Wallet size={20} />}
-            tint="brand"
+            hero
           />
           <ChartCard title="Accounts">
             <BalancesTable summary={balancesQuery.data!} />

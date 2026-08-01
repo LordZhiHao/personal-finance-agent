@@ -57,7 +57,13 @@ export const CHROME = {
   border: "var(--border)",
 } as const;
 
-// Sequential single-hue ramp (orange — the brand hue), light -> dark, for the
-// spending heatmap. Sequential ramps encode magnitude, not identity, so they
-// aren't subject to the categorical CVD-separation check (dataviz skill).
-export const SEQUENTIAL_ORANGE = ["#ffedd5", "#fdba74", "#fb923c", "#ea580c", "#9a3412"] as const;
+// Sequential single-hue ramp (brand hue), light -> dark, for the spending
+// heatmap. CSS custom properties (see index.css) so it follows the user's
+// orange/green theme choice automatically, same as CATEGORICAL above.
+export const SEQUENTIAL = [
+  "var(--sequential-1)",
+  "var(--sequential-2)",
+  "var(--sequential-3)",
+  "var(--sequential-4)",
+  "var(--sequential-5)",
+] as const;
