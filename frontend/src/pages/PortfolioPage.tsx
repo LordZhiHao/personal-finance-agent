@@ -47,7 +47,7 @@ export function PortfolioPage() {
 
   return (
     <div className="space-y-3">
-      <h1 className="flex items-center gap-2 text-xl font-semibold font-serif" style={{ color: "var(--text-heading)" }}>
+      <h1 className="flex items-center gap-2 text-xl font-semibold" style={{ color: "var(--text-heading)" }}>
         <PieChartIcon size={22} />
         Portfolio
       </h1>

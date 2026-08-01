@@ -72,7 +72,7 @@ export function SpendingPage() {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h1
-          className="flex items-center gap-2 text-xl font-semibold font-serif"
+          className="flex items-center gap-2 text-xl font-semibold"
           style={{ color: "var(--text-heading)" }}
         >
           <Receipt size={22} />

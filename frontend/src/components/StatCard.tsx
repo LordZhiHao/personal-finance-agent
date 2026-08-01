@@ -30,7 +30,7 @@ export function StatCard({
             {label}
           </div>
           <div
-            className="text-2xl font-semibold font-serif tabular-nums mt-1"
+            className="text-2xl font-semibold tabular-nums mt-1"
             style={{ color: "var(--text-heading)" }}
           >
             {value}

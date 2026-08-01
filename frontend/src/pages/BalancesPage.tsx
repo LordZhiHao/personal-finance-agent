@@ -13,7 +13,7 @@ export function BalancesPage() {
 
   return (
     <div className="space-y-3">
-      <h1 className="flex items-center gap-2 text-xl font-semibold font-serif" style={{ color: "var(--text-heading)" }}>
+      <h1 className="flex items-center gap-2 text-xl font-semibold" style={{ color: "var(--text-heading)" }}>
         <Wallet size={22} />
         Balances
       </h1>
