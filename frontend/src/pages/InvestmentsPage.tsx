@@ -20,7 +20,7 @@ import { NetWorthLineChart } from "../components/charts/NetWorthLineChart";
 import { AssetAllocationDonut } from "../components/charts/AssetAllocationDonut";
 import { AllocationBarChart } from "../components/charts/AllocationBarChart";
 import { DividendCalendar } from "../components/charts/DividendCalendar";
-import { UpcomingDividends } from "../components/charts/UpcomingDividends";
+import { UpcomingDividends, type TickerCostBasis } from "../components/charts/UpcomingDividends";
 import { TradeHistoryTable } from "../components/charts/TradeHistoryTable";
 import { HoldingsTable } from "../components/charts/HoldingsTable";
 import { formatMoney } from "../lib/format";
@@ -135,6 +135,24 @@ export function InvestmentsPage() {
     return names;
   }, [holdingsQuery.data]);
 
+  // Weighted-average cost basis per ticker, in its native (cost) currency — pools
+  // quantity/cost across accounts holding the same ticker, for the dividend table's
+  // "Effective Yield" (dividend / my avg buy price, vs the market-price-based yield).
+  const avgCostByTicker = useMemo(() => {
+    const totals = new Map<string, { cost: number; qty: number; currency: string }>();
+    for (const h of holdingsQuery.data?.holdings ?? []) {
+      const entry = totals.get(h.ticker) ?? { cost: 0, qty: 0, currency: h.cost_currency };
+      entry.cost += h.native_cost_basis;
+      entry.qty += h.quantity;
+      totals.set(h.ticker, entry);
+    }
+    const result: Record<string, TickerCostBasis> = {};
+    for (const [ticker, { cost, qty, currency }] of totals) {
+      if (qty > 0) result[ticker] = { avgCost: cost / qty, currency };
+    }
+    return result;
+  }, [holdingsQuery.data]);
+
   const topHoldings = useMemo(() => {
     const totals = new Map<string, number>();
     for (const h of holdingsQuery.data?.holdings ?? []) {
@@ -238,7 +256,11 @@ export function InvestmentsPage() {
       </div>
 
       <ChartCard title="Upcoming Dividends">
-        <UpcomingDividends forecast={dividendForecastQuery.data ?? []} names={tickerNames} />
+        <UpcomingDividends
+          forecast={dividendForecastQuery.data ?? []}
+          names={tickerNames}
+          costBasis={avgCostByTicker}
+        />
       </ChartCard>
 
       <ChartCard title="Positions">
