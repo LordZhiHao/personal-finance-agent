@@ -10,7 +10,7 @@ from bot.extractor import extract_from_image, extract_from_pdf_images, extract_f
 from bot.finance_agent import answer_question
 from bot.handlers import save_extraction
 from bot.router import classify_intent
-from db.supabase import get_accounts, get_categories_for_user
+from db.supabase import get_accounts, get_categories_for_user, get_user_by_id
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -31,8 +31,9 @@ async def chat(payload: ChatRequest, user_id: str = Depends(get_current_user)):
         return ChatResponse(reply=reply)
 
     categories = get_categories_for_user(user_id)
+    default_currency = (get_user_by_id(user_id) or {}).get("main_currency", "SGD")
     try:
-        data = await run_in_threadpool(extract_from_text, payload.message, categories)
+        data = await run_in_threadpool(extract_from_text, payload.message, categories, default_currency)
     except (json.JSONDecodeError, ValueError):
         return ChatResponse(reply="Couldn't parse that — try rephrasing, e.g. 'spent 12 on lunch'.")
 
@@ -78,9 +79,12 @@ def _format_saved_lines(data: dict) -> list[str]:
 
 
 def _build_saved_response(data: dict, result: dict) -> dict:
+    doc_type = data.get("document_type")
+    if not doc_type or doc_type == "unknown":
+        doc_type = "entry"
     return {
         "needs_account_selection": False,
-        "summary": f"✅ Saved — {data.get('document_type') or 'entry'} ({data.get('currency', '')})",
+        "summary": f"✅ Saved — {doc_type} ({data.get('currency', '')})",
         "lines": _format_saved_lines(data),
         "transaction_ids": result["transaction_ids"],
         "portfolio_event_ids": result["portfolio_event_ids"],
@@ -97,13 +101,14 @@ async def upload_file(file: UploadFile, user_id: str = Depends(get_current_user)
     asks the frontend to prompt the user, which then calls POST /api/chat/commit."""
     file_bytes = await file.read()
     categories = get_categories_for_user(user_id)
+    default_currency = (get_user_by_id(user_id) or {}).get("main_currency", "SGD")
     try:
         if file.content_type == "application/pdf":
-            data = await run_in_threadpool(extract_from_pdf_images, file_bytes, categories)
+            data = await run_in_threadpool(extract_from_pdf_images, file_bytes, categories, default_currency)
             source = "web_pdf"
         else:
             data = await run_in_threadpool(
-                extract_from_image, file_bytes, file.content_type or "image/jpeg", categories
+                extract_from_image, file_bytes, file.content_type or "image/jpeg", categories, default_currency
             )
             source = "web_image"
     except (ValueError, KeyError):

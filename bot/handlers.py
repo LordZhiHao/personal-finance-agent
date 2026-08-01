@@ -70,7 +70,10 @@ def _escape_md(text: str) -> str:
 
 
 def build_saved_lines(data: dict) -> list[str]:
-    lines = [f"✅ *Saved* — {_escape_md(data.get('document_type') or 'entry')} ({_escape_md(data.get('currency', ''))})", ""]
+    doc_type = data.get("document_type")
+    if not doc_type or doc_type == "unknown":
+        doc_type = "entry"
+    lines = [f"✅ *Saved* — {_escape_md(doc_type)} ({_escape_md(data.get('currency', ''))})", ""]
     for i, t in enumerate(data.get("transactions", []), 1):
         flag = "⚠️" if t["confidence"] < 0.7 else "✅"
         sign = "+" if t["amount"] > 0 else ""
@@ -217,7 +220,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     photo = await update.message.photo[-1].get_file()
     image_bytes = await photo.download_as_bytearray()
     try:
-        data = extract_from_image(bytes(image_bytes), categories=get_categories_for_user(user["id"]))
+        data = extract_from_image(
+            bytes(image_bytes),
+            categories=get_categories_for_user(user["id"]),
+            default_currency=user.get("main_currency", "SGD"),
+        )
     except (json.JSONDecodeError, ValueError):
         logger.exception("handle_photo: extraction failed for user_id=%s", uid)
         await update.message.reply_text(
@@ -248,12 +255,13 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Processing document...")
 
     categories = get_categories_for_user(user["id"])
+    default_currency = user.get("main_currency", "SGD")
     try:
         if doc.mime_type == "application/pdf":
-            data = extract_from_pdf_images(bytes(file_bytes), categories=categories)
+            data = extract_from_pdf_images(bytes(file_bytes), categories=categories, default_currency=default_currency)
             data["source"] = "telegram_pdf"
         else:
-            data = extract_from_image(bytes(file_bytes), categories=categories)
+            data = extract_from_image(bytes(file_bytes), categories=categories, default_currency=default_currency)
             data["source"] = "telegram_image"
     except (json.JSONDecodeError, ValueError):
         logger.exception("handle_document: extraction failed for user_id=%s", uid)
@@ -291,7 +299,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     logger.info("handle_text: parsing free-text entry from user_id=%s", uid)
     try:
-        data = extract_from_text(raw_text, categories=get_categories_for_user(user_id))
+        data = extract_from_text(
+            raw_text,
+            categories=get_categories_for_user(user_id),
+            default_currency=user.get("main_currency", "SGD"),
+        )
     except (json.JSONDecodeError, ValueError):
         logger.exception("handle_text: extraction failed for user_id=%s", uid)
         await update.message.reply_text(

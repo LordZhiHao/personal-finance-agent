@@ -234,7 +234,10 @@ def create_custom_category(user_id: str, name: str) -> dict:
 
 
 def get_custom_categories(user_id: str) -> list[str]:
-    db = get_client()
+    # Uses the service key, not the anon key like most reads — custom_categories has RLS
+    # enabled with no anon SELECT grant (unlike the other tenant-scoped tables), so an
+    # anon-key read here silently returns zero rows instead of erroring.
+    db = get_client(use_service_key=True)
     rows = db.table("custom_categories").select("name").eq("user_id", user_id).execute().data
     return [r["name"] for r in rows]
 
@@ -242,7 +245,8 @@ def get_custom_categories(user_id: str) -> list[str]:
 def get_custom_categories_full(user_id: str) -> list[dict]:
     """Full {id, name} rows for the Settings page's manage-categories UI — distinct from
     get_custom_categories(), which returns bare names for merging into get_categories_for_user()."""
-    db = get_client()
+    # Service key — see get_custom_categories() above for why anon can't read this table.
+    db = get_client(use_service_key=True)
     return db.table("custom_categories").select("id, name").eq("user_id", user_id).order("name").execute().data
 
 
