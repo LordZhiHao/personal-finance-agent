@@ -211,7 +211,7 @@ export function ChatPage() {
   const isBusy = sendMutation.isPending || uploadMutation.isPending;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4.75rem)] md:h-[calc(100vh-5.5rem)] -mx-3 md:-mx-4 -mt-3 md:-mt-4">
+    <div className="flex flex-col h-[calc(100vh-11.75rem)] md:h-[calc(100vh-5.5rem)] -mx-3 md:-mx-4 -mt-3 md:-mt-4 -mb-28 md:-mb-4">
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
         {messages.length === 0 && (
           <div className="flex items-start gap-2">
@@ -287,13 +287,10 @@ export function ChatPage() {
         )}
       </div>
 
-      <div
-        className="px-3 py-3 shrink-0"
-        style={{ borderTop: "1px solid var(--border)", background: "var(--surface-1)" }}
-      >
+      <div className="px-3 pb-3 pt-2 shrink-0">
         <div
-          className="flex items-end gap-1 px-2 py-1.5"
-          style={{ background: "var(--field-bg)", borderRadius: 9999 }}
+          className="flex items-end gap-1 px-2 py-1.5 mx-auto w-full max-w-2xl"
+          style={{ background: "var(--surface-1)", borderRadius: 9999, boxShadow: "var(--shadow-card)" }}
         >
           <input
             ref={fileInputRef}
