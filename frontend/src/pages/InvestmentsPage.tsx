@@ -245,7 +245,7 @@ export function InvestmentsPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <div className="lg:col-span-7">
+        <div className="lg:col-span-8">
           <ChartCard title="Top Holdings">
             {topHoldings.length > 0 ? (
               <div className="max-h-[420px] overflow-y-auto">
@@ -256,7 +256,7 @@ export function InvestmentsPage() {
             )}
           </ChartCard>
         </div>
-        <div className="lg:col-span-5">
+        <div className="lg:col-span-4">
           <ChartCard title="Dividend Calendar">
             <DividendCalendar events={events} />
           </ChartCard>

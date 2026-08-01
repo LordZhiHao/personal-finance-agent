@@ -1,107 +1,150 @@
-import { useState } from "react";
-import { addDays, differenceInCalendarDays, format, parseISO, startOfWeek } from "date-fns";
-import type { DailyTotal } from "../../lib/dates";
-import type { Transaction } from "../../types";
+import { useMemo, useState } from "react";
+import {
+  addMonths,
+  eachDayOfInterval,
+  endOfMonth,
+  endOfWeek,
+  format,
+  isSameMonth,
+  parseISO,
+  startOfMonth,
+  startOfWeek,
+  subMonths,
+} from "date-fns";
+import { useTransactions } from "../../hooks/api";
+import { dailySpendTotals, type DailyTotal } from "../../lib/dates";
 import { SEQUENTIAL } from "../../lib/palette";
 import { formatMoney } from "../../lib/format";
 import { Overlay, Table, Thead, Tbody, Tr, Th, Td } from "../ui";
 
+const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
 const EMPTY_CELL = "var(--gridline)";
-const CELL_SIZE = 32;
-const CELL_GAP = 5;
 const DARK_TEXT = "var(--text-primary)";
 const LIGHT_TEXT = "#fff";
 
-function levelColor(total: number, max: number): string {
-  if (total <= 0) return EMPTY_CELL;
-  if (max <= 0) return EMPTY_CELL;
-  const ratio = total / max;
-  if (ratio <= 0.25) return SEQUENTIAL[1];
-  if (ratio <= 0.5) return SEQUENTIAL[2];
-  if (ratio <= 0.75) return SEQUENTIAL[3];
-  return SEQUENTIAL[4];
+/** Rank-based (quantile) bucketing over the displayed month's non-zero days,
+ * spread across all 5 sequential steps — a single outlier day (rent, a big
+ * statement payment) otherwise collapses every other day into one raw-ratio
+ * bucket, making the whole month read as one flat color. */
+function buildLevelMap(daily: DailyTotal[]): Map<string, number> {
+  const nonZero = [...daily.filter((d) => d.total > 0)].sort((a, b) => a.total - b.total);
+  const levels = new Map<string, number>();
+  nonZero.forEach((d, i) => {
+    levels.set(d.date, Math.min(5, Math.ceil(((i + 1) / nonZero.length) * 5)));
+  });
+  return levels;
 }
 
-// Two darkest buckets need light text for contrast; everything else (including
-// the empty-cell gray) reads fine with dark text.
-function textColor(total: number, max: number): string {
-  if (total <= 0 || max <= 0) return DARK_TEXT;
-  const ratio = total / max;
-  return ratio > 0.5 ? LIGHT_TEXT : DARK_TEXT;
+function levelColor(level: number | undefined): string {
+  return level ? SEQUENTIAL[level - 1] : EMPTY_CELL;
 }
 
-export function SpendingHeatmap({
-  daily,
-  transactions,
-  currency,
-}: {
-  daily: DailyTotal[];
-  transactions: Transaction[];
-  currency: string;
-}) {
+function textColor(level: number | undefined): string {
+  return level && level >= 4 ? LIGHT_TEXT : DARK_TEXT;
+}
+
+export function SpendingHeatmap({ accounts, currency }: { accounts?: string[]; currency: string }) {
+  const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [selected, setSelected] = useState<{ date: string; total: number } | null>(null);
 
-  if (daily.length === 0) {
-    return <p style={{ color: "var(--text-secondary)" }}>No spending in this period.</p>;
-  }
+  const monthStart = format(startOfMonth(month), "yyyy-MM-dd");
+  const monthEnd = format(endOfMonth(month), "yyyy-MM-dd");
+  const txQuery = useTransactions(monthStart, monthEnd);
 
-  const totalsByDate = new Map(daily.map((d) => [d.date, d.total]));
-  const lastDate = parseISO(daily[daily.length - 1].date);
-  const firstDate = startOfWeek(parseISO(daily[0].date));
-  const numDays = differenceInCalendarDays(lastDate, firstDate) + 1;
-  const numWeeks = Math.ceil(numDays / 7);
-  const max = Math.max(...daily.map((d) => d.total));
+  const monthTransactions = useMemo(() => {
+    const txns = txQuery.data ?? [];
+    if (!accounts || accounts.length === 0) return txns;
+    return txns.filter((t) => accounts.includes(t.accounts?.name ?? ""));
+  }, [txQuery.data, accounts]);
 
-  const weeks: { date: string; total: number }[][] = Array.from({ length: numWeeks }, (_, week) =>
-    Array.from({ length: 7 }, (_, day) => {
-      const d = addDays(firstDate, week * 7 + day);
-      const iso = format(d, "yyyy-MM-dd");
-      return { date: iso, total: totalsByDate.get(iso) ?? 0 };
-    }),
-  );
+  const daily = useMemo(() => dailySpendTotals(monthTransactions), [monthTransactions]);
+  const totalsByDate = useMemo(() => new Map(daily.map((d) => [d.date, d.total])), [daily]);
+  const levelByDate = useMemo(() => buildLevelMap(daily), [daily]);
+
+  const days = useMemo(() => {
+    const start = startOfWeek(startOfMonth(month));
+    const end = endOfWeek(endOfMonth(month));
+    return eachDayOfInterval({ start, end });
+  }, [month]);
 
   const selectedTransactions = selected
-    ? transactions
+    ? monthTransactions
         .filter((t) => t.amount < 0 && t.date.slice(0, 10) === selected.date)
         .sort((a, b) => a.amount - b.amount)
     : [];
 
   return (
-    <div className="overflow-x-auto">
-      <div style={{ display: "grid", gridAutoFlow: "column", gap: CELL_GAP }}>
-        {weeks.map((week, i) => (
-          <div key={i} style={{ display: "grid", gridTemplateRows: `repeat(7, ${CELL_SIZE}px)`, gap: CELL_GAP }}>
-            {week.map((day) => (
-              <div
-                key={day.date}
-                title={`${day.date}: ${formatMoney(day.total, currency)}`}
-                onClick={() => day.total > 0 && setSelected(day)}
-                className={day.total > 0 ? "flex items-center justify-center cursor-pointer" : "flex items-center justify-center"}
-                style={{
-                  width: CELL_SIZE,
-                  height: CELL_SIZE,
-                  borderRadius: 3,
-                  background: levelColor(day.total, max),
-                  color: textColor(day.total, max),
-                  fontSize: 12,
-                  lineHeight: 1,
-                }}
-              >
-                {format(parseISO(day.date), "d")}
-              </div>
-            ))}
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <button
+          type="button"
+          onClick={() => setMonth((m) => subMonths(m, 1))}
+          className="px-2 py-1 text-sm rounded"
+          style={{ color: "var(--text-secondary)" }}
+        >
+          ‹
+        </button>
+        <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+          {format(month, "MMMM yyyy")}
+        </span>
+        <button
+          type="button"
+          onClick={() => setMonth((m) => addMonths(m, 1))}
+          className="px-2 py-1 text-sm rounded"
+          style={{ color: "var(--text-secondary)" }}
+        >
+          ›
+        </button>
+      </div>
+
+      <div className="grid grid-cols-7 gap-1 text-center">
+        {WEEKDAYS.map((w, i) => (
+          <div key={i} className="text-xs font-medium py-1" style={{ color: "var(--text-muted)" }}>
+            {w}
           </div>
         ))}
+        {days.map((day) => {
+          const iso = format(day, "yyyy-MM-dd");
+          const inMonth = isSameMonth(day, month);
+          const total = totalsByDate.get(iso) ?? 0;
+          const level = inMonth ? levelByDate.get(iso) : undefined;
+          const clickable = inMonth && total > 0;
+          return (
+            <div key={iso} className="flex items-center justify-center py-0.5">
+              <div
+                title={inMonth ? `${iso}: ${formatMoney(total, currency)}` : undefined}
+                onClick={() => clickable && setSelected({ date: iso, total })}
+                className="flex items-center justify-center"
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 8,
+                  background: inMonth ? levelColor(level) : "transparent",
+                  color: inMonth ? textColor(level) : "var(--text-muted)",
+                  fontSize: 12,
+                  cursor: clickable ? "pointer" : "default",
+                }}
+              >
+                {format(day, "d")}
+              </div>
+            </div>
+          );
+        })}
       </div>
+
       <div className="flex items-center gap-2 mt-3 text-xs" style={{ color: "var(--text-muted)" }}>
         <span>Less</span>
-        {[EMPTY_CELL, SEQUENTIAL[1], SEQUENTIAL[2], SEQUENTIAL[3], SEQUENTIAL[4]].map(
-          (c, i) => (
-            <div key={i} style={{ width: CELL_SIZE, height: CELL_SIZE, borderRadius: 3, background: c }} />
-          ),
-        )}
+        {[EMPTY_CELL, ...SEQUENTIAL].map((c, i) => (
+          <div key={i} style={{ width: 20, height: 20, borderRadius: 5, background: c }} />
+        ))}
         <span>More</span>
       </div>
+
+      {!txQuery.isLoading && daily.length === 0 && (
+        <p className="text-sm mt-2" style={{ color: "var(--text-secondary)" }}>
+          No spending in {format(month, "MMMM yyyy")}.
+        </p>
+      )}
 
       {selected && (
         <Overlay onClose={() => setSelected(null)}>

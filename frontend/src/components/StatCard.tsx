@@ -4,7 +4,12 @@ import { IconBadge } from "./ui/IconBadge";
 
 export interface StatCardDelta {
   value: string;
+  /** Drives the ▲/▼ glyph — always the true direction of movement. */
   direction: "up" | "down";
+  /** Drives the color, when it would otherwise disagree with `direction` (e.g. a
+   * spend trend, where "up" is bad). Omit to keep the default up=green/down=red
+   * mapping used by gain/loss-style cards. */
+  sentiment?: "good" | "bad";
 }
 
 export function StatCard({
@@ -45,7 +50,7 @@ export function StatCard({
             style={{
               color: hero
                 ? "rgba(255, 255, 255, 0.9)"
-                : delta.direction === "up"
+                : (delta.sentiment ? delta.sentiment === "good" : delta.direction === "up")
                   ? "var(--tint-green-text)"
                   : "var(--tint-red-text)",
             }}
@@ -64,7 +69,7 @@ export function StatCard({
   if (hero) {
     return (
       <div
-        className="rounded-card p-5"
+        className="rounded-card p-5 h-full"
         style={{
           background: "var(--brand)",
           boxShadow: "var(--shadow-card)",

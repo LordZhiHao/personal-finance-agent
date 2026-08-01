@@ -1,6 +1,16 @@
 import { useMemo, useState } from "react";
-import { format, getMonth, parseISO, subDays } from "date-fns";
-import { Banknote, PiggyBank, Receipt } from "lucide-react";
+import {
+  addDays,
+  differenceInCalendarDays,
+  endOfMonth,
+  format,
+  getMonth,
+  parseISO,
+  startOfMonth,
+  subDays,
+  subMonths,
+} from "date-fns";
+import { Banknote, PiggyBank, Receipt, TrendingDown, TrendingUp } from "lucide-react";
 import { useAccounts, useMeta, useTransactions } from "../hooks/api";
 import { useAuth } from "../auth/AuthContext";
 import { FilterBar, type FilterValue } from "../components/FilterBar";
@@ -14,8 +24,8 @@ import { IncomeVsSpendLineChart } from "../components/charts/IncomeVsSpendLineCh
 import { SavingsRateLineChart } from "../components/charts/SavingsRateLineChart";
 import { SpendingHeatmap } from "../components/charts/SpendingHeatmap";
 import { MonthComparisonBarChart } from "../components/charts/MonthComparisonBarChart";
-import { dailySpendTotals, monthKey } from "../lib/dates";
-import { formatMoney } from "../lib/format";
+import { monthKey } from "../lib/dates";
+import { formatMoney, formatPct } from "../lib/format";
 import { Button } from "../components/ui";
 import { LoadingFinn } from "../components/LoadingFinn";
 
@@ -60,6 +70,31 @@ export function SpendingPage() {
       .reduce((sum, t) => sum + Math.abs(t.amount), 0);
     const rate = income ? Math.round(((income - spend) / income) * 10000) / 100 : 0;
     return { monthlyIncome: income, monthlySpend: spend, savingsRate: rate };
+  }, [filtered]);
+
+  // Month-to-date spend vs. the same day-of-month cutoff last month, for the
+  // "Spend Trend" card — "up" (spending more) is unfavorable, unlike the
+  // gain/loss cards elsewhere, hence StatCardDelta's `sentiment` override below.
+  const { trendDelta, trendPct } = useMemo(() => {
+    const now = new Date();
+    const mtdStart = startOfMonth(now);
+    const prevMtdStart = subMonths(mtdStart, 1);
+    const prevMtdEnd = new Date(
+      Math.min(
+        addDays(prevMtdStart, differenceInCalendarDays(now, mtdStart)).getTime(),
+        endOfMonth(prevMtdStart).getTime(),
+      ),
+    );
+
+    const sumExpenses = (start: Date, end: Date) =>
+      filtered
+        .filter((t) => t.amount < 0 && parseISO(t.date) >= start && parseISO(t.date) <= end)
+        .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
+    const mtdSpend = sumExpenses(mtdStart, now);
+    const prevMtdSpend = sumExpenses(prevMtdStart, prevMtdEnd);
+    const delta = mtdSpend - prevMtdSpend;
+    return { trendDelta: delta, trendPct: prevMtdSpend > 0 ? (delta / prevMtdSpend) * 100 : null };
   }, [filtered]);
 
   const categories = metaQuery.data?.categories ?? [];
@@ -107,16 +142,31 @@ export function SpendingPage() {
                 tint="green"
               />
               <StatCard label="Savings Rate" value={`${savingsRate}%`} icon={<PiggyBank size={20} />} tint="amber" />
+              <StatCard
+                label="Spend Trend"
+                value={`${trendDelta >= 0 ? "+" : ""}${formatMoney(trendDelta, mainCurrency)}`}
+                icon={trendDelta >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
+                tint={trendDelta >= 0 ? "red" : "green"}
+                delta={
+                  trendPct !== null
+                    ? {
+                        value: `${formatPct(trendPct)} vs last month`,
+                        direction: trendDelta >= 0 ? "up" : "down",
+                        sentiment: trendDelta >= 0 ? "bad" : "good",
+                      }
+                    : undefined
+                }
+              />
             </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-            <div className="lg:col-span-7">
+            <div className="lg:col-span-8">
               <ChartCard title="Monthly Spend by Category">
                 <MonthlySpendBarChart transactions={filtered} categories={categories} />
               </ChartCard>
             </div>
-            <div className="lg:col-span-5">
+            <div className="lg:col-span-4">
               <ChartCard title="Spend by Category">
                 <SpendByCategoryDonut transactions={filtered} />
               </ChartCard>
@@ -139,7 +189,7 @@ export function SpendingPage() {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
             <div className="lg:col-span-8">
               <ChartCard title="Spending Calendar">
-                <SpendingHeatmap daily={dailySpendTotals(filtered)} transactions={filtered} currency={mainCurrency} />
+                <SpendingHeatmap accounts={filters.accounts} currency={mainCurrency} />
               </ChartCard>
             </div>
             <div className="lg:col-span-4">

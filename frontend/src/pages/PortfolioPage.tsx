@@ -36,14 +36,14 @@ export function PortfolioPage() {
 
   const holdingsByMarket = useMemo(() => {
     const groups = new Map<string, { currency: string; holdings: Holding[] }>();
-    for (const h of holdings) {
+    for (const h of filteredHoldings) {
       const nativeCurrency = h.price_currency ?? h.cost_currency;
       const market = CURRENCY_MARKET[nativeCurrency] ?? nativeCurrency;
       if (!groups.has(market)) groups.set(market, { currency: nativeCurrency, holdings: [] });
       groups.get(market)!.holdings.push(h);
     }
     return groups;
-  }, [holdings]);
+  }, [filteredHoldings]);
 
   return (
     <div className="space-y-3">
@@ -56,30 +56,27 @@ export function PortfolioPage() {
         <LoadingFinn />
       ) : (
         <>
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-            <div className="lg:col-span-6">
-              <StatCard
-                label="Total Market Value"
-                value={formatMoney(holdingsQuery.data?.total_market_value ?? 0, currency)}
-                icon={<Briefcase size={20} />}
-                hero
-              />
-            </div>
-            <div className="lg:col-span-6 flex flex-col gap-4">
-              <StatCard
-                label="Total Cost Basis"
-                value={formatMoney(costBasis, currency)}
-                icon={<Receipt size={20} />}
-                tint="amber"
-              />
-              <StatCard
-                label="Unrealized Gain"
-                value={formatMoney(gain, currency)}
-                icon={gain >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
-                tint={gain >= 0 ? "green" : "red"}
-                delta={{ value: formatPct(gainPct), direction: gain >= 0 ? "up" : "down" }}
-              />
-            </div>
+          <StatCard
+            label="Total Market Value"
+            value={formatMoney(holdingsQuery.data?.total_market_value ?? 0, currency)}
+            icon={<Briefcase size={20} />}
+            hero
+          />
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <StatCard
+              label="Total Cost Basis"
+              value={formatMoney(costBasis, currency)}
+              icon={<Receipt size={20} />}
+              tint="amber"
+            />
+            <StatCard
+              label="Unrealized Gain"
+              value={formatMoney(gain, currency)}
+              icon={gain >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
+              tint={gain >= 0 ? "green" : "red"}
+              delta={{ value: formatPct(gainPct), direction: gain >= 0 ? "up" : "down" }}
+            />
           </div>
 
           <Card>
