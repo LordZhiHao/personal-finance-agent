@@ -79,7 +79,11 @@ def get_transactions(start_date: str, end_date: str, user_id: str | None = None)
 def update_transaction(transaction_id: str, fields: dict, user_id: str | None = None):
     """user_id=None preserves the legacy dashboard's unscoped update. When given,
     the update only applies if transaction_id belongs to an account owned by user_id —
-    otherwise raises LookupError (translated to a 404 by the backend)."""
+    otherwise raises LookupError (translated to a 404 by the backend). If fields moves
+    the transaction to a different account, the new account must also be owned by
+    user_id (same convention as update_portfolio_event)."""
+    if user_id is not None and "account_id" in fields:
+        _validate_owned_account(fields["account_id"], user_id)
     logger.info("update_transaction: id=%s fields=%s", transaction_id, list(fields.keys()))
     db = get_client(use_service_key=True)
     query = db.table("transactions").update(fields).eq("id", transaction_id)

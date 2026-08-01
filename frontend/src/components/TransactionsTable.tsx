@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { Transaction } from "../types";
+import type { Account, Transaction } from "../types";
 import { api } from "../api/client";
 import { formatMoney } from "../lib/format";
 import { Table, Thead, Tbody, Tr, Th, Td } from "./ui/Table";
@@ -10,15 +10,18 @@ import { useSortableRows } from "../lib/sort";
 interface EditState {
   description: string;
   category: string;
+  account_id: string;
 }
 
 export function TransactionsTable({
   transactions,
   categories,
+  accounts,
   refetchKey,
 }: {
   transactions: Transaction[];
   categories: string[];
+  accounts: Account[];
   refetchKey: unknown[];
 }) {
   const queryClient = useQueryClient();
@@ -45,6 +48,7 @@ export function TransactionsTable({
           const fields: Record<string, string> = {};
           if (edit.description !== original.description) fields.description = edit.description;
           if (edit.category !== original.category) fields.category = edit.category;
+          if (edit.account_id !== original.account_id) fields.account_id = edit.account_id;
           return api.patch(`/api/transactions/${id}`, fields);
         }),
       );
@@ -67,7 +71,7 @@ export function TransactionsTable({
   }
 
   function fieldFor(t: Transaction): EditState {
-    return edits[t.id] ?? { description: t.description, category: t.category };
+    return edits[t.id] ?? { description: t.description, category: t.category, account_id: t.account_id };
   }
 
   function updateField(t: Transaction, patch: Partial<EditState>) {
@@ -76,7 +80,12 @@ export function TransactionsTable({
 
   const changedCount = Object.entries(edits).filter(([id, edit]) => {
     const original = sorted.find((t) => t.id === id);
-    return original && (edit.description !== original.description || edit.category !== original.category);
+    return (
+      original &&
+      (edit.description !== original.description ||
+        edit.category !== original.category ||
+        edit.account_id !== original.account_id)
+    );
   }).length;
 
   return (
@@ -133,7 +142,18 @@ export function TransactionsTable({
                       ))}
                     </Select>
                   </Td>
-                  <Td style={{ color: "var(--text-secondary)" }}>{t.accounts?.name ?? "Unknown"}</Td>
+                  <Td>
+                    <Select
+                      value={edit.account_id}
+                      onChange={(e) => updateField(t, { account_id: e.target.value })}
+                    >
+                      {accounts.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Td>
                   <Td align="right">
                     <Button
                       variant="ghost"

@@ -137,6 +137,7 @@ export function SpendingPage() {
             <TransactionsTable
               transactions={filtered}
               categories={categories}
+              accounts={accountsQuery.data ?? []}
               refetchKey={["transactions", filters.startDate, filters.endDate]}
             />
           </ChartCard>

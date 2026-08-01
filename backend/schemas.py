@@ -108,10 +108,12 @@ class CustomCategoryUpdate(BaseModel):
 
 
 class TransactionUpdate(BaseModel):
-    """Only category/description are editable from the dashboard's transactions
-    table — amount/date/account are read-only, matching dashboard/views/spending.py."""
+    """description/category/account_id are editable from the frontend's transactions
+    table (amount/date remain read-only, matching dashboard/views/spending.py, which
+    stays untouched and only ever sends description/category)."""
     description: str | None = None
     category: str | None = None
+    account_id: str | None = None
 
 
 class TransactionCreate(BaseModel):
