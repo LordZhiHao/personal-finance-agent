@@ -149,3 +149,13 @@ body {
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
+
+/* Hides the scrollbar on horizontally-scrollable mobile strips (section tabs,
+   swipeable page carousels) while keeping them scrollable/swipeable. */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

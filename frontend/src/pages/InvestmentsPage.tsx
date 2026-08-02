@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import clsx from "clsx";
 import { format, getMonth, parseISO, subDays, subMonths, subYears } from "date-fns";
 import { TrendingUp, Wallet } from "lucide-react";
 import {
@@ -17,7 +16,7 @@ import { FilterBar, type FilterValue } from "../components/FilterBar";
 import { StatCard } from "../components/StatCard";
 import { ChartCard } from "../components/ChartCard";
 import { AddTradeDialog } from "../components/AddTradeDialog";
-import { MobileSectionTabs } from "../components/MobileSectionTabs";
+import { SwipeableSections } from "../components/SwipeableSections";
 import { NetWorthLineChart } from "../components/charts/NetWorthLineChart";
 import { AssetAllocationDonut } from "../components/charts/AssetAllocationDonut";
 import { AllocationBarChart } from "../components/charts/AllocationBarChart";
@@ -182,7 +181,6 @@ export function InvestmentsPage() {
         <TrendingUp size={22} />
         Investments
       </h1>
-      <MobileSectionTabs tabs={INVESTMENTS_TABS} active={mobileTab} onChange={setMobileTab} />
       <FilterBar
         accounts={accountsQuery.data ?? []}
         value={filters}
@@ -192,130 +190,143 @@ export function InvestmentsPage() {
         }}
       />
 
-      <div className={clsx(mobileTab === "overview" ? "block" : "hidden", "md:block", "space-y-3")}>
-      <StatCard
-        label="Net Worth"
-        value={formatMoney(netWorth, displayCurrency)}
-        icon={<Wallet size={20} />}
-        hero
-        headerRight={
-          <Button
-            variant="ghost"
-            onClick={() => refreshPricesMutation.mutate()}
-            disabled={refreshPricesMutation.isPending}
-          >
-            {refreshPricesMutation.isPending ? "Refreshing…" : "🔄 Refresh Prices"}
-          </Button>
-        }
-      />
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-        <div className="lg:col-span-8">
-          <ChartCard
-            title="Net Worth Over Time"
-            headerRight={
-              <Select value={period} onChange={(e) => setPeriod(e.target.value as Period)} className="w-24">
-                {PERIODS.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </Select>
-            }
-          >
-            <div className="mb-3">
-              <TabToggle options={brokerOptions} value={selectedBrokerAccountId} onChange={setSelectedBrokerAccountId} />
-            </div>
-            {filteredNetWorthPoints.length > 0 ? (
-              <NetWorthLineChart points={filteredNetWorthPoints} />
-            ) : (
-              <p style={{ color: "var(--text-secondary)" }}>No asset snapshots yet.</p>
-            )}
-          </ChartCard>
-        </div>
-        <div className="lg:col-span-4">
-          <ChartCard
-            title="Asset Allocation"
-            fill
-            headerRight={
-              <TabToggle
-                options={[
-                  { value: "broker", label: "Broker" },
-                  { value: "currency", label: "Currency" },
-                ]}
-                value={allocationView}
-                onChange={setAllocationView}
+      <SwipeableSections
+        tabs={INVESTMENTS_TABS}
+        active={mobileTab}
+        onChange={setMobileTab}
+        panels={{
+          overview: (
+            <div className="space-y-3">
+              <StatCard
+                label="Net Worth"
+                value={formatMoney(netWorth, displayCurrency)}
+                icon={<Wallet size={20} />}
+                hero
+                headerRight={
+                  <Button
+                    variant="ghost"
+                    onClick={() => refreshPricesMutation.mutate()}
+                    disabled={refreshPricesMutation.isPending}
+                  >
+                    {refreshPricesMutation.isPending ? "Refreshing…" : "🔄 Refresh Prices"}
+                  </Button>
+                }
               />
-            }
-          >
-            {allocationData.length > 0 ? (
-              <AssetAllocationDonut data={allocationData} fill />
-            ) : (
-              <p style={{ color: "var(--text-secondary)" }}>No asset snapshots yet.</p>
-            )}
-          </ChartCard>
-        </div>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-        <div className="lg:col-span-8">
-          <ChartCard title="Top Holdings">
-            {topHoldings.length > 0 ? (
-              <div className="max-h-[420px] overflow-y-auto">
-                <AllocationBarChart data={topHoldings} currency={displayCurrency} />
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+                <div className="lg:col-span-8">
+                  <ChartCard
+                    title="Net Worth Over Time"
+                    headerRight={
+                      <Select value={period} onChange={(e) => setPeriod(e.target.value as Period)} className="w-24">
+                        {PERIODS.map((p) => (
+                          <option key={p} value={p}>
+                            {p}
+                          </option>
+                        ))}
+                      </Select>
+                    }
+                  >
+                    <div className="mb-3">
+                      <TabToggle
+                        options={brokerOptions}
+                        value={selectedBrokerAccountId}
+                        onChange={setSelectedBrokerAccountId}
+                      />
+                    </div>
+                    {filteredNetWorthPoints.length > 0 ? (
+                      <NetWorthLineChart points={filteredNetWorthPoints} />
+                    ) : (
+                      <p style={{ color: "var(--text-secondary)" }}>No asset snapshots yet.</p>
+                    )}
+                  </ChartCard>
+                </div>
+                <div className="lg:col-span-4">
+                  <ChartCard
+                    title="Asset Allocation"
+                    fill
+                    headerRight={
+                      <TabToggle
+                        options={[
+                          { value: "broker", label: "Broker" },
+                          { value: "currency", label: "Currency" },
+                        ]}
+                        value={allocationView}
+                        onChange={setAllocationView}
+                      />
+                    }
+                  >
+                    {allocationData.length > 0 ? (
+                      <AssetAllocationDonut data={allocationData} fill />
+                    ) : (
+                      <p style={{ color: "var(--text-secondary)" }}>No asset snapshots yet.</p>
+                    )}
+                  </ChartCard>
+                </div>
               </div>
-            ) : (
-              <p style={{ color: "var(--text-secondary)" }}>No holdings yet.</p>
-            )}
-          </ChartCard>
-        </div>
-        <div className="lg:col-span-4">
-          <ChartCard title="Dividend Calendar" fill>
-            <DividendCalendar events={events} fill />
-          </ChartCard>
-        </div>
-      </div>
-      </div>
 
-      <div className={clsx(mobileTab === "holdings" ? "block" : "hidden", "md:block", "space-y-3")}>
-      <ChartCard title="Upcoming Dividends">
-        <UpcomingDividends
-          forecast={dividendForecastQuery.data ?? []}
-          names={tickerNames}
-          costBasis={avgCostByTicker}
-        />
-      </ChartCard>
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+                <div className="lg:col-span-8">
+                  <ChartCard title="Top Holdings">
+                    {topHoldings.length > 0 ? (
+                      <div className="max-h-[420px] overflow-y-auto">
+                        <AllocationBarChart data={topHoldings} currency={displayCurrency} />
+                      </div>
+                    ) : (
+                      <p style={{ color: "var(--text-secondary)" }}>No holdings yet.</p>
+                    )}
+                  </ChartCard>
+                </div>
+                <div className="lg:col-span-4">
+                  <ChartCard title="Dividend Calendar" fill>
+                    <DividendCalendar events={events} fill />
+                  </ChartCard>
+                </div>
+              </div>
+            </div>
+          ),
+          holdings: (
+            <div className="space-y-3">
+              <ChartCard title="Upcoming Dividends">
+                <UpcomingDividends
+                  forecast={dividendForecastQuery.data ?? []}
+                  names={tickerNames}
+                  costBasis={avgCostByTicker}
+                />
+              </ChartCard>
 
-      <ChartCard title="Positions">
-        <div className="max-h-[420px] overflow-y-auto">
-          <HoldingsTable
-            holdings={holdingsQuery.data?.holdings ?? []}
-            currency={displayCurrency}
-            totalMarketValue={holdingsQuery.data?.total_market_value}
-          />
-        </div>
-      </ChartCard>
-      </div>
-
-      <div className={clsx(mobileTab === "trades" ? "block" : "hidden", "md:block")}>
-      <ChartCard
-        title="Trade History"
-        headerRight={
-          <Button variant="primary" onClick={() => setDialogOpen(true)}>
-            ＋ Add Entry
-          </Button>
-        }
-      >
-        {metaQuery.data && (
-          <TradeHistoryTable
-            events={eventsSorted}
-            refetchKey={["portfolio-events"]}
-            meta={metaQuery.data}
-            accounts={accountsQuery.data ?? []}
-          />
-        )}
-      </ChartCard>
-      </div>
+              <ChartCard title="Positions">
+                <div className="max-h-[420px] overflow-y-auto">
+                  <HoldingsTable
+                    holdings={holdingsQuery.data?.holdings ?? []}
+                    currency={displayCurrency}
+                    totalMarketValue={holdingsQuery.data?.total_market_value}
+                  />
+                </div>
+              </ChartCard>
+            </div>
+          ),
+          trades: (
+            <ChartCard
+              title="Trade History"
+              headerRight={
+                <Button variant="primary" onClick={() => setDialogOpen(true)}>
+                  ＋ Add Entry
+                </Button>
+              }
+            >
+              {metaQuery.data && (
+                <TradeHistoryTable
+                  events={eventsSorted}
+                  refetchKey={["portfolio-events"]}
+                  meta={metaQuery.data}
+                  accounts={accountsQuery.data ?? []}
+                />
+              )}
+            </ChartCard>
+          ),
+        }}
+      />
 
       {dialogOpen && metaQuery.data && (
         <AddTradeDialog
