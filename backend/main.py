@@ -6,7 +6,17 @@ from fastapi.responses import JSONResponse
 load_dotenv()
 
 from backend.config import CORS_ALLOWED_ORIGINS  # noqa: E402
-from backend.routers import accounts, auth_routes, categories, chat, investments, meta, spending, telegram_link  # noqa: E402
+from backend.routers import (  # noqa: E402
+    accounts,
+    auth_routes,
+    categories,
+    chat,
+    investments,
+    memories,
+    meta,
+    spending,
+    telegram_link,
+)
 
 app = FastAPI(title="Personal Finance API")
 
@@ -37,6 +47,7 @@ app.include_router(investments.router)
 app.include_router(accounts.router)
 app.include_router(categories.router)
 app.include_router(chat.router)
+app.include_router(memories.router)
 
 
 @app.get("/health")

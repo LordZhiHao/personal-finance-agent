@@ -285,6 +285,48 @@ def get_categories_for_user(user_id: str) -> list[str]:
     return CATEGORIES + get_custom_categories(user_id)
 
 
+def create_user_memory(user_id: str, content: str, source: str = "agent") -> dict:
+    """A durable freeform note about the user (preference/goal/idea). source is
+    'agent' when the finance Q&A agent saves it mid-conversation, 'manual' when the
+    user adds it directly (Settings page or onboarding)."""
+    db = get_client(use_service_key=True)
+    result = (
+        db.table("user_memories")
+        .insert({"user_id": user_id, "content": content, "source": source})
+        .execute()
+    )
+    logger.info("create_user_memory: user_id=%s source=%s", user_id, source)
+    return result.data[0]
+
+
+def get_user_memories(user_id: str, limit: int = 30) -> list[dict]:
+    """Most recent notes first, capped so the agent's system prompt stays bounded."""
+    db = get_client(use_service_key=True)
+    return (
+        db.table("user_memories")
+        .select("id, content, source, created_at")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+        .data
+    )
+
+
+def delete_user_memory(memory_id: str, user_id: str) -> None:
+    db = get_client(use_service_key=True)
+    result = (
+        db.table("user_memories")
+        .delete()
+        .eq("id", memory_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if not result.data:
+        raise LookupError(f"Memory {memory_id} not found")
+    logger.info("delete_user_memory: id=%s user_id=%s", memory_id, user_id)
+
+
 def get_portfolio_events(start_date: str | None = None, end_date: str | None = None, user_id: str | None = None):
     """Trade history with account info joined in, for dashboard/frontend display.
     Date bounds are optional — omit both to fetch full history unfiltered.

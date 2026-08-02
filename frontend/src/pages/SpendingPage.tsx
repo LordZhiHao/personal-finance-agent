@@ -182,15 +182,15 @@ export function SpendingPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
             <div className="lg:col-span-8">
               <ChartCard title="Spending Calendar">
                 <SpendingHeatmap accounts={filters.accounts} currency={mainCurrency} />
               </ChartCard>
             </div>
             <div className="lg:col-span-4">
-              <ChartCard title="Month-over-Month by Category">
-                <MonthComparisonBarChart transactions={filtered} />
+              <ChartCard title="Month-over-Month by Category" fill>
+                <MonthComparisonBarChart transactions={filtered} fill />
               </ChartCard>
             </div>
           </div>

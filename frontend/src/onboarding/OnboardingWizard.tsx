@@ -5,6 +5,7 @@ import { CurrencyStep } from "./CurrencyStep";
 import { AccountsStep } from "./AccountsStep";
 import { CategoriesStep } from "./CategoriesStep";
 import { TelegramStep } from "./TelegramStep";
+import { AboutYouStep } from "./AboutYouStep";
 import { SummaryStep } from "./SummaryStep";
 
 export interface OnboardingStepProps {
@@ -12,7 +13,15 @@ export interface OnboardingStepProps {
   onBack: () => void;
 }
 
-const STEPS = [WelcomeStep, CurrencyStep, AccountsStep, CategoriesStep, TelegramStep, SummaryStep] as const;
+const STEPS = [
+  WelcomeStep,
+  CurrencyStep,
+  AccountsStep,
+  CategoriesStep,
+  TelegramStep,
+  AboutYouStep,
+  SummaryStep,
+] as const;
 
 export function OnboardingWizard() {
   const [stepIndex, setStepIndex] = useState(0);

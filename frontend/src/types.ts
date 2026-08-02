@@ -12,6 +12,13 @@ export interface CustomCategory {
   name: string;
 }
 
+export interface Memory {
+  id: string;
+  content: string;
+  source: "agent" | "manual";
+  created_at: string;
+}
+
 export interface Transaction {
   id: string;
   account_id: string;

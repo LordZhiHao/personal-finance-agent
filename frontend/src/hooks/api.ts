@@ -9,6 +9,7 @@ import type {
   DividendForecast,
   ExpenseSummary,
   HoldingsSummary,
+  Memory,
   Meta,
   PortfolioEvent,
   Transaction,
@@ -197,6 +198,33 @@ export function useDeleteCategory() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["meta"] });
       queryClient.invalidateQueries({ queryKey: ["categories"] });
+    },
+  });
+}
+
+export function useMemories() {
+  return useQuery({
+    queryKey: ["memories"],
+    queryFn: () => api.get<Memory[]>("/api/memories"),
+  });
+}
+
+export function useCreateMemory() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (content: string) => api.post<Memory>("/api/memories", { content }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["memories"] });
+    },
+  });
+}
+
+export function useDeleteMemory() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/api/memories/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["memories"] });
     },
   });
 }

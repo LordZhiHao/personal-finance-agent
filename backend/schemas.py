@@ -158,6 +158,18 @@ class CategoryCreate(BaseModel):
         return v
 
 
+class MemoryCreate(BaseModel):
+    content: str
+
+    @field_validator("content")
+    @classmethod
+    def content_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Memory content is required.")
+        return v
+
+
 class PortfolioEventCreate(BaseModel):
     account_id: str
     date: date

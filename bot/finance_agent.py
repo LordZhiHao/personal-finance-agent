@@ -5,7 +5,14 @@ from datetime import date
 from dateutil.relativedelta import relativedelta
 
 from bot.deepseek_client import client
-from db.supabase import get_held_positions, get_portfolio_events, get_recent_transactions, get_transactions
+from db.supabase import (
+    create_user_memory,
+    get_held_positions,
+    get_portfolio_events,
+    get_recent_transactions,
+    get_transactions,
+    get_user_memories,
+)
 from scheduler.report_builder import month_comparison, summarize_transactions
 from utils.balances import compute_account_balances, compute_net_worth_trend
 from utils.constants import DASHBOARD_URL, DEFAULT_CURRENCY, TICKER_YFINANCE_MAP
@@ -46,8 +53,18 @@ that ticker in the results, then explicitly state its average buy price vs. curr
 whether the position is in the green (unrealized_gain > 0) or red (unrealized_gain < 0)."""
 
 
-def _build_system_prompt(channel: str) -> str:
-    shared = _shared_prompt_body()
+def _memories_block(memories: list[dict]) -> str:
+    if not memories:
+        return ""
+    notes = "\n".join(f"- {m['content']}" for m in memories)
+    return f"""
+
+What you know about this user from past conversations:
+{notes}"""
+
+
+def _build_system_prompt(channel: str, memories: list[dict]) -> str:
+    shared = _shared_prompt_body() + _memories_block(memories)
     if channel == "web":
         return f"""You are a personal finance assistant for a user based in Singapore, integrated into
 their web dashboard. Keep replies concise and use plain text with line breaks where helpful.
@@ -203,6 +220,30 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "remember_preference",
+            "description": (
+                "Save a durable fact, preference, or goal about the user for future "
+                "conversations (e.g. 'prefers seeing amounts in USD', 'saving for a house "
+                "downpayment', 'dislikes budgeting tips'). Only call this for information "
+                "that should persist across sessions — not one-off transaction details "
+                "already captured elsewhere. Save silently; do not ask the user for "
+                "permission first."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "string",
+                        "description": "A concise (<200 char) statement of the fact/preference to remember.",
+                    }
+                },
+                "required": ["content"],
+            },
+        },
+    },
 ]
 
 
@@ -261,6 +302,12 @@ def _run_tool(name: str, args: dict, user_id: str) -> dict:
     if name == "get_net_worth_trend":
         days = max(1, int(args.get("days", 7)))
         return compute_net_worth_trend(user_id, DEFAULT_CURRENCY, lookback_days=days)
+    if name == "remember_preference":
+        content = (args.get("content") or "").strip()
+        if not content:
+            return {"error": "empty content"}
+        create_user_memory(user_id, content, source="agent")
+        return {"status": "saved"}
     return {"error": f"unknown tool {name!r}"}
 
 
@@ -273,7 +320,12 @@ def answer_question(uid: int | str, raw_text: str, user_id: str, channel: str = 
     `channel` selects the system prompt copy ("telegram" or "web") — the tools and
     tool-calling loop are identical either way."""
     history = chat_history.get(uid, [])
-    system_prompt = _build_system_prompt(channel)
+    try:
+        memories = get_user_memories(user_id)
+    except Exception:
+        logger.exception("answer_question: get_user_memories failed for user_id=%s", user_id)
+        memories = []
+    system_prompt = _build_system_prompt(channel, memories)
     messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": raw_text}]
 
     try:

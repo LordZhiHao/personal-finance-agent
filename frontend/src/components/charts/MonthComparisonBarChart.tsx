@@ -4,7 +4,13 @@ import { monthComparison } from "../../lib/dates";
 import { CHROME } from "../../lib/palette";
 import { axisTickStyle, legendStyle, tooltipStyle } from "./chartTheme";
 
-export function MonthComparisonBarChart({ transactions }: { transactions: Transaction[] }) {
+export function MonthComparisonBarChart({
+  transactions,
+  fill = false,
+}: {
+  transactions: Transaction[];
+  fill?: boolean;
+}) {
   const rows = monthComparison(transactions).slice(0, 8);
 
   if (rows.length === 0) {
@@ -12,7 +18,7 @@ export function MonthComparisonBarChart({ transactions }: { transactions: Transa
   }
 
   return (
-    <ResponsiveContainer width="100%" height={280}>
+    <ResponsiveContainer width="100%" height={fill ? "100%" : 280} minHeight={fill ? 280 : undefined}>
       <BarChart data={rows}>
         <CartesianGrid strokeDasharray="3 3" stroke={CHROME.gridline} vertical={false} />
         <XAxis dataKey="category" tick={axisTickStyle} axisLine={{ stroke: CHROME.baseline }} tickLine={false} />

@@ -9,17 +9,20 @@ import {
   useAccounts,
   useCreateAccount,
   useCreateCategory,
+  useCreateMemory,
   useCustomCategories,
   useDeleteAccount,
   useDeleteCategory,
+  useDeleteMemory,
   useGenerateTelegramLinkCode,
+  useMemories,
   useMeta,
   useUpdateAccount,
   useUpdateCategory,
   useUpdateMainCurrency,
   useUpdateTheme,
 } from "../hooks/api";
-import type { Account, CustomCategory, Meta } from "../types";
+import type { Account, CustomCategory, Memory, Meta } from "../types";
 
 const accountSchema = z.object({
   name: z.string().min(1, "Name is required."),
@@ -33,6 +36,11 @@ const categorySchema = z.object({
   name: z.string().min(1, "Category name is required."),
 });
 type CategoryFormValues = z.infer<typeof categorySchema>;
+
+const memorySchema = z.object({
+  content: z.string().min(1, "Please enter something to remember."),
+});
+type MemoryFormValues = z.infer<typeof memorySchema>;
 
 function AccountDialog({
   account,
@@ -304,6 +312,90 @@ function CategoriesCard() {
   );
 }
 
+function MemoryRow({ memory }: { memory: Memory }) {
+  const deleteMutation = useDeleteMemory();
+
+  function handleDelete() {
+    if (!window.confirm("Delete this memory? Finn will no longer take it into account.")) return;
+    deleteMutation.mutate(memory.id);
+  }
+
+  return (
+    <div
+      className="flex items-center justify-between gap-2 py-2"
+      style={{ borderBottom: "1px solid var(--gridline)" }}
+    >
+      <p className="text-sm min-w-0 break-words" style={{ color: "var(--text-primary)" }}>
+        {memory.content}
+      </p>
+      <Button
+        variant="ghost"
+        onClick={handleDelete}
+        disabled={deleteMutation.isPending}
+        style={{ color: "var(--tint-red-text)" }}
+      >
+        Delete
+      </Button>
+    </div>
+  );
+}
+
+function MemoriesCard() {
+  const memoriesQuery = useMemories();
+  const mutation = useCreateMemory();
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<MemoryFormValues>({ resolver: zodResolver(memorySchema), defaultValues: { content: "" } });
+
+  return (
+    <Card>
+      <h2 className="text-sm font-semibold mb-1" style={{ color: "var(--text-heading)" }}>
+        What Finn Knows About You
+      </h2>
+      <p className="text-sm mb-3" style={{ color: "var(--text-secondary)" }}>
+        Finn saves preferences and goals you mention in chat automatically. Review or remove
+        anything here, or add a note yourself.
+      </p>
+      {(memoriesQuery.data?.length ?? 0) > 0 && (
+        <div className="mb-3">
+          {memoriesQuery.data!.map((m) => (
+            <MemoryRow key={m.id} memory={m} />
+          ))}
+        </div>
+      )}
+      {memoriesQuery.data?.length === 0 && (
+        <p className="text-sm py-1" style={{ color: "var(--text-secondary)" }}>
+          Nothing saved yet — chat with Finn or add a note below.
+        </p>
+      )}
+      <form
+        onSubmit={handleSubmit((values) => {
+          mutation.mutate(values.content, { onSuccess: () => reset() });
+        })}
+        className="flex flex-wrap items-end gap-2 mt-2"
+      >
+        <label className="flex flex-col gap-1 flex-1 min-w-[200px]">
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            New note
+          </span>
+          <Input {...register("content")} placeholder="e.g. Saving for a house downpayment" className="w-full" />
+          {errors.content && (
+            <span className="text-xs" style={{ color: "var(--tint-red-text)" }}>
+              {errors.content.message}
+            </span>
+          )}
+        </label>
+        <Button type="submit" variant="primary" disabled={isSubmitting || mutation.isPending}>
+          {mutation.isPending ? "Adding…" : "＋ Add Note"}
+        </Button>
+      </form>
+    </Card>
+  );
+}
+
 function MainCurrencyCard() {
   const { mainCurrency, refreshMe } = useAuth();
   const metaQuery = useMeta();
@@ -480,6 +572,7 @@ export function SettingsPage() {
         <div className="lg:col-span-8 flex flex-col gap-4">
           <AccountsCard />
           <CategoriesCard />
+          <MemoriesCard />
         </div>
       </div>
     </div>
