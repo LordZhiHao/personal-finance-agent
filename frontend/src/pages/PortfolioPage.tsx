@@ -148,7 +148,7 @@ export function PortfolioPage() {
 
   return (
     <div className="space-y-3">
-      <div className="md:hidden mb-4">
+      <div className="md:hidden -mt-3 mb-4">
         <MobileSectionTabs tabs={portfolioTabs} active={mobileTab} onChange={setMobileTab} />
       </div>
       <h1 className="flex items-center gap-2 text-xl font-semibold" style={{ color: "var(--text-heading)" }}>

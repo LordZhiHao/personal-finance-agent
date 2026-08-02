@@ -207,7 +207,10 @@ export function InvestmentsPage() {
     />
   );
 
-  const mobileChartHeight = "min-h-[55dvh] md:min-h-0";
+  // Sized so the whole card (title + chart) fits in the space actually left over
+  // on a phone screen — viewport height minus the sticky header, subheader, page
+  // title, filter bar, and bottom nav — instead of overflowing below the fold.
+  const mobileChartHeight = "min-h-[calc(100dvh_-_400px)] md:min-h-0";
 
   const netWorthOverTimeChart = (
     <ChartCard
@@ -323,7 +326,7 @@ export function InvestmentsPage() {
 
   return (
     <div className="space-y-3">
-      <div className="md:hidden mb-4">
+      <div className="md:hidden -mt-3 mb-4">
         <MobileSectionTabs tabs={INVESTMENTS_TABS} active={mobileTab} onChange={setMobileTab} />
       </div>
       <h1 className="flex items-center gap-2 text-xl font-semibold" style={{ color: "var(--text-heading)" }}>

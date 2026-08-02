@@ -159,7 +159,10 @@ export function SpendingPage() {
     </div>
   );
 
-  const mobileChartHeight = "min-h-[55dvh] md:min-h-0";
+  // Sized so the whole card (title + chart) fits in the space actually left over
+  // on a phone screen — viewport height minus the sticky header, subheader, page
+  // title, filter bar, and bottom nav — instead of overflowing below the fold.
+  const mobileChartHeight = "min-h-[calc(100dvh_-_400px)] md:min-h-0";
 
   const monthlySpendChart = (
     <ChartCard title="Monthly Spend by Category" fill className={mobileChartHeight}>
@@ -204,7 +207,7 @@ export function SpendingPage() {
 
   return (
     <div className="space-y-3">
-      <div className="md:hidden mb-4">
+      <div className="md:hidden -mt-3 mb-4">
         <MobileSectionTabs tabs={SPENDING_TABS} active={mobileTab} onChange={setMobileTab} />
       </div>
       <div className="flex items-center justify-between">

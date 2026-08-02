@@ -62,7 +62,7 @@ export function SwipeableSections<T extends string>({
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="md:hidden flex overflow-x-auto snap-x snap-mandatory no-scrollbar -mx-3"
+        className="md:hidden flex items-start overflow-x-auto snap-x snap-mandatory no-scrollbar -mx-3"
       >
         {tabs.map((tab) => (
           <div key={tab.value} className="w-full shrink-0 snap-start px-3">
