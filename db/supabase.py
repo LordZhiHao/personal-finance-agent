@@ -327,6 +327,146 @@ def delete_user_memory(memory_id: str, user_id: str) -> None:
     logger.info("delete_user_memory: id=%s user_id=%s", memory_id, user_id)
 
 
+def create_user_reminder(
+    user_id: str,
+    message: str,
+    frequency: str,
+    time_of_day: str,
+    day_of_week: int | None = None,
+    day_of_month: int | None = None,
+    channel: str = "both",
+) -> dict:
+    db = get_client(use_service_key=True)
+    result = (
+        db.table("user_reminders")
+        .insert({
+            "user_id": user_id, "message": message, "frequency": frequency,
+            "time_of_day": time_of_day, "day_of_week": day_of_week,
+            "day_of_month": day_of_month, "channel": channel,
+        })
+        .execute()
+    )
+    logger.info("create_user_reminder: user_id=%s frequency=%s", user_id, frequency)
+    return result.data[0]
+
+
+def get_user_reminders(user_id: str) -> list[dict]:
+    db = get_client(use_service_key=True)
+    return (
+        db.table("user_reminders")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .execute()
+        .data
+    )
+
+
+def get_all_active_reminders() -> list[dict]:
+    """System-wide poll source for scheduler/user_reminders.py — same unscoped-by-design
+    pattern as get_all_users()/get_users_with_telegram(). Joins each owner's delivery
+    info in one query so the poller doesn't need a second lookup per reminder."""
+    db = get_client(use_service_key=True)
+    return (
+        db.table("user_reminders")
+        .select("*, users(telegram_chat_id, notify_email, theme)")
+        .eq("active", True)
+        .execute()
+        .data
+    )
+
+
+def delete_user_reminder(reminder_id: str, user_id: str) -> None:
+    db = get_client(use_service_key=True)
+    result = (
+        db.table("user_reminders")
+        .delete()
+        .eq("id", reminder_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if not result.data:
+        raise LookupError(f"Reminder {reminder_id} not found")
+    logger.info("delete_user_reminder: id=%s user_id=%s", reminder_id, user_id)
+
+
+def mark_reminder_sent(reminder_id: str, sent_at: datetime) -> None:
+    # No ownership check — only ever called by the poller against a row id it just read.
+    db = get_client(use_service_key=True)
+    db.table("user_reminders").update({"last_sent_at": sent_at.isoformat()}).eq("id", reminder_id).execute()
+
+
+def create_user_alert(
+    user_id: str,
+    metric: str,
+    operator: str,
+    threshold: float,
+    ticker: str | None = None,
+    message: str | None = None,
+    channel: str = "both",
+) -> dict:
+    db = get_client(use_service_key=True)
+    result = (
+        db.table("user_alerts")
+        .insert({
+            "user_id": user_id, "metric": metric, "operator": operator,
+            "threshold": threshold, "ticker": ticker, "message": message, "channel": channel,
+        })
+        .execute()
+    )
+    logger.info("create_user_alert: user_id=%s metric=%s operator=%s threshold=%s", user_id, metric, operator, threshold)
+    return result.data[0]
+
+
+def get_user_alerts(user_id: str) -> list[dict]:
+    db = get_client(use_service_key=True)
+    return (
+        db.table("user_alerts")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .execute()
+        .data
+    )
+
+
+def get_all_active_alerts() -> list[dict]:
+    """System-wide poll source for scheduler/user_alerts.py — same unscoped-by-design
+    pattern as get_all_active_reminders(). Joins each owner's delivery info in one
+    query so the poller doesn't need a second lookup per alert."""
+    db = get_client(use_service_key=True)
+    return (
+        db.table("user_alerts")
+        .select("*, users(telegram_chat_id, notify_email, theme)")
+        .eq("active", True)
+        .execute()
+        .data
+    )
+
+
+def delete_user_alert(alert_id: str, user_id: str) -> None:
+    db = get_client(use_service_key=True)
+    result = (
+        db.table("user_alerts")
+        .delete()
+        .eq("id", alert_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if not result.data:
+        raise LookupError(f"Alert {alert_id} not found")
+    logger.info("delete_user_alert: id=%s user_id=%s", alert_id, user_id)
+
+
+def mark_alert_triggered(alert_id: str, sent_at: datetime, deactivate: bool) -> None:
+    # No ownership check — only ever called by the poller against a row id it just read.
+    db = get_client(use_service_key=True)
+    fields = {"last_triggered_at": sent_at.isoformat()}
+    if deactivate:
+        fields["active"] = False
+    db.table("user_alerts").update(fields).eq("id", alert_id).execute()
+
+
 def get_portfolio_events(start_date: str | None = None, end_date: str | None = None, user_id: str | None = None):
     """Trade history with account info joined in, for dashboard/frontend display.
     Date bounds are optional — omit both to fetch full history unfiltered.

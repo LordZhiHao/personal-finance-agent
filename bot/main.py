@@ -28,6 +28,8 @@ from bot.handlers import (
 from scheduler.daily_checkin import send_daily_checkin
 from scheduler.dividend_check import send_dividend_notifications
 from scheduler.equity_price_updater import update_equity_prices
+from scheduler.user_alerts import check_alerts
+from scheduler.user_reminders import send_due_reminders
 from scheduler.weekly_report import send_weekly_report
 from utils.logger import get_logger
 
@@ -72,10 +74,25 @@ async def post_init(app):
         minute=0,
         args=[app.bot],
     )
+    scheduler.add_job(
+        send_due_reminders,
+        trigger="interval",
+        minutes=5,
+        args=[app.bot],
+        id="user_reminders_poll",
+    )
+    scheduler.add_job(
+        check_alerts,
+        trigger="interval",
+        minutes=15,
+        args=[app.bot],
+        id="user_alerts_poll",
+    )
     scheduler.start()
     logger.info(
         "Scheduler started — weekly report every Sunday 8pm SGT, "
-        "daily check-in 10:30pm SGT, dividend check 8am SGT, equity prices hourly + 11:50pm SGT"
+        "daily check-in 10:30pm SGT, dividend check 8am SGT, equity prices hourly + 11:50pm SGT, "
+        "user reminders polled every 5 minutes, user alerts polled every 15 minutes"
     )
 
 

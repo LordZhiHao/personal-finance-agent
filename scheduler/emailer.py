@@ -1,3 +1,4 @@
+import html
 import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -55,3 +56,25 @@ def send_email(data: dict, to_email: str, theme: str = "green"):
         server.login(os.getenv("GMAIL_USER"), os.getenv("GMAIL_APP_PASSWORD"))
         server.send_message(msg)
     logger.info("send_email: sent to %s", to_email)
+
+
+def build_reminder_html(text: str, accent: str) -> str:
+    return f"""
+    <html><body style="font-family:sans-serif;color:#222;max-width:600px;margin:auto">
+    <h2 style="color:{accent}">🔔 Reminder</h2>
+    <p style="white-space:pre-wrap">{html.escape(text)}</p>
+    </body></html>
+    """
+
+
+def send_reminder_email(text: str, to_email: str, theme: str = "green", subject: str = "🔔 Reminder from Finn"):
+    accent = THEME_COLORS.get(theme, THEME_COLORS["green"])
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = os.getenv("GMAIL_USER")
+    msg["To"] = to_email
+    msg.attach(MIMEText(build_reminder_html(text, accent), "html"))
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(os.getenv("GMAIL_USER"), os.getenv("GMAIL_APP_PASSWORD"))
+        server.send_message(msg)
+    logger.info("send_reminder_email: sent to %s", to_email)
