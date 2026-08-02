@@ -39,10 +39,23 @@ const defaultFilters: FilterValue = {
   types: [],
 };
 
-type SpendingTab = "summary" | "charts" | "transactions";
+type SpendingTab =
+  | "summary"
+  | "monthlyTrend"
+  | "byCategory"
+  | "incomeVsSpend"
+  | "savingsRate"
+  | "calendar"
+  | "momComparison"
+  | "transactions";
 const SPENDING_TABS: { value: SpendingTab; label: string }[] = [
   { value: "summary", label: "Summary" },
-  { value: "charts", label: "Charts" },
+  { value: "monthlyTrend", label: "Monthly Trend" },
+  { value: "byCategory", label: "By Category" },
+  { value: "incomeVsSpend", label: "Income vs Spend" },
+  { value: "savingsRate", label: "Savings Rate" },
+  { value: "calendar", label: "Calendar" },
+  { value: "momComparison", label: "MoM Comparison" },
   { value: "transactions", label: "Transactions" },
 ];
 
@@ -112,6 +125,80 @@ export function SpendingPage() {
     return <LoadingFinn />;
   }
 
+  const summaryPanel = (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <StatCard
+        label="Monthly Spend"
+        value={formatMoney(monthlySpend, mainCurrency)}
+        icon={<Receipt size={20} />}
+        hero
+      />
+      <StatCard
+        label="Monthly Income"
+        value={formatMoney(monthlyIncome, mainCurrency)}
+        icon={<Banknote size={20} />}
+        tint="green"
+      />
+      <StatCard label="Savings Rate" value={`${savingsRate}%`} icon={<PiggyBank size={20} />} tint="amber" />
+      <StatCard
+        label="Spend Trend"
+        value={`${trendDelta >= 0 ? "+" : ""}${formatMoney(trendDelta, mainCurrency)}`}
+        icon={trendDelta >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
+        tint={trendDelta >= 0 ? "red" : "green"}
+        delta={
+          trendPct !== null
+            ? {
+                value: `${formatPct(trendPct)} vs last month`,
+                direction: trendDelta >= 0 ? "up" : "down",
+                sentiment: trendDelta >= 0 ? "bad" : "good",
+              }
+            : undefined
+        }
+      />
+    </div>
+  );
+
+  const monthlySpendChart = (
+    <ChartCard title="Monthly Spend by Category">
+      <MonthlySpendBarChart transactions={filtered} categories={categories} />
+    </ChartCard>
+  );
+  const spendByCategoryChart = (
+    <ChartCard title="Spend by Category">
+      <SpendByCategoryDonut transactions={filtered} />
+    </ChartCard>
+  );
+  const incomeVsSpendChart = (
+    <ChartCard title="Income vs Spend Over Time">
+      <IncomeVsSpendLineChart transactions={filtered} />
+    </ChartCard>
+  );
+  const savingsRateChart = (
+    <ChartCard title="Savings Rate Over Time (%)">
+      <SavingsRateLineChart transactions={filtered} />
+    </ChartCard>
+  );
+  const spendingCalendarChart = (
+    <ChartCard title="Spending Calendar">
+      <SpendingHeatmap accounts={filters.accounts} currency={mainCurrency} />
+    </ChartCard>
+  );
+  const momComparisonChart = (
+    <ChartCard title="Month-over-Month by Category" fill>
+      <MonthComparisonBarChart transactions={filtered} fill />
+    </ChartCard>
+  );
+  const transactionsPanel = (
+    <ChartCard title="Recent Transactions">
+      <TransactionsList
+        transactions={filtered}
+        categories={categories}
+        accounts={accountsQuery.data ?? []}
+        refetchKey={["transactions", filters.startDate, filters.endDate]}
+      />
+    </ChartCard>
+  );
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -138,91 +225,37 @@ export function SpendingPage() {
           active={mobileTab}
           onChange={setMobileTab}
           panels={{
-            summary: (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <StatCard
-                  label="Monthly Spend"
-                  value={formatMoney(monthlySpend, mainCurrency)}
-                  icon={<Receipt size={20} />}
-                  hero
-                />
-                <StatCard
-                  label="Monthly Income"
-                  value={formatMoney(monthlyIncome, mainCurrency)}
-                  icon={<Banknote size={20} />}
-                  tint="green"
-                />
-                <StatCard label="Savings Rate" value={`${savingsRate}%`} icon={<PiggyBank size={20} />} tint="amber" />
-                <StatCard
-                  label="Spend Trend"
-                  value={`${trendDelta >= 0 ? "+" : ""}${formatMoney(trendDelta, mainCurrency)}`}
-                  icon={trendDelta >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
-                  tint={trendDelta >= 0 ? "red" : "green"}
-                  delta={
-                    trendPct !== null
-                      ? {
-                          value: `${formatPct(trendPct)} vs last month`,
-                          direction: trendDelta >= 0 ? "up" : "down",
-                          sentiment: trendDelta >= 0 ? "bad" : "good",
-                        }
-                      : undefined
-                  }
-                />
-              </div>
-            ),
-            charts: (
-              <div className="space-y-3">
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                  <div className="lg:col-span-8">
-                    <ChartCard title="Monthly Spend by Category">
-                      <MonthlySpendBarChart transactions={filtered} categories={categories} />
-                    </ChartCard>
-                  </div>
-                  <div className="lg:col-span-4">
-                    <ChartCard title="Spend by Category">
-                      <SpendByCategoryDonut transactions={filtered} />
-                    </ChartCard>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                  <div className="lg:col-span-8">
-                    <ChartCard title="Income vs Spend Over Time">
-                      <IncomeVsSpendLineChart transactions={filtered} />
-                    </ChartCard>
-                  </div>
-                  <div className="lg:col-span-4">
-                    <ChartCard title="Savings Rate Over Time (%)">
-                      <SavingsRateLineChart transactions={filtered} />
-                    </ChartCard>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-                  <div className="lg:col-span-8">
-                    <ChartCard title="Spending Calendar">
-                      <SpendingHeatmap accounts={filters.accounts} currency={mainCurrency} />
-                    </ChartCard>
-                  </div>
-                  <div className="lg:col-span-4">
-                    <ChartCard title="Month-over-Month by Category" fill>
-                      <MonthComparisonBarChart transactions={filtered} fill />
-                    </ChartCard>
-                  </div>
-                </div>
-              </div>
-            ),
-            transactions: (
-              <ChartCard title="Recent Transactions">
-                <TransactionsList
-                  transactions={filtered}
-                  categories={categories}
-                  accounts={accountsQuery.data ?? []}
-                  refetchKey={["transactions", filters.startDate, filters.endDate]}
-                />
-              </ChartCard>
-            ),
+            summary: summaryPanel,
+            monthlyTrend: monthlySpendChart,
+            byCategory: spendByCategoryChart,
+            incomeVsSpend: incomeVsSpendChart,
+            savingsRate: savingsRateChart,
+            calendar: spendingCalendarChart,
+            momComparison: momComparisonChart,
+            transactions: transactionsPanel,
           }}
+          desktopContent={
+            <>
+              {summaryPanel}
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                <div className="lg:col-span-8">{monthlySpendChart}</div>
+                <div className="lg:col-span-4">{spendByCategoryChart}</div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                <div className="lg:col-span-8">{incomeVsSpendChart}</div>
+                <div className="lg:col-span-4">{savingsRateChart}</div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+                <div className="lg:col-span-8">{spendingCalendarChart}</div>
+                <div className="lg:col-span-4">{momComparisonChart}</div>
+              </div>
+
+              {transactionsPanel}
+            </>
+          }
         />
       )}
 

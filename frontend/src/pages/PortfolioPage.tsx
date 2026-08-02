@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Briefcase, PieChart as PieChartIcon, Receipt, TrendingDown, TrendingUp } from "lucide-react";
 import type { Holding } from "../types";
 import { useHoldings } from "../hooks/api";
@@ -15,18 +15,14 @@ import { SwipeableSections } from "../components/SwipeableSections";
 
 type HoldingFilter = "all" | "gainers" | "losers";
 
-type PortfolioTab = "overview" | "markets";
-const PORTFOLIO_TABS: { value: PortfolioTab; label: string }[] = [
-  { value: "overview", label: "Overview" },
-  { value: "markets", label: "Markets" },
-];
+const OVERVIEW_TAB = "overview";
 
 export function PortfolioPage() {
   const { mainCurrency: currency } = useAuth();
   const holdingsQuery = useHoldings(currency);
   const [filter, setFilter] = useState<HoldingFilter>("all");
   const [search, setSearch] = useState("");
-  const [mobileTab, setMobileTab] = useState<PortfolioTab>("overview");
+  const [mobileTab, setMobileTab] = useState<string>(OVERVIEW_TAB);
 
   const holdings = holdingsQuery.data?.holdings ?? [];
   const filteredHoldings = useMemo(() => {
@@ -53,6 +49,98 @@ export function PortfolioPage() {
     return groups;
   }, [filteredHoldings]);
 
+  const overviewPanel = (
+    <div className="space-y-3">
+      <StatCard
+        label="Total Market Value"
+        value={formatMoney(holdingsQuery.data?.total_market_value ?? 0, currency)}
+        icon={<Briefcase size={20} />}
+        hero
+      />
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <StatCard
+          label="Total Cost Basis"
+          value={formatMoney(costBasis, currency)}
+          icon={<Receipt size={20} />}
+          tint="amber"
+        />
+        <StatCard
+          label="Unrealized Gain"
+          value={formatMoney(gain, currency)}
+          icon={gain >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
+          tint={gain >= 0 ? "green" : "red"}
+          delta={{ value: formatPct(gainPct), direction: gain >= 0 ? "up" : "down" }}
+        />
+      </div>
+
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <TabToggle
+            options={[
+              { value: "all", label: "All" },
+              { value: "gainers", label: "Gainers" },
+              { value: "losers", label: "Losers" },
+            ]}
+            value={filter}
+            onChange={setFilter}
+          />
+          <Input
+            placeholder="Search ticker…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full sm:w-48"
+          />
+        </div>
+      </Card>
+
+      <ChartCard title="Holdings">
+        <HoldingsTable holdings={filteredHoldings} currency={currency} />
+      </ChartCard>
+    </div>
+  );
+
+  const marketCards = [...holdingsByMarket.entries()].map(([market, group]) => {
+    const marketCostBasis = group.holdings.reduce((sum, h) => sum + h.native_cost_basis, 0);
+    const marketMarketValue = group.holdings.reduce((sum, h) => sum + (h.native_market_value ?? 0), 0);
+    const marketGain = group.holdings.reduce((sum, h) => sum + (h.native_unrealized_gain ?? 0), 0);
+    const marketGainPct = marketCostBasis !== 0 ? (marketGain / marketCostBasis) * 100 : 0;
+    return {
+      key: market,
+      label: market,
+      element: (
+        <ChartCard key={market} title={`${market} Market (${group.currency})`}>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+            <StatCard
+              label="Amount Invested"
+              value={formatMoney(marketCostBasis, group.currency)}
+              icon={<Receipt size={20} />}
+              tint="amber"
+            />
+            <StatCard
+              label="Market Value"
+              value={formatMoney(marketMarketValue, group.currency)}
+              icon={<Briefcase size={20} />}
+              tint="brand"
+            />
+            <StatCard
+              label="Return"
+              value={formatMoney(marketGain, group.currency)}
+              icon={marketGain >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
+              tint={marketGain >= 0 ? "green" : "red"}
+              delta={{ value: formatPct(marketGainPct), direction: marketGain >= 0 ? "up" : "down" }}
+            />
+          </div>
+          <MarketHoldingsTable holdings={group.holdings} currency={group.currency} />
+        </ChartCard>
+      ),
+    };
+  });
+
+  const portfolioTabs = [{ value: OVERVIEW_TAB, label: "Overview" }, ...marketCards.map((m) => ({ value: m.key, label: m.label }))];
+  const portfolioPanels: Record<string, ReactNode> = { [OVERVIEW_TAB]: overviewPanel };
+  for (const m of marketCards) portfolioPanels[m.key] = m.element;
+
   return (
     <div className="space-y-3">
       <h1 className="flex items-center gap-2 text-xl font-semibold" style={{ color: "var(--text-heading)" }}>
@@ -64,100 +152,16 @@ export function PortfolioPage() {
         <LoadingFinn />
       ) : (
         <SwipeableSections
-          tabs={PORTFOLIO_TABS}
+          tabs={portfolioTabs}
           active={mobileTab}
           onChange={setMobileTab}
-          panels={{
-            overview: (
-              <div className="space-y-3">
-                <StatCard
-                  label="Total Market Value"
-                  value={formatMoney(holdingsQuery.data?.total_market_value ?? 0, currency)}
-                  icon={<Briefcase size={20} />}
-                  hero
-                />
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <StatCard
-                    label="Total Cost Basis"
-                    value={formatMoney(costBasis, currency)}
-                    icon={<Receipt size={20} />}
-                    tint="amber"
-                  />
-                  <StatCard
-                    label="Unrealized Gain"
-                    value={formatMoney(gain, currency)}
-                    icon={gain >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
-                    tint={gain >= 0 ? "green" : "red"}
-                    delta={{ value: formatPct(gainPct), direction: gain >= 0 ? "up" : "down" }}
-                  />
-                </div>
-
-                <Card>
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <TabToggle
-                      options={[
-                        { value: "all", label: "All" },
-                        { value: "gainers", label: "Gainers" },
-                        { value: "losers", label: "Losers" },
-                      ]}
-                      value={filter}
-                      onChange={setFilter}
-                    />
-                    <Input
-                      placeholder="Search ticker…"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      className="w-full sm:w-48"
-                    />
-                  </div>
-                </Card>
-
-                <ChartCard title="Holdings">
-                  <HoldingsTable holdings={filteredHoldings} currency={currency} />
-                </ChartCard>
-              </div>
-            ),
-            markets: (
-              <div className="space-y-3">
-                {[...holdingsByMarket.entries()].map(([market, group]) => {
-                  const marketCostBasis = group.holdings.reduce((sum, h) => sum + h.native_cost_basis, 0);
-                  const marketMarketValue = group.holdings.reduce(
-                    (sum, h) => sum + (h.native_market_value ?? 0),
-                    0,
-                  );
-                  const marketGain = group.holdings.reduce((sum, h) => sum + (h.native_unrealized_gain ?? 0), 0);
-                  const marketGainPct = marketCostBasis !== 0 ? (marketGain / marketCostBasis) * 100 : 0;
-                  return (
-                    <ChartCard key={market} title={`${market} Market (${group.currency})`}>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
-                        <StatCard
-                          label="Amount Invested"
-                          value={formatMoney(marketCostBasis, group.currency)}
-                          icon={<Receipt size={20} />}
-                          tint="amber"
-                        />
-                        <StatCard
-                          label="Market Value"
-                          value={formatMoney(marketMarketValue, group.currency)}
-                          icon={<Briefcase size={20} />}
-                          tint="brand"
-                        />
-                        <StatCard
-                          label="Return"
-                          value={formatMoney(marketGain, group.currency)}
-                          icon={marketGain >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
-                          tint={marketGain >= 0 ? "green" : "red"}
-                          delta={{ value: formatPct(marketGainPct), direction: marketGain >= 0 ? "up" : "down" }}
-                        />
-                      </div>
-                      <MarketHoldingsTable holdings={group.holdings} currency={group.currency} />
-                    </ChartCard>
-                  );
-                })}
-              </div>
-            ),
-          }}
+          panels={portfolioPanels}
+          desktopContent={
+            <>
+              {overviewPanel}
+              {marketCards.map((m) => m.element)}
+            </>
+          }
         />
       )}
     </div>
