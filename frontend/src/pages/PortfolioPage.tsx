@@ -12,6 +12,7 @@ import { CURRENCY_MARKET } from "../lib/markets";
 import { Input, TabToggle, Card } from "../components/ui";
 import { LoadingFinn } from "../components/LoadingFinn";
 import { SwipeableSections } from "../components/SwipeableSections";
+import { MobileSectionTabs } from "../components/MobileSectionTabs";
 
 type HoldingFilter = "all" | "gainers" | "losers";
 
@@ -141,29 +142,32 @@ export function PortfolioPage() {
   const portfolioPanels: Record<string, ReactNode> = { [OVERVIEW_TAB]: overviewPanel };
   for (const m of marketCards) portfolioPanels[m.key] = m.element;
 
+  if (holdingsQuery.isLoading) {
+    return <LoadingFinn />;
+  }
+
   return (
     <div className="space-y-3">
+      <div className="md:hidden mb-4">
+        <MobileSectionTabs tabs={portfolioTabs} active={mobileTab} onChange={setMobileTab} />
+      </div>
       <h1 className="flex items-center gap-2 text-xl font-semibold" style={{ color: "var(--text-heading)" }}>
         <PieChartIcon size={22} />
         Portfolio
       </h1>
 
-      {holdingsQuery.isLoading ? (
-        <LoadingFinn />
-      ) : (
-        <SwipeableSections
-          tabs={portfolioTabs}
-          active={mobileTab}
-          onChange={setMobileTab}
-          panels={portfolioPanels}
-          desktopContent={
-            <>
-              {overviewPanel}
-              {marketCards.map((m) => m.element)}
-            </>
-          }
-        />
-      )}
+      <SwipeableSections
+        tabs={portfolioTabs}
+        active={mobileTab}
+        onChange={setMobileTab}
+        panels={portfolioPanels}
+        desktopContent={
+          <>
+            {overviewPanel}
+            {marketCards.map((m) => m.element)}
+          </>
+        }
+      />
     </div>
   );
 }

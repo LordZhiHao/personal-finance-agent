@@ -1,13 +1,17 @@
 import { useEffect, useRef, type ReactNode } from "react";
-import { MobileSectionTabs } from "./MobileSectionTabs";
 
 /**
- * Mobile-only tab bar + swipeable panel carousel (`panels`, one entry per tab —
- * swipe left/right or tap a tab to switch, kept in sync via a debounced scroll
- * listener so a tab click's own scroll animation isn't misread as a swipe-in-
- * progress and reverted mid-flight). `desktopContent` is rendered separately,
+ * Mobile swipeable panel carousel (`panels`, one entry per tab — swipe left/right,
+ * kept in sync with the separately-rendered `MobileSectionTabs` bar via a debounced
+ * scroll listener so a tab click's own scroll animation isn't misread as a swipe-
+ * in-progress and reverted mid-flight). `desktopContent` is rendered separately,
  * completely decoupled from the tab/panel split, so desktop can keep whatever
  * layout (e.g. paired side-by-side charts) it had before mobile tabs existed.
+ *
+ * The tab bar itself (`MobileSectionTabs`) is rendered by the page, not here —
+ * this lets a page place it directly under the app header (above the page title),
+ * while this carousel renders further down the page alongside the rest of the
+ * content. Both must be given the same `tabs`/`active`/`onChange` to stay in sync.
  */
 export function SwipeableSections<T extends string>({
   tabs,
@@ -55,19 +59,16 @@ export function SwipeableSections<T extends string>({
 
   return (
     <>
-      <div className="md:hidden">
-        <MobileSectionTabs tabs={tabs} active={active} onChange={onChange} />
-        <div
-          ref={containerRef}
-          onScroll={handleScroll}
-          className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar -mx-3"
-        >
-          {tabs.map((tab) => (
-            <div key={tab.value} className="w-full shrink-0 snap-start px-3">
-              {panels[tab.value]}
-            </div>
-          ))}
-        </div>
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="md:hidden flex overflow-x-auto snap-x snap-mandatory no-scrollbar -mx-3"
+      >
+        {tabs.map((tab) => (
+          <div key={tab.value} className="w-full shrink-0 snap-start px-3">
+            {panels[tab.value]}
+          </div>
+        ))}
       </div>
       <div className="hidden md:block space-y-3">{desktopContent}</div>
     </>

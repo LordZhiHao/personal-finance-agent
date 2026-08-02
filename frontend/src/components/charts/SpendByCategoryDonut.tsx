@@ -3,7 +3,13 @@ import type { Transaction } from "../../types";
 import { colorForCategory } from "../../lib/palette";
 import { legendStyle, tooltipStyle } from "./chartTheme";
 
-export function SpendByCategoryDonut({ transactions }: { transactions: Transaction[] }) {
+export function SpendByCategoryDonut({
+  transactions,
+  fill = false,
+}: {
+  transactions: Transaction[];
+  fill?: boolean;
+}) {
   const totals = new Map<string, number>();
   for (const t of transactions) {
     if (t.amount >= 0) continue;
@@ -13,7 +19,7 @@ export function SpendByCategoryDonut({ transactions }: { transactions: Transacti
   const data = [...totals.entries()].map(([name, value]) => ({ name, value }));
 
   return (
-    <ResponsiveContainer width="100%" height={280}>
+    <ResponsiveContainer width="100%" height={fill ? "100%" : 280} minHeight={fill ? 280 : undefined}>
       <PieChart>
         <Pie data={data} dataKey="value" nameKey="name" innerRadius={60} outerRadius={100} paddingAngle={1}>
           {data.map((d) => (

@@ -17,6 +17,7 @@ import { StatCard } from "../components/StatCard";
 import { ChartCard } from "../components/ChartCard";
 import { AddTradeDialog } from "../components/AddTradeDialog";
 import { SwipeableSections } from "../components/SwipeableSections";
+import { MobileSectionTabs } from "../components/MobileSectionTabs";
 import { NetWorthLineChart } from "../components/charts/NetWorthLineChart";
 import { AssetAllocationDonut } from "../components/charts/AssetAllocationDonut";
 import { AllocationBarChart } from "../components/charts/AllocationBarChart";
@@ -206,9 +207,13 @@ export function InvestmentsPage() {
     />
   );
 
+  const mobileChartHeight = "min-h-[55dvh] md:min-h-0";
+
   const netWorthOverTimeChart = (
     <ChartCard
       title="Net Worth Over Time"
+      fill
+      className={mobileChartHeight}
       headerRight={
         <Select value={period} onChange={(e) => setPeriod(e.target.value as Period)} className="w-24">
           {PERIODS.map((p) => (
@@ -222,11 +227,13 @@ export function InvestmentsPage() {
       <div className="mb-3">
         <TabToggle options={brokerOptions} value={selectedBrokerAccountId} onChange={setSelectedBrokerAccountId} />
       </div>
-      {filteredNetWorthPoints.length > 0 ? (
-        <NetWorthLineChart points={filteredNetWorthPoints} />
-      ) : (
-        <p style={{ color: "var(--text-secondary)" }}>No asset snapshots yet.</p>
-      )}
+      <div className="flex-1 min-h-0 flex flex-col">
+        {filteredNetWorthPoints.length > 0 ? (
+          <NetWorthLineChart points={filteredNetWorthPoints} fill />
+        ) : (
+          <p style={{ color: "var(--text-secondary)" }}>No asset snapshots yet.</p>
+        )}
+      </div>
     </ChartCard>
   );
 
@@ -234,6 +241,7 @@ export function InvestmentsPage() {
     <ChartCard
       title="Asset Allocation"
       fill
+      className={mobileChartHeight}
       headerRight={
         <TabToggle
           options={[
@@ -266,7 +274,7 @@ export function InvestmentsPage() {
   );
 
   const dividendCalendarChart = (
-    <ChartCard title="Dividend Calendar" fill>
+    <ChartCard title="Dividend Calendar" fill className={mobileChartHeight}>
       <DividendCalendar events={events} fill />
     </ChartCard>
   );
@@ -315,6 +323,9 @@ export function InvestmentsPage() {
 
   return (
     <div className="space-y-3">
+      <div className="md:hidden mb-4">
+        <MobileSectionTabs tabs={INVESTMENTS_TABS} active={mobileTab} onChange={setMobileTab} />
+      </div>
       <h1 className="flex items-center gap-2 text-xl font-semibold" style={{ color: "var(--text-heading)" }}>
         <TrendingUp size={22} />
         Investments

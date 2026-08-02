@@ -7,9 +7,11 @@ import { axisTickStyle, legendStyle, tooltipStyle } from "./chartTheme";
 export function MonthlySpendBarChart({
   transactions,
   categories,
+  fill = false,
 }: {
   transactions: Transaction[];
   categories: string[];
+  fill?: boolean;
 }) {
   const expenses = transactions.filter((t) => t.amount < 0);
   const data = sumByMonthAndGroup(
@@ -21,7 +23,7 @@ export function MonthlySpendBarChart({
   const presentCategories = categories.filter((c) => data.some((row) => typeof row[c] === "number"));
 
   return (
-    <ResponsiveContainer width="100%" height={280}>
+    <ResponsiveContainer width="100%" height={fill ? "100%" : 280} minHeight={fill ? 280 : undefined}>
       <BarChart data={data}>
         <CartesianGrid strokeDasharray="3 3" stroke={CHROME.gridline} vertical={false} />
         <XAxis dataKey="label" tick={axisTickStyle} axisLine={{ stroke: CHROME.baseline }} tickLine={false} />

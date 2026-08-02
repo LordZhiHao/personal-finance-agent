@@ -43,7 +43,15 @@ function textColor(level: number | undefined): string {
   return level && level >= 4 ? LIGHT_TEXT : DARK_TEXT;
 }
 
-export function SpendingHeatmap({ accounts, currency }: { accounts?: string[]; currency: string }) {
+export function SpendingHeatmap({
+  accounts,
+  currency,
+  fill = false,
+}: {
+  accounts?: string[];
+  currency: string;
+  fill?: boolean;
+}) {
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [selected, setSelected] = useState<{ date: string; total: number } | null>(null);
 
@@ -74,7 +82,7 @@ export function SpendingHeatmap({ accounts, currency }: { accounts?: string[]; c
     : [];
 
   return (
-    <div>
+    <div className={fill ? "flex-1 min-h-0 flex flex-col justify-center" : undefined}>
       <div className="flex items-center justify-between mb-3">
         <button
           type="button"

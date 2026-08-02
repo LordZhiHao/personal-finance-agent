@@ -19,6 +19,7 @@ import { ChartCard } from "../components/ChartCard";
 import { TransactionsList } from "../components/TransactionsList";
 import { AddTransactionDialog } from "../components/AddTransactionDialog";
 import { SwipeableSections } from "../components/SwipeableSections";
+import { MobileSectionTabs } from "../components/MobileSectionTabs";
 import { MonthlySpendBarChart } from "../components/charts/MonthlySpendBarChart";
 import { SpendByCategoryDonut } from "../components/charts/SpendByCategoryDonut";
 import { IncomeVsSpendLineChart } from "../components/charts/IncomeVsSpendLineChart";
@@ -158,33 +159,35 @@ export function SpendingPage() {
     </div>
   );
 
+  const mobileChartHeight = "min-h-[55dvh] md:min-h-0";
+
   const monthlySpendChart = (
-    <ChartCard title="Monthly Spend by Category">
-      <MonthlySpendBarChart transactions={filtered} categories={categories} />
+    <ChartCard title="Monthly Spend by Category" fill className={mobileChartHeight}>
+      <MonthlySpendBarChart transactions={filtered} categories={categories} fill />
     </ChartCard>
   );
   const spendByCategoryChart = (
-    <ChartCard title="Spend by Category">
-      <SpendByCategoryDonut transactions={filtered} />
+    <ChartCard title="Spend by Category" fill className={mobileChartHeight}>
+      <SpendByCategoryDonut transactions={filtered} fill />
     </ChartCard>
   );
   const incomeVsSpendChart = (
-    <ChartCard title="Income vs Spend Over Time">
-      <IncomeVsSpendLineChart transactions={filtered} />
+    <ChartCard title="Income vs Spend Over Time" fill className={mobileChartHeight}>
+      <IncomeVsSpendLineChart transactions={filtered} fill />
     </ChartCard>
   );
   const savingsRateChart = (
-    <ChartCard title="Savings Rate Over Time (%)">
-      <SavingsRateLineChart transactions={filtered} />
+    <ChartCard title="Savings Rate Over Time (%)" fill className={mobileChartHeight}>
+      <SavingsRateLineChart transactions={filtered} fill />
     </ChartCard>
   );
   const spendingCalendarChart = (
-    <ChartCard title="Spending Calendar">
-      <SpendingHeatmap accounts={filters.accounts} currency={mainCurrency} />
+    <ChartCard title="Spending Calendar" fill className={mobileChartHeight}>
+      <SpendingHeatmap accounts={filters.accounts} currency={mainCurrency} fill />
     </ChartCard>
   );
   const momComparisonChart = (
-    <ChartCard title="Month-over-Month by Category" fill>
+    <ChartCard title="Month-over-Month by Category" fill className={mobileChartHeight}>
       <MonthComparisonBarChart transactions={filtered} fill />
     </ChartCard>
   );
@@ -201,6 +204,9 @@ export function SpendingPage() {
 
   return (
     <div className="space-y-3">
+      <div className="md:hidden mb-4">
+        <MobileSectionTabs tabs={SPENDING_TABS} active={mobileTab} onChange={setMobileTab} />
+      </div>
       <div className="flex items-center justify-between">
         <h1
           className="flex items-center gap-2 text-xl font-semibold"

@@ -4,7 +4,13 @@ import { sumByMonth } from "../../lib/dates";
 import { CHROME } from "../../lib/palette";
 import { axisTickStyle, tooltipStyle } from "./chartTheme";
 
-export function SavingsRateLineChart({ transactions }: { transactions: Transaction[] }) {
+export function SavingsRateLineChart({
+  transactions,
+  fill = false,
+}: {
+  transactions: Transaction[];
+  fill?: boolean;
+}) {
   const income = sumByMonth(
     transactions.filter((t) => t.amount > 0),
     (t) => t.date,
@@ -23,7 +29,7 @@ export function SavingsRateLineChart({ transactions }: { transactions: Transacti
   });
 
   return (
-    <ResponsiveContainer width="100%" height={280}>
+    <ResponsiveContainer width="100%" height={fill ? "100%" : 280} minHeight={fill ? 280 : undefined}>
       <LineChart data={data}>
         <CartesianGrid strokeDasharray="3 3" stroke={CHROME.gridline} vertical={false} />
         <XAxis dataKey="label" tick={axisTickStyle} axisLine={{ stroke: CHROME.baseline }} tickLine={false} />

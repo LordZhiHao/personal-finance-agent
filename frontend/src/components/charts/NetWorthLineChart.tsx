@@ -8,11 +8,11 @@ export interface NetWorthPoint {
   value: number;
 }
 
-export function NetWorthLineChart({ points }: { points: NetWorthPoint[] }) {
+export function NetWorthLineChart({ points, fill = false }: { points: NetWorthPoint[]; fill?: boolean }) {
   const data = points.map((p) => ({ ...p, label: format(parseISO(p.date), "d MMM yyyy") }));
 
   return (
-    <ResponsiveContainer width="100%" height={280}>
+    <ResponsiveContainer width="100%" height={fill ? "100%" : 280} minHeight={fill ? 280 : undefined}>
       <LineChart data={data}>
         <CartesianGrid strokeDasharray="3 3" stroke={CHROME.gridline} vertical={false} />
         <XAxis dataKey="label" tick={axisTickStyle} axisLine={{ stroke: CHROME.baseline }} tickLine={false} />
