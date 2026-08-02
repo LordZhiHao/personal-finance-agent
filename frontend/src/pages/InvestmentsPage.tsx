@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import clsx from "clsx";
 import { format, getMonth, parseISO, subDays, subMonths, subYears } from "date-fns";
 import { TrendingUp, Wallet } from "lucide-react";
 import {
@@ -16,6 +17,7 @@ import { FilterBar, type FilterValue } from "../components/FilterBar";
 import { StatCard } from "../components/StatCard";
 import { ChartCard } from "../components/ChartCard";
 import { AddTradeDialog } from "../components/AddTradeDialog";
+import { MobileSectionTabs } from "../components/MobileSectionTabs";
 import { NetWorthLineChart } from "../components/charts/NetWorthLineChart";
 import { AssetAllocationDonut } from "../components/charts/AssetAllocationDonut";
 import { AllocationBarChart } from "../components/charts/AllocationBarChart";
@@ -47,10 +49,18 @@ function periodCutoff(period: Period): string | null {
 
 type AllocationView = "broker" | "currency";
 
+type InvestmentsTab = "overview" | "holdings" | "trades";
+const INVESTMENTS_TABS: { value: InvestmentsTab; label: string }[] = [
+  { value: "overview", label: "Overview" },
+  { value: "holdings", label: "Holdings" },
+  { value: "trades", label: "Trades" },
+];
+
 export function InvestmentsPage() {
   const [filters, setFilters] = useState<FilterValue>(defaultFilters);
   const [hasCustomFilters, setHasCustomFilters] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [mobileTab, setMobileTab] = useState<InvestmentsTab>("overview");
   const [period, setPeriod] = useState<Period>("All");
   const [selectedBrokerAccountId, setSelectedBrokerAccountId] = useState<string>("");
   const [allocationView, setAllocationView] = useState<AllocationView>("broker");
@@ -172,6 +182,7 @@ export function InvestmentsPage() {
         <TrendingUp size={22} />
         Investments
       </h1>
+      <MobileSectionTabs tabs={INVESTMENTS_TABS} active={mobileTab} onChange={setMobileTab} />
       <FilterBar
         accounts={accountsQuery.data ?? []}
         value={filters}
@@ -181,6 +192,7 @@ export function InvestmentsPage() {
         }}
       />
 
+      <div className={clsx(mobileTab === "overview" ? "block" : "hidden", "md:block", "space-y-3")}>
       <StatCard
         label="Net Worth"
         value={formatMoney(netWorth, displayCurrency)}
@@ -263,7 +275,9 @@ export function InvestmentsPage() {
           </ChartCard>
         </div>
       </div>
+      </div>
 
+      <div className={clsx(mobileTab === "holdings" ? "block" : "hidden", "md:block", "space-y-3")}>
       <ChartCard title="Upcoming Dividends">
         <UpcomingDividends
           forecast={dividendForecastQuery.data ?? []}
@@ -281,7 +295,9 @@ export function InvestmentsPage() {
           />
         </div>
       </ChartCard>
+      </div>
 
+      <div className={clsx(mobileTab === "trades" ? "block" : "hidden", "md:block")}>
       <ChartCard
         title="Trade History"
         headerRight={
@@ -299,6 +315,7 @@ export function InvestmentsPage() {
           />
         )}
       </ChartCard>
+      </div>
 
       {dialogOpen && metaQuery.data && (
         <AddTradeDialog

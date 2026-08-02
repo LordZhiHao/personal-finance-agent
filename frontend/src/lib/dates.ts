@@ -70,6 +70,28 @@ export function dailySpendTotals(transactions: Transaction[]): DailyTotal[] {
     .map(([date, total]) => ({ date, total }));
 }
 
+export interface DayGroup {
+  date: string; // yyyy-MM-dd
+  income: number;
+  expense: number; // positive magnitude
+  transactions: Transaction[];
+}
+
+/** Buckets transactions by calendar day, summing income/expense separately —
+ * for the day-grouped transactions list (date header + per-day totals). */
+export function groupTransactionsByDay(transactions: Transaction[]): DayGroup[] {
+  const groups = new Map<string, DayGroup>();
+  for (const t of transactions) {
+    const day = t.date.slice(0, 10);
+    const group = groups.get(day) ?? { date: day, income: 0, expense: 0, transactions: [] };
+    if (t.amount >= 0) group.income += t.amount;
+    else group.expense += Math.abs(t.amount);
+    group.transactions.push(t);
+    groups.set(day, group);
+  }
+  return [...groups.values()].sort((a, b) => b.date.localeCompare(a.date));
+}
+
 export interface MonthComparisonRow {
   category: string;
   current: number;

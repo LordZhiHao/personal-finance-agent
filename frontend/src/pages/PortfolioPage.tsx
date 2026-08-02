@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import clsx from "clsx";
 import { Briefcase, PieChart as PieChartIcon, Receipt, TrendingDown, TrendingUp } from "lucide-react";
 import type { Holding } from "../types";
 import { useHoldings } from "../hooks/api";
@@ -11,14 +12,22 @@ import { formatMoney, formatPct } from "../lib/format";
 import { CURRENCY_MARKET } from "../lib/markets";
 import { Input, TabToggle, Card } from "../components/ui";
 import { LoadingFinn } from "../components/LoadingFinn";
+import { MobileSectionTabs } from "../components/MobileSectionTabs";
 
 type HoldingFilter = "all" | "gainers" | "losers";
+
+type PortfolioTab = "overview" | "markets";
+const PORTFOLIO_TABS: { value: PortfolioTab; label: string }[] = [
+  { value: "overview", label: "Overview" },
+  { value: "markets", label: "Markets" },
+];
 
 export function PortfolioPage() {
   const { mainCurrency: currency } = useAuth();
   const holdingsQuery = useHoldings(currency);
   const [filter, setFilter] = useState<HoldingFilter>("all");
   const [search, setSearch] = useState("");
+  const [mobileTab, setMobileTab] = useState<PortfolioTab>("overview");
 
   const holdings = holdingsQuery.data?.holdings ?? [];
   const filteredHoldings = useMemo(() => {
@@ -56,6 +65,9 @@ export function PortfolioPage() {
         <LoadingFinn />
       ) : (
         <>
+          <MobileSectionTabs tabs={PORTFOLIO_TABS} active={mobileTab} onChange={setMobileTab} />
+
+          <div className={clsx(mobileTab === "overview" ? "block" : "hidden", "md:block", "space-y-3")}>
           <StatCard
             label="Total Market Value"
             value={formatMoney(holdingsQuery.data?.total_market_value ?? 0, currency)}
@@ -102,7 +114,9 @@ export function PortfolioPage() {
           <ChartCard title="Holdings">
             <HoldingsTable holdings={filteredHoldings} currency={currency} />
           </ChartCard>
+          </div>
 
+          <div className={clsx(mobileTab === "markets" ? "block" : "hidden", "md:block", "space-y-3")}>
           {[...holdingsByMarket.entries()].map(([market, group]) => {
             const marketCostBasis = group.holdings.reduce((sum, h) => sum + h.native_cost_basis, 0);
             const marketMarketValue = group.holdings.reduce(
@@ -138,6 +152,7 @@ export function PortfolioPage() {
               </ChartCard>
             );
           })}
+          </div>
         </>
       )}
     </div>

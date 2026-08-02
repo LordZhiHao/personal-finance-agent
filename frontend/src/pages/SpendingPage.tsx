@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import clsx from "clsx";
 import {
   addDays,
   differenceInCalendarDays,
@@ -16,8 +17,9 @@ import { useAuth } from "../auth/AuthContext";
 import { FilterBar, type FilterValue } from "../components/FilterBar";
 import { StatCard } from "../components/StatCard";
 import { ChartCard } from "../components/ChartCard";
-import { TransactionsTable } from "../components/TransactionsTable";
+import { TransactionsList } from "../components/TransactionsList";
 import { AddTransactionDialog } from "../components/AddTransactionDialog";
+import { MobileSectionTabs } from "../components/MobileSectionTabs";
 import { MonthlySpendBarChart } from "../components/charts/MonthlySpendBarChart";
 import { SpendByCategoryDonut } from "../components/charts/SpendByCategoryDonut";
 import { IncomeVsSpendLineChart } from "../components/charts/IncomeVsSpendLineChart";
@@ -38,10 +40,18 @@ const defaultFilters: FilterValue = {
   types: [],
 };
 
+type SpendingTab = "summary" | "charts" | "transactions";
+const SPENDING_TABS: { value: SpendingTab; label: string }[] = [
+  { value: "summary", label: "Summary" },
+  { value: "charts", label: "Charts" },
+  { value: "transactions", label: "Transactions" },
+];
+
 export function SpendingPage() {
   const { mainCurrency } = useAuth();
   const [filters, setFilters] = useState<FilterValue>(defaultFilters);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [mobileTab, setMobileTab] = useState<SpendingTab>("summary");
   const accountsQuery = useAccounts(["bank", "ewallet"]);
   const metaQuery = useMeta();
   const txQuery = useTransactions(filters.startDate, filters.endDate);
@@ -117,6 +127,7 @@ export function SpendingPage() {
           ＋ Add Transaction
         </Button>
       </div>
+      <MobileSectionTabs tabs={SPENDING_TABS} active={mobileTab} onChange={setMobileTab} />
       <FilterBar accounts={accountsQuery.data ?? []} value={filters} onChange={setFilters} />
 
       {filtered.length === 0 ? (
@@ -125,6 +136,7 @@ export function SpendingPage() {
         </p>
       ) : (
         <>
+          <div className={clsx(mobileTab === "summary" ? "block" : "hidden", "md:block")}>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <StatCard
               label="Monthly Spend"
@@ -155,7 +167,9 @@ export function SpendingPage() {
               }
             />
           </div>
+          </div>
 
+          <div className={clsx(mobileTab === "charts" ? "block" : "hidden", "md:block", "space-y-3")}>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
             <div className="lg:col-span-8">
               <ChartCard title="Monthly Spend by Category">
@@ -194,15 +208,18 @@ export function SpendingPage() {
               </ChartCard>
             </div>
           </div>
+          </div>
 
+          <div className={clsx(mobileTab === "transactions" ? "block" : "hidden", "md:block")}>
           <ChartCard title="Recent Transactions">
-            <TransactionsTable
+            <TransactionsList
               transactions={filtered}
               categories={categories}
               accounts={accountsQuery.data ?? []}
               refetchKey={["transactions", filters.startDate, filters.endDate]}
             />
           </ChartCard>
+          </div>
         </>
       )}
 
