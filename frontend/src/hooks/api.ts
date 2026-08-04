@@ -22,7 +22,11 @@ import type {
 } from "../types";
 
 export function useMeta() {
-  return useQuery({ queryKey: ["meta"], queryFn: () => api.get<Meta>("/api/meta") });
+  return useQuery({
+    queryKey: ["meta"],
+    queryFn: () => api.get<Meta>("/api/meta"),
+    refetchInterval: 60_000,
+  });
 }
 
 export function useAccounts(types?: string[]) {
@@ -30,6 +34,7 @@ export function useAccounts(types?: string[]) {
   return useQuery({
     queryKey: ["accounts", type],
     queryFn: () => api.get<Account[]>(`/api/accounts${qs({ type })}`),
+    refetchInterval: 60_000,
   });
 }
 
@@ -177,6 +182,7 @@ export function useCustomCategories() {
   return useQuery({
     queryKey: ["categories"],
     queryFn: () => api.get<CustomCategory[]>("/api/categories"),
+    refetchInterval: 60_000,
   });
 }
 
@@ -218,6 +224,7 @@ export function useMemories() {
   return useQuery({
     queryKey: ["memories"],
     queryFn: () => api.get<Memory[]>("/api/memories"),
+    refetchInterval: 60_000,
   });
 }
 

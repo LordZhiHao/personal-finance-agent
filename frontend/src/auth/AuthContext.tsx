@@ -92,6 +92,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshMe]);
 
+  // Profile fields (main_currency/theme/telegram_linked/onboarding_completed) can
+  // change from outside this tab entirely — e.g. Finn's settings-editing tools
+  // writing straight to Supabase from a Telegram chat. Poll lightly and refetch
+  // on tab refocus so those changes surface without a manual reload.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const refresh = () => {
+      if (document.visibilityState === "visible") refreshMe();
+    };
+    const interval = setInterval(refresh, 60_000);
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [isAuthenticated, refreshMe]);
+
   const login = useCallback(
     async (email: string, password: string) => {
       try {
