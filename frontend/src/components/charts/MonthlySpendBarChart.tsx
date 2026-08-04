@@ -1,16 +1,18 @@
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { Transaction } from "../../types";
 import { sumByMonthAndGroup } from "../../lib/dates";
-import { CHROME, colorForCategory } from "../../lib/palette";
+import { CHROME, colorForKey } from "../../lib/palette";
 import { axisTickStyle, legendStyle, tooltipStyle } from "./chartTheme";
 
 export function MonthlySpendBarChart({
   transactions,
   categories,
+  categoryColors,
   fill = false,
 }: {
   transactions: Transaction[];
   categories: string[];
+  categoryColors: string[];
   fill?: boolean;
 }) {
   const expenses = transactions.filter((t) => t.amount < 0);
@@ -35,7 +37,7 @@ export function MonthlySpendBarChart({
             key={cat}
             dataKey={cat}
             stackId="spend"
-            fill={colorForCategory(cat)}
+            fill={colorForKey(cat, categoryColors)}
             radius={[0, 0, 0, 0]}
           />
         ))}

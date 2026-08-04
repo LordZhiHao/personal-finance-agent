@@ -27,6 +27,7 @@ import { SavingsRateLineChart } from "../components/charts/SavingsRateLineChart"
 import { SpendingHeatmap } from "../components/charts/SpendingHeatmap";
 import { MonthComparisonBarChart } from "../components/charts/MonthComparisonBarChart";
 import { monthKey } from "../lib/dates";
+import { categoryColorOrder } from "../lib/palette";
 import { formatMoney, formatPct } from "../lib/format";
 import { Button } from "../components/ui";
 import { LoadingFinn } from "../components/LoadingFinn";
@@ -121,6 +122,7 @@ export function SpendingPage() {
   }, [filtered]);
 
   const categories = metaQuery.data?.categories ?? [];
+  const categoryColors = categoryColorOrder(categories);
 
   if (txQuery.isLoading || accountsQuery.isLoading) {
     return <LoadingFinn />;
@@ -166,12 +168,12 @@ export function SpendingPage() {
 
   const monthlySpendChart = (
     <ChartCard title="Monthly Spend by Category" fill className={mobileChartHeight}>
-      <MonthlySpendBarChart transactions={filtered} categories={categories} fill />
+      <MonthlySpendBarChart transactions={filtered} categories={categories} categoryColors={categoryColors} fill />
     </ChartCard>
   );
   const spendByCategoryChart = (
     <ChartCard title="Spend by Category" fill className={mobileChartHeight}>
-      <SpendByCategoryDonut transactions={filtered} fill />
+      <SpendByCategoryDonut transactions={filtered} categoryColors={categoryColors} fill />
     </ChartCard>
   );
   const incomeVsSpendChart = (

@@ -39,24 +39,18 @@ export function colorForKey(key: string, knownKeys: string[]): string {
   return categoricalColor(knownKeys.indexOf(key));
 }
 
-// Fixed color-assignment order for the 11 categories in utils/constants.py::CATEGORIES.
 // Salary and Investment are income-only (every category-colored chart filters to
 // expenses, amount < 0) and "Other" is the generic catch-all, so those three fold to
 // the neutral fallback rather than displacing one of the 8 validated hues away from
-// the categories that actually render in these charts.
-export const EXPENSE_CATEGORY_COLOR_ORDER = [
-  "Food & Drink",
-  "Transport",
-  "Shopping",
-  "Groceries",
-  "Entertainment",
-  "Health",
-  "Utilities",
-  "Transfer",
-];
+// a category that actually renders in these charts.
+export const CATEGORY_COLOR_EXCLUDE = ["Salary", "Investment", "Other"];
 
-export function colorForCategory(category: string): string {
-  return colorForKey(category, EXPENSE_CATEGORY_COLOR_ORDER);
+// Per-user color order for category charts, built from the actual built-in +
+// custom category list (see db.supabase.get_categories_for_user) rather than a
+// hardcoded English name list — otherwise every custom category falls outside
+// a fixed array and always folds to the neutral fallback.
+export function categoryColorOrder(categories: string[]): string[] {
+  return categories.filter((c) => !CATEGORY_COLOR_EXCLUDE.includes(c));
 }
 
 export const CHROME = {

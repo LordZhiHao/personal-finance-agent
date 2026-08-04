@@ -1,13 +1,15 @@
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import type { Transaction } from "../../types";
-import { colorForCategory } from "../../lib/palette";
+import { colorForKey } from "../../lib/palette";
 import { legendStyle, tooltipStyle } from "./chartTheme";
 
 export function SpendByCategoryDonut({
   transactions,
+  categoryColors,
   fill = false,
 }: {
   transactions: Transaction[];
+  categoryColors: string[];
   fill?: boolean;
 }) {
   const totals = new Map<string, number>();
@@ -23,7 +25,7 @@ export function SpendByCategoryDonut({
       <PieChart>
         <Pie data={data} dataKey="value" nameKey="name" innerRadius={60} outerRadius={100} paddingAngle={1}>
           {data.map((d) => (
-            <Cell key={d.name} fill={colorForCategory(d.name)} stroke="var(--surface-1)" strokeWidth={2} />
+            <Cell key={d.name} fill={colorForKey(d.name, categoryColors)} stroke="var(--surface-1)" strokeWidth={2} />
           ))}
         </Pie>
         <Tooltip {...tooltipStyle} />
