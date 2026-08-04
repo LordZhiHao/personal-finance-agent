@@ -40,7 +40,7 @@ export function UpcomingDividends({
     <div className="max-h-[400px] overflow-y-auto">
       <Table>
         <Thead>
-          <Th sortDirection={directionFor("ticker")} onSort={() => requestSort("ticker")}>
+          <Th sticky className="min-w-[110px]" sortDirection={directionFor("ticker")} onSort={() => requestSort("ticker")}>
             Ticker
           </Th>
           <Th sortDirection={directionFor("ex_dividend_date")} onSort={() => requestSort("ex_dividend_date")}>
@@ -65,7 +65,7 @@ export function UpcomingDividends({
             const effectiveYield = effectiveYieldFor(f);
             return (
               <Tr key={f.ticker}>
-                <Td>
+                <Td sticky className="min-w-[110px]">
                   <div className="font-medium">{f.ticker}</div>
                   {names?.[f.ticker] && (
                     <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
