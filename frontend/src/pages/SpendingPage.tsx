@@ -122,7 +122,19 @@ export function SpendingPage() {
   }, [filtered]);
 
   const categories = metaQuery.data?.categories ?? [];
-  const categoryColors = categoryColorOrder(categories);
+  // Color order is scoped to categories actually present in this period's
+  // transactions (not the full built-in+custom meta list) — otherwise unused
+  // built-in categories (e.g. "Groceries") permanently occupy color slots
+  // that a used custom category (e.g. "Apparels") could otherwise get.
+  // Derived from the unfiltered period data (txQuery.data), not `filtered`,
+  // so toggling the account/month/type FilterBar doesn't repaint colors.
+  const categoryColors = useMemo(() => {
+    const present = new Set<string>();
+    for (const t of txQuery.data ?? []) {
+      if (t.amount < 0) present.add(t.category || "Other");
+    }
+    return categoryColorOrder(categories.filter((c) => present.has(c)));
+  }, [txQuery.data, categories]);
 
   if (txQuery.isLoading || accountsQuery.isLoading) {
     return <LoadingFinn />;

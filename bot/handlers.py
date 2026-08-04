@@ -374,21 +374,22 @@ async def handle_expense_command(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
     uid = update.effective_user.id
+    currency = user.get("main_currency", DEFAULT_CURRENCY)
     arg = context.args[0] if context.args else None
     start, end, label = parse_period(arg)
     txns = get_transactions(start.isoformat(), end.isoformat(), user["id"])
     summary = summarize_transactions(txns)
 
     lines = [f"📊 *Expense Summary* — {label}", ""]
-    lines.append(f"Income:   {format_money(summary['income'], DEFAULT_CURRENCY)}")
-    lines.append(f"Spent:    {format_money(summary['expenses'], DEFAULT_CURRENCY)}")
-    lines.append(f"Net:      {format_money(summary['net'], DEFAULT_CURRENCY)}")
+    lines.append(f"Income:   {format_money(summary['income'], currency)}")
+    lines.append(f"Spent:    {format_money(summary['expenses'], currency)}")
+    lines.append(f"Net:      {format_money(summary['net'], currency)}")
     lines.append(f"Savings:  {format_pct(summary['savings_rate'])}")
     lines.append("")
     lines.append("*By category:*")
     if summary["by_category"]:
         for cat, amt in summary["by_category"].items():
-            lines.append(f"  ▪️ {cat}: {format_money(amt, DEFAULT_CURRENCY)}")
+            lines.append(f"  ▪️ {cat}: {format_money(amt, currency)}")
     else:
         lines.append("  No expenses in this period 🎉")
 
@@ -403,6 +404,7 @@ async def handle_compare_command(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
     uid = update.effective_user.id
+    currency = user.get("main_currency", DEFAULT_CURRENCY)
     start = date.today() - relativedelta(months=13)
     txns = get_transactions(start.isoformat(), date.today().isoformat(), user["id"])
     rows = month_comparison(txns)[:8]
@@ -410,12 +412,12 @@ async def handle_compare_command(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("No expenses in the last 13 months to compare.")
         return
 
-    lines = [f"📊 *Month Comparison* — {DEFAULT_CURRENCY}", ""]
+    lines = [f"📊 *Month Comparison* — {currency}", ""]
     for r in rows:
         lines.append(
-            f"▪️ {r['category']}: {format_money(r['current'], DEFAULT_CURRENCY)} this month | "
-            f"{format_money(r['previous'], DEFAULT_CURRENCY)} last month | "
-            f"{format_money(r['year_ago'], DEFAULT_CURRENCY)} same month last year"
+            f"▪️ {r['category']}: {format_money(r['current'], currency)} this month | "
+            f"{format_money(r['previous'], currency)} last month | "
+            f"{format_money(r['year_ago'], currency)} same month last year"
         )
 
     logger.info("handle_compare_command: user_id=%s categories=%d", uid, len(rows))
@@ -429,12 +431,13 @@ async def handle_portfolio_command(update: Update, context: ContextTypes.DEFAULT
         await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
     uid = update.effective_user.id
-    summary = compute_holdings_summary(user["id"], DEFAULT_CURRENCY)
+    currency = user.get("main_currency", DEFAULT_CURRENCY)
+    summary = compute_holdings_summary(user["id"], currency)
     if not summary["holdings"]:
         await update.message.reply_text("No holdings found.")
         return
 
-    lines = [f"📈 *Portfolio* — {DEFAULT_CURRENCY}", ""]
+    lines = [f"📈 *Portfolio* — {currency}", ""]
     for h in summary["holdings"]:
         if h["market_value"] is None:
             lines.append(f"⚠️ {h['ticker']} ({h['account_name']}): {h['quantity']:g} units — no price available")
@@ -443,13 +446,13 @@ async def handle_portfolio_command(update: Update, context: ContextTypes.DEFAULT
         lines.append(
             f"▪️ {h['ticker']} ({h['account_name']}): {h['quantity']:g} units @ avg "
             f"{h['avg_cost']:.2f} {h['cost_currency']} | now {h['price']:.2f} {h['price_currency']} → "
-            f"{format_money(h['market_value'], DEFAULT_CURRENCY)} | "
-            f"{format_money(h['unrealized_gain'], DEFAULT_CURRENCY)}{gain_pct}"
+            f"{format_money(h['market_value'], currency)} | "
+            f"{format_money(h['unrealized_gain'], currency)}{gain_pct}"
         )
     lines.append("")
-    lines.append(f"Total Market Value: {format_money(summary['total_market_value'], DEFAULT_CURRENCY)}")
-    lines.append(f"Total Cost Basis:   {format_money(summary['total_cost_basis'], DEFAULT_CURRENCY)}")
-    lines.append(f"Unrealized Gain:    {format_money(summary['total_unrealized_gain'], DEFAULT_CURRENCY)}")
+    lines.append(f"Total Market Value: {format_money(summary['total_market_value'], currency)}")
+    lines.append(f"Total Cost Basis:   {format_money(summary['total_cost_basis'], currency)}")
+    lines.append(f"Unrealized Gain:    {format_money(summary['total_unrealized_gain'], currency)}")
 
     logger.info("handle_portfolio_command: user_id=%s holdings=%d", uid, len(summary["holdings"]))
     for chunk in chunk_lines(lines):
@@ -502,13 +505,14 @@ async def handle_allocation_command(update: Update, context: ContextTypes.DEFAUL
         await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
     uid = update.effective_user.id
+    currency = user.get("main_currency", DEFAULT_CURRENCY)
     group_arg = context.args[0].lower() if context.args else "ticker"
     if group_arg not in ALLOCATION_GROUPS:
         await update.message.reply_text(f"Usage: /allocation [{'|'.join(ALLOCATION_GROUPS)}]")
         return
     group_key = ALLOCATION_GROUPS[group_arg]
 
-    summary = compute_holdings_summary(user["id"], DEFAULT_CURRENCY)
+    summary = compute_holdings_summary(user["id"], currency)
     if not summary["holdings"] or not summary["total_market_value"]:
         await update.message.reply_text("No priced holdings to allocate.")
         return
@@ -521,10 +525,10 @@ async def handle_allocation_command(update: Update, context: ContextTypes.DEFAUL
         totals[key] = totals.get(key, 0.0) + h["market_value"]
     rows = sorted(totals.items(), key=lambda x: x[1], reverse=True)
 
-    lines = [f"🧭 *Allocation by {group_arg}* — {DEFAULT_CURRENCY}", ""]
+    lines = [f"🧭 *Allocation by {group_arg}* — {currency}", ""]
     for name, value in rows:
         pct = value / summary["total_market_value"] * 100
-        lines.append(f"▪️ {name}: {format_money(value, DEFAULT_CURRENCY)} ({pct:.1f}%)")
+        lines.append(f"▪️ {name}: {format_money(value, currency)} ({pct:.1f}%)")
 
     logger.info("handle_allocation_command: user_id=%s group=%s groups=%d", uid, group_arg, len(rows))
     for chunk in chunk_lines(lines):
@@ -537,25 +541,26 @@ async def handle_assets_command(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
     uid = update.effective_user.id
+    currency = user.get("main_currency", DEFAULT_CURRENCY)
     snapshots = get_latest_snapshots(user_id=user["id"])
     if not snapshots:
         await update.message.reply_text("No asset snapshots found.")
         return
 
-    lines = [f"🏦 *Net Assets* — {DEFAULT_CURRENCY}", ""]
+    lines = [f"🏦 *Net Assets* — {currency}", ""]
     total = 0.0
     for s in snapshots:
-        converted = convert(s["total_value"], s["currency"], DEFAULT_CURRENCY)
+        converted = convert(s["total_value"], s["currency"], currency)
         total += converted
-        lines.append(f"▪️ {s['accounts']['name']}: {format_money(converted, DEFAULT_CURRENCY)}")
+        lines.append(f"▪️ {s['accounts']['name']}: {format_money(converted, currency)}")
     lines.append("")
-    lines.append(f"Total: {format_money(total, DEFAULT_CURRENCY)}")
+    lines.append(f"Total: {format_money(total, currency)}")
 
-    trend = compute_net_worth_trend(user["id"], DEFAULT_CURRENCY, lookback_days=7)
+    trend = compute_net_worth_trend(user["id"], currency, lookback_days=7)
     if trend["delta"] is not None:
         arrow = "▲" if trend["delta"] >= 0 else "▼"
         lines.append(
-            f"{arrow} {format_money(trend['delta'], DEFAULT_CURRENCY)} "
+            f"{arrow} {format_money(trend['delta'], currency)} "
             f"({format_pct(trend['delta_pct'])}) vs 7 days ago"
         )
 
@@ -570,6 +575,7 @@ async def handle_balance_command(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
     uid = update.effective_user.id
+    currency = user.get("main_currency", DEFAULT_CURRENCY)
     query = " ".join(context.args).strip().lower() if context.args else None
 
     accounts = get_accounts(user_id=user["id"])
@@ -579,16 +585,16 @@ async def handle_balance_command(update: Update, context: ContextTypes.DEFAULT_T
             await update.message.reply_text(f"No account matching '{query}'.")
             return
 
-    result = compute_account_balances(user["id"], DEFAULT_CURRENCY, accounts=accounts)
+    result = compute_account_balances(user["id"], currency, accounts=accounts)
 
-    lines = [f"💳 *Balances* — {DEFAULT_CURRENCY}", ""]
+    lines = [f"💳 *Balances* — {currency}", ""]
     for b in result["balances"]:
         if b["balance"] is None:
             lines.append(f"▪️ {b['account_name']}: no snapshot yet")
         else:
-            lines.append(f"▪️ {b['account_name']}: {format_money(b['balance'], DEFAULT_CURRENCY)}")
+            lines.append(f"▪️ {b['account_name']}: {format_money(b['balance'], currency)}")
     lines.append("")
-    lines.append(f"Total: {format_money(result['total'], DEFAULT_CURRENCY)}")
+    lines.append(f"Total: {format_money(result['total'], currency)}")
 
     logger.info("handle_balance_command: user_id=%s query=%s accounts=%d", uid, query, len(accounts))
     for chunk in chunk_lines(lines):
