@@ -24,6 +24,7 @@ from db.supabase import (
     get_recent_transactions,
     get_transactions,
     get_user_alerts,
+    get_user_by_id,
     get_user_memories,
     get_user_reminders,
     update_account,
