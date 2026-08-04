@@ -247,7 +247,7 @@ export function ChatPage() {
         onKeyDown={handleKeyDown}
         placeholder="Message Finn…"
         rows={1}
-        className="flex-1 px-2 py-1.5 text-sm outline-none resize-none bg-transparent placeholder:text-[var(--brand-hover)] placeholder:opacity-80"
+        className="flex-1 px-2 py-1.5 text-base md:text-sm outline-none resize-none bg-transparent placeholder:text-[var(--brand-hover)] placeholder:opacity-80"
         style={{
           color: "var(--text-primary)",
           minHeight: 72,
