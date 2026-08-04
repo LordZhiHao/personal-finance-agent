@@ -24,6 +24,7 @@ from db.supabase import (
     get_user_by_telegram_chat_id,
     insert_portfolio_events,
     insert_transactions,
+    upload_receipt,
 )
 from scheduler.report_builder import month_comparison, summarize_transactions
 from utils.balances import compute_account_balances, compute_net_worth_trend
@@ -112,11 +113,29 @@ async def send_saved(update: Update, data: dict):
         await update.message.reply_text(chunk, parse_mode="Markdown")
 
 
-def save_extraction(data: dict, user_id: str, account_id: str) -> dict:
+def save_extraction(
+    data: dict,
+    user_id: str,
+    account_id: str,
+    receipt_bytes: bytes | None = None,
+    receipt_content_type: str | None = None,
+) -> dict:
     """Builds transaction/portfolio_event rows from extracted `data` and commits them
     immediately to Supabase against `account_id` — no confirm step. Shared by the
     Telegram handlers below and the web dashboard's chat-upload endpoint
-    (backend/routers/chat.py), so both save through the exact same logic."""
+    (backend/routers/chat.py), so both save through the exact same logic.
+
+    If `receipt_bytes` is provided, the original photo/PDF is uploaded to Supabase
+    Storage and every inserted row is linked to it via receipt_id — best-effort only,
+    a failed upload is logged and swallowed rather than blocking the actual save."""
+    receipt_id = None
+    if receipt_bytes:
+        try:
+            receipt = upload_receipt(user_id, receipt_bytes, receipt_content_type or "application/octet-stream")
+            receipt_id = receipt["id"]
+        except Exception:
+            logger.exception("save_extraction: receipt upload failed for user_id=%s", user_id)
+
     txn_rows = [
         {
             "account_id": account_id,
@@ -127,6 +146,7 @@ def save_extraction(data: dict, user_id: str, account_id: str) -> dict:
             "currency": data.get("currency", "SGD"),
             "raw_text": data.get("raw_text"),
             "source": data.get("source", "manual"),
+            "receipt_id": receipt_id,
         }
         for t in data.get("transactions", [])
     ]
@@ -140,6 +160,7 @@ def save_extraction(data: dict, user_id: str, account_id: str) -> dict:
             "price": t["price"],
             "currency": t["currency"],
             "fees": t.get("fees", 0),
+            "receipt_id": receipt_id,
         }
         for t in data.get("portfolio_events", [])
     ]
@@ -156,11 +177,19 @@ def save_extraction(data: dict, user_id: str, account_id: str) -> dict:
     }
 
 
-async def _finalize(update: Update, data: dict, user_id: str, uid: int, account_id: str) -> None:
+async def _finalize(
+    update: Update,
+    data: dict,
+    user_id: str,
+    uid: int,
+    account_id: str,
+    receipt_bytes: bytes | None = None,
+    receipt_content_type: str | None = None,
+) -> None:
     """Commits via save_extraction, records ids in last_saved for /undo, and replies with
     a summary. Shared tail end of both the confident-match path and the account-choice
     callback below."""
-    result = save_extraction(data, user_id, account_id)
+    result = save_extraction(data, user_id, account_id, receipt_bytes, receipt_content_type)
     last_saved[uid] = {
         "transaction_ids": result["transaction_ids"],
         "portfolio_event_ids": result["portfolio_event_ids"],
@@ -172,7 +201,14 @@ async def _finalize(update: Update, data: dict, user_id: str, uid: int, account_
     await send_saved(update, data)
 
 
-async def _commit_and_reply(update: Update, data: dict, user_id: str, uid: int) -> None:
+async def _commit_and_reply(
+    update: Update,
+    data: dict,
+    user_id: str,
+    uid: int,
+    receipt_bytes: bytes | None = None,
+    receipt_content_type: str | None = None,
+) -> None:
     """Shared tail end of handle_photo/handle_document/handle_text's record path:
     resolves the caller's accounts, uses match_account to pick one (or asks via an
     inline-keyboard prompt if unsure), then auto-commits (no confirm step for the
@@ -184,9 +220,14 @@ async def _commit_and_reply(update: Update, data: dict, user_id: str, uid: int) 
         return
     match = match_account(data, accounts)
     if match["account_id"]:
-        await _finalize(update, data, user_id, uid, match["account_id"])
+        await _finalize(update, data, user_id, uid, match["account_id"], receipt_bytes, receipt_content_type)
         return
-    pending_account_choice[uid] = {"data": data, "user_id": user_id}
+    pending_account_choice[uid] = {
+        "data": data,
+        "user_id": user_id,
+        "receipt_bytes": receipt_bytes,
+        "receipt_content_type": receipt_content_type,
+    }
     keyboard = InlineKeyboardMarkup(
         [[InlineKeyboardButton(a["name"], callback_data=f"acct:{a['id']}")] for a in match["candidates"]]
     )
@@ -206,7 +247,15 @@ async def handle_account_choice_callback(update: Update, context: ContextTypes.D
         return
     await query.edit_message_reply_markup(reply_markup=None)  # prevent double-taps on the same prompt
     account_id = query.data.split(":", 1)[1]
-    await _finalize(query, pending["data"], pending["user_id"], uid, account_id)
+    await _finalize(
+        query,
+        pending["data"],
+        pending["user_id"],
+        uid,
+        account_id,
+        pending.get("receipt_bytes"),
+        pending.get("receipt_content_type"),
+    )
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -238,7 +287,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "handle_photo: extracted %d transaction(s), %d portfolio event(s) for user_id=%s",
         len(data.get("transactions", [])), len(data.get("portfolio_events", [])), uid,
     )
-    await _commit_and_reply(update, data, user["id"], uid)
+    await _commit_and_reply(update, data, user["id"], uid, bytes(image_bytes), "image/jpeg")
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -276,7 +325,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "handle_document: extracted %d transaction(s), %d portfolio event(s) for user_id=%s",
         len(data.get("transactions", [])), len(data.get("portfolio_events", [])), uid,
     )
-    await _commit_and_reply(update, data, user["id"], uid)
+    await _commit_and_reply(update, data, user["id"], uid, bytes(file_bytes), doc.mime_type)
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):

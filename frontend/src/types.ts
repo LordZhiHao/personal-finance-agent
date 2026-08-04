@@ -19,6 +19,33 @@ export interface Memory {
   created_at: string;
 }
 
+export interface Budget {
+  id: string;
+  category: string;
+  monthly_limit: number;
+  currency: string;
+  last_alerted_month: string | null;
+  created_at: string;
+}
+
+export interface BudgetStatus {
+  id: string;
+  category: string;
+  monthly_limit: number;
+  currency: string;
+  spent: number;
+}
+
+export interface Goal {
+  id: string;
+  name: string;
+  target_amount: number;
+  current_amount: number;
+  target_date: string | null;
+  currency: string;
+  created_at: string;
+}
+
 export interface Transaction {
   id: string;
   account_id: string;
@@ -29,7 +56,13 @@ export interface Transaction {
   currency: string;
   source: string;
   created_at: string;
+  receipt_id: string | null;
   accounts: { name: string; currency: string } | null;
+}
+
+export interface ReceiptUrl {
+  url: string;
+  content_type: string;
 }
 
 export interface PortfolioEvent {

@@ -3,8 +3,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from backend.auth import get_current_user
 from backend.schemas import TransactionCreate, TransactionUpdate
 from db.supabase import (
+    create_signed_receipt_url,
     delete_transactions,
     get_categories_for_user,
+    get_transaction_receipt,
     get_transactions,
     insert_transactions,
     update_transaction,
@@ -55,3 +57,17 @@ def patch_transaction(transaction_id: str, fields: TransactionUpdate, user_id: s
 def delete_transaction(transaction_id: str, user_id: str = Depends(get_current_user)):
     delete_transactions([transaction_id], user_id)
     return {"ok": True}
+
+
+@router.get("/{transaction_id}/receipt")
+def get_receipt(transaction_id: str, user_id: str = Depends(get_current_user)):
+    """Short-lived signed URL to the original receipt image/PDF behind a transaction,
+    if one was stored. The bucket is private, so the frontend never gets a raw storage
+    path or a Supabase key — only a time-limited signed URL."""
+    receipt = get_transaction_receipt(transaction_id, user_id)
+    if not receipt:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No receipt for this transaction.")
+    return {
+        "url": create_signed_receipt_url(receipt["storage_path"]),
+        "content_type": receipt["content_type"],
+    }

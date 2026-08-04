@@ -1,20 +1,25 @@
 import json
 import os
 import re
-from datetime import date
+from datetime import date, timedelta
 
 from dateutil.relativedelta import relativedelta
 
 from bot.deepseek_client import client
 from db.supabase import (
+    contribute_to_goal as db_contribute_to_goal,
     create_account,
     create_custom_category,
     create_user_alert,
+    create_user_budget,
+    create_user_goal,
     create_user_memory,
     create_user_reminder,
     deactivate_account,
     delete_custom_category,
     delete_user_alert,
+    delete_user_budget,
+    delete_user_goal,
     delete_user_memory,
     delete_user_reminder,
     get_accounts,
@@ -24,20 +29,23 @@ from db.supabase import (
     get_recent_transactions,
     get_transactions,
     get_user_alerts,
+    get_user_budgets,
     get_user_by_id,
+    get_user_goals,
     get_user_memories,
     get_user_reminders,
     update_account,
     update_custom_category,
     update_user,
 )
-from scheduler.report_builder import month_comparison, summarize_transactions
+from scheduler.report_builder import budget_status, month_comparison, summarize_transactions
 from utils.balances import compute_account_balances, compute_net_worth_trend
 from utils.constants import ACCOUNT_TYPES, CURRENCIES, DASHBOARD_URL, DEFAULT_CURRENCY, THEME_COLORS, TICKER_YFINANCE_MAP
 from utils.equity_pricing import fetch_dividend_forecast
 from utils.logger import get_logger
 from utils.period import parse_period
 from utils.portfolio import compute_holdings_summary
+from utils.subscriptions import detect_recurring_charges
 
 logger = get_logger(__name__)
 
@@ -52,7 +60,7 @@ MAX_HISTORY_TURNS = 6  # rolling window: 6 user+assistant pairs = 12 messages ke
 # the two key types never collide, so the channels naturally stay in separate threads.
 chat_history: dict[int | str, list[dict]] = {}
 
-def _shared_prompt_body() -> str:
+def _shared_prompt_body(currency: str) -> str:
     # Computed per call, not baked in at import time — the bot/backend process runs
     # continuously across days, so "today" must be re-read on every request.
     today = date.today().isoformat()
@@ -61,7 +69,7 @@ def _shared_prompt_body() -> str:
 
 Answer questions about their spending, holdings, balances, and recent transactions by
 calling the provided tools — never guess figures from memory. All monetary values from tools are already
-in {DEFAULT_CURRENCY} unless a tool result states otherwise. Default to the "week" period when a question
+in {currency} (this user's chosen main currency) unless a tool result states otherwise. Default to the "week" period when a question
 doesn't specify a timeframe. When a question refers to "this month" or "the current month," use the
 "month_to_date" period, not "month" — "month" is a trailing ~30-day window, while "month_to_date" is the
 current calendar month from the 1st.
@@ -97,7 +105,22 @@ operator="below", threshold=500, ticker="CSPX"; "alert me if my net worth drops 
 metric="net_worth", operator="below", threshold=50000; "alert me if my CSPX position is down more than
 $200" -> metric="position_pnl", operator="below", threshold=-200, ticker="CSPX". daily_spend alerts
 re-arm automatically every day; the other three metrics fire once and then stop — tell the user they'd
-need to ask again to keep watching after a stock_price/net_worth/position_pnl alert fires."""
+need to ask again to keep watching after a stock_price/net_worth/position_pnl alert fires.
+
+You can also manage monthly category budgets (create_budget/list_budgets/delete_budget/get_budget_status)
+and savings goals (create_goal/list_goals/contribute_to_goal/delete_goal). A budget is a monthly spending
+limit for one category — creating a budget for a category the user already budgeted just updates the
+limit. get_budget_status compares month-to-date spend against each budgeted category's limit. A goal has
+a target_amount and a running current_amount (starts at 0) — contribute_to_goal ADDS to current_amount,
+it does not set/replace it, so if the user says "I saved $200 more toward my house downpayment," call
+contribute_to_goal with amount=200, not the new total. Both budgets and goals execute immediately, no
+confirmation needed, same as the settings/reminder/alert tools above.
+
+You can also surface likely recurring subscriptions (list_subscriptions) detected from the user's past
+~6 months of transactions, and schedule a reminder ahead of one's next expected charge
+(create_reminder_from_subscription). This detection is heuristic — pattern-matched from transaction
+history, not a real subscription list — so mention that it might miss something irregular or occasionally
+flag a false positive, and suggest the user double-check before relying on it."""
 
 
 def _memories_block(memories: list[dict]) -> str:
@@ -111,8 +134,8 @@ forget_memory(memory_id) with that id if the user asks you to forget/remove one:
 {notes}"""
 
 
-def _build_system_prompt(channel: str, memories: list[dict]) -> str:
-    shared = _shared_prompt_body() + _memories_block(memories)
+def _build_system_prompt(channel: str, memories: list[dict], currency: str) -> str:
+    shared = _shared_prompt_body(currency) + _memories_block(memories)
     if channel == "web":
         return f"""You are a personal finance assistant for a user based in Singapore, integrated into
 their web dashboard. Keep replies concise and use plain text with line breaks where helpful.
@@ -565,6 +588,166 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_budget",
+            "description": (
+                "Set (or update) a monthly spending limit for a category. Re-running this for a "
+                "category the user already budgeted just updates the limit. Executes immediately, "
+                "no confirmation needed."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": {"type": "string", "description": "A category from the user's category list."},
+                    "monthly_limit": {"type": "number", "description": "Must be greater than 0."},
+                    "currency": {
+                        "type": "string",
+                        "description": "Defaults to the user's main_currency if omitted.",
+                    },
+                },
+                "required": ["category", "monthly_limit"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_budgets",
+            "description": "The user's budgeted categories with their monthly limits, and their ids.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_budget",
+            "description": (
+                "Remove a category's budget. Deletes immediately, no confirmation needed. Call "
+                "list_budgets first if you don't already know the budget_id from this conversation."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"budget_id": {"type": "string"}},
+                "required": ["budget_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_budget_status",
+            "description": (
+                "Spend-so-far vs. limit for each of the user's budgeted categories, for the "
+                "current calendar month (month-to-date)."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_goal",
+            "description": "Start tracking a new savings goal. Executes immediately, no confirmation needed.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "A short name for the goal, e.g. 'House downpayment'."},
+                    "target_amount": {"type": "number", "description": "Must be greater than 0."},
+                    "target_date": {
+                        "type": "string",
+                        "description": "Optional target date, YYYY-MM-DD.",
+                    },
+                    "currency": {
+                        "type": "string",
+                        "description": "Defaults to the user's main_currency if omitted.",
+                    },
+                },
+                "required": ["name", "target_amount"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_goals",
+            "description": "The user's savings goals with their progress (current_amount vs target_amount), and their ids.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "contribute_to_goal",
+            "description": (
+                "Add an amount to a goal's saved-so-far total — this ADDS to current_amount, it "
+                "does not replace it. Executes immediately, no confirmation needed. Call list_goals "
+                "first if you don't already know the goal_id from this conversation."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal_id": {"type": "string"},
+                    "amount": {"type": "number", "description": "Must be greater than 0."},
+                },
+                "required": ["goal_id", "amount"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_goal",
+            "description": (
+                "Remove a savings goal. Deletes immediately, no confirmation needed. Call "
+                "list_goals first if you don't already know the goal_id from this conversation."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"goal_id": {"type": "string"}},
+                "required": ["goal_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_subscriptions",
+            "description": (
+                "Detected recurring charges (subscriptions, rent, etc.) from the user's last "
+                "~6 months of transactions, with each one's next expected charge date. This is "
+                "heuristic — it may miss irregular billing or occasionally flag something that "
+                "isn't really recurring, so tell the user to double-check before relying on it."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_reminder_from_subscription",
+            "description": (
+                "Schedule a reminder a few days before a detected subscription's next expected "
+                "charge. Call list_subscriptions first to get an exact description to match on. "
+                "Executes immediately, no confirmation needed."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "description": {
+                        "type": "string",
+                        "description": "The subscription's description, from list_subscriptions — matched case-insensitively.",
+                    },
+                    "days_before": {
+                        "type": "integer",
+                        "description": "How many days before the next expected charge to remind. Defaults to 3.",
+                    },
+                },
+                "required": ["description"],
+            },
+        },
+    },
 ]
 
 
@@ -582,7 +765,7 @@ def _catch_lookup(fn, *args, **kwargs):
 _TIME_OF_DAY_RE = re.compile(r"[0-2]\d:[0-5]\d")
 
 
-def _run_tool(name: str, args: dict, user_id: str) -> dict:
+def _run_tool(name: str, args: dict, user_id: str, currency: str) -> dict:
     if name == "get_spending_summary":
         start, end, label = parse_period(args.get("period"))
         txns = get_transactions(start.isoformat(), end.isoformat(), user_id)
@@ -592,9 +775,9 @@ def _run_tool(name: str, args: dict, user_id: str) -> dict:
         txns = get_transactions(start.isoformat(), end.isoformat(), user_id)
         return {"period": label, "transactions": txns}
     if name == "get_holdings":
-        return compute_holdings_summary(user_id, DEFAULT_CURRENCY)
+        return compute_holdings_summary(user_id, currency)
     if name == "get_balances":
-        return compute_account_balances(user_id, DEFAULT_CURRENCY)
+        return compute_account_balances(user_id, currency)
     if name == "get_recent_transactions_tool":
         n = max(1, min(int(args.get("limit", 10)), 30))
         return {"transactions": get_recent_transactions(n, user_id)}
@@ -620,7 +803,7 @@ def _run_tool(name: str, args: dict, user_id: str) -> dict:
         group_field = {"ticker": "ticker", "account": "account_name", "currency": "price_currency"}[
             args.get("group_by", "ticker")
         ]
-        summary = compute_holdings_summary(user_id, DEFAULT_CURRENCY)
+        summary = compute_holdings_summary(user_id, currency)
         totals: dict[str, float] = {}
         for h in summary["holdings"]:
             if h["market_value"] is None:
@@ -633,10 +816,10 @@ def _run_tool(name: str, args: dict, user_id: str) -> dict:
             key=lambda r: r["value"],
             reverse=True,
         )
-        return {"currency": DEFAULT_CURRENCY, "allocation": allocation}
+        return {"currency": currency, "allocation": allocation}
     if name == "get_net_worth_trend":
         days = max(1, int(args.get("days", 7)))
-        return compute_net_worth_trend(user_id, DEFAULT_CURRENCY, lookback_days=days)
+        return compute_net_worth_trend(user_id, currency, lookback_days=days)
     if name == "remember_preference":
         content = (args.get("content") or "").strip()
         if not content:
@@ -780,6 +963,89 @@ def _run_tool(name: str, args: dict, user_id: str) -> dict:
             return {"error": "alert_id is required"}
         _, err = _catch_lookup(delete_user_alert, alert_id, user_id)
         return {"error": err} if err else {"status": "deleted"}
+    if name == "create_budget":
+        category = (args.get("category") or "").strip()
+        monthly_limit = args.get("monthly_limit")
+        if not category:
+            return {"error": "category is required"}
+        if not isinstance(monthly_limit, (int, float)) or monthly_limit <= 0:
+            return {"error": "monthly_limit must be greater than 0"}
+        budget_currency = args.get("currency") or currency
+        if budget_currency not in CURRENCIES:
+            return {"error": f"currency must be one of {CURRENCIES}"}
+        budget = create_user_budget(user_id, category, monthly_limit, budget_currency)
+        return {"status": "saved", "budget_id": budget["id"]}
+    if name == "list_budgets":
+        return {"budgets": get_user_budgets(user_id)}
+    if name == "delete_budget":
+        budget_id = (args.get("budget_id") or "").strip()
+        if not budget_id:
+            return {"error": "budget_id is required"}
+        _, err = _catch_lookup(delete_user_budget, budget_id, user_id)
+        return {"error": err} if err else {"status": "deleted"}
+    if name == "get_budget_status":
+        budgets = get_user_budgets(user_id)
+        if not budgets:
+            return {"budgets": []}
+        start, end, _ = parse_period("month_to_date")
+        txns = get_transactions(start.isoformat(), end.isoformat(), user_id)
+        return {"budgets": budget_status(txns, budgets)}
+    if name == "create_goal":
+        goal_name = (args.get("name") or "").strip()
+        target_amount = args.get("target_amount")
+        if not goal_name:
+            return {"error": "name is required"}
+        if not isinstance(target_amount, (int, float)) or target_amount <= 0:
+            return {"error": "target_amount must be greater than 0"}
+        goal_currency = args.get("currency") or currency
+        if goal_currency not in CURRENCIES:
+            return {"error": f"currency must be one of {CURRENCIES}"}
+        goal = create_user_goal(user_id, goal_name, target_amount, goal_currency, args.get("target_date"))
+        return {"status": "saved", "goal_id": goal["id"]}
+    if name == "list_goals":
+        return {"goals": get_user_goals(user_id)}
+    if name == "contribute_to_goal":
+        goal_id = (args.get("goal_id") or "").strip()
+        amount = args.get("amount")
+        if not goal_id:
+            return {"error": "goal_id is required"}
+        if not isinstance(amount, (int, float)) or amount <= 0:
+            return {"error": "amount must be greater than 0"}
+        result, err = _catch_lookup(db_contribute_to_goal, goal_id, amount, user_id)
+        return {"error": err} if err else {"status": "updated", "current_amount": result["current_amount"]}
+    if name == "delete_goal":
+        goal_id = (args.get("goal_id") or "").strip()
+        if not goal_id:
+            return {"error": "goal_id is required"}
+        _, err = _catch_lookup(delete_user_goal, goal_id, user_id)
+        return {"error": err} if err else {"status": "deleted"}
+    if name == "list_subscriptions":
+        start = date.today() - relativedelta(months=6)
+        txns = get_transactions(start.isoformat(), date.today().isoformat(), user_id)
+        return {"subscriptions": detect_recurring_charges(txns)}
+    if name == "create_reminder_from_subscription":
+        description = (args.get("description") or "").strip().lower()
+        if not description:
+            return {"error": "description is required"}
+        days_before = max(0, int(args.get("days_before", 3)))
+        start = date.today() - relativedelta(months=6)
+        txns = get_transactions(start.isoformat(), date.today().isoformat(), user_id)
+        match = next(
+            (s for s in detect_recurring_charges(txns) if description in s["description"].lower()), None
+        )
+        if not match:
+            return {"error": f"no detected subscription matching {description!r} — call list_subscriptions first"}
+        remind_date = date.fromisoformat(match["next_expected_date"]) - timedelta(days=days_before)
+        if remind_date < date.today():
+            remind_date = date.today()
+        reminder = create_user_reminder(
+            user_id,
+            message=f"Subscription renewal expected: {match['description']} (~{match['amount']} {match['currency']})",
+            frequency="monthly",
+            time_of_day="09:00",
+            day_of_month=remind_date.day,
+        )
+        return {"status": "created", "reminder_id": reminder["id"]}
     return {"error": f"unknown tool {name!r}"}
 
 
@@ -797,7 +1063,9 @@ def answer_question(uid: int | str, raw_text: str, user_id: str, channel: str = 
     except Exception:
         logger.exception("answer_question: get_user_memories failed for user_id=%s", user_id)
         memories = []
-    system_prompt = _build_system_prompt(channel, memories)
+    user = get_user_by_id(user_id)
+    currency = (user or {}).get("main_currency") or DEFAULT_CURRENCY
+    system_prompt = _build_system_prompt(channel, memories, currency)
     messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": raw_text}]
 
     try:
@@ -817,7 +1085,7 @@ def answer_question(uid: int | str, raw_text: str, user_id: str, channel: str = 
             for tc in msg.tool_calls:
                 args = json.loads(tc.function.arguments or "{}")
                 logger.info("answer_question: tool=%s args=%s user_id=%s", tc.function.name, args, uid)
-                result = _run_tool(tc.function.name, args, user_id)
+                result = _run_tool(tc.function.name, args, user_id, currency)
                 messages.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(result, default=str)})
         if final_text is None:
             final_text = "Sorry, I couldn't finish answering that — try a more specific question."

@@ -11,9 +11,10 @@ logger = get_logger(__name__)
 
 
 def build_html(data: dict, accent: str) -> str:
+    currency = data["currency"]
     cat_rows = "".join(
         f"<tr><td style='padding:4px 12px 4px 0'>{cat}</td>"
-        f"<td>SGD {amt:,.2f}</td></tr>"
+        f"<td>{currency} {amt:,.2f}</td></tr>"
         for cat, amt in data["by_category"].items()
     )
     snap_rows = "".join(
@@ -29,9 +30,9 @@ def build_html(data: dict, accent: str) -> str:
 
     <h3 style="color:{accent}">💰 Income & Expenses</h3>
     <table>
-      <tr><td>Income</td><td><b>SGD {data['income']:,.2f}</b></td></tr>
-      <tr><td>Spent</td><td><b>SGD {data['expenses']:,.2f}</b></td></tr>
-      <tr><td>Net</td><td><b>SGD {data['net']:+,.2f}</b></td></tr>
+      <tr><td>Income</td><td><b>{currency} {data['income']:,.2f}</b></td></tr>
+      <tr><td>Spent</td><td><b>{currency} {data['expenses']:,.2f}</b></td></tr>
+      <tr><td>Net</td><td><b>{currency} {data['net']:+,.2f}</b></td></tr>
       <tr><td>Savings Rate</td><td><b>{data['savings_rate']}%</b></td></tr>
     </table>
 
@@ -40,7 +41,7 @@ def build_html(data: dict, accent: str) -> str:
 
     <h3 style="color:{accent}">🏦 Portfolio Snapshot</h3>
     <table>{snap_rows}</table>
-    <p><b>Total Assets: SGD {data['total_assets']:,.2f}</b></p>
+    <p><b>Total Assets: {currency} {data['total_assets']:,.2f}</b></p>
     </body></html>
     """
 

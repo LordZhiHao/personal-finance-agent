@@ -44,12 +44,18 @@ def _stock_prices(tickers: set[str]) -> dict[str, dict | None]:
     return {t: prices.get(symbol_map[t]) for t in tickers}
 
 
-def _net_worths(user_ids: set[str]) -> dict[str, float]:
-    return {user_id: compute_account_balances(user_id, DEFAULT_CURRENCY)["total"] for user_id in user_ids}
+def _net_worths(user_ids: set[str], currencies: dict[str, str]) -> dict[str, float]:
+    return {
+        user_id: compute_account_balances(user_id, currencies.get(user_id, DEFAULT_CURRENCY))["total"]
+        for user_id in user_ids
+    }
 
 
-def _holdings_summaries(user_ids: set[str]) -> dict[str, dict]:
-    return {user_id: compute_holdings_summary(user_id, DEFAULT_CURRENCY) for user_id in user_ids}
+def _holdings_summaries(user_ids: set[str], currencies: dict[str, str]) -> dict[str, dict]:
+    return {
+        user_id: compute_holdings_summary(user_id, currencies.get(user_id, DEFAULT_CURRENCY))
+        for user_id in user_ids
+    }
 
 
 def _current_value(alert: dict, daily_spend: dict, stock_prices: dict, net_worths: dict, holdings: dict) -> float | None:
@@ -94,10 +100,13 @@ async def check_alerts(bot):
     if not alerts:
         return
 
+    currencies = {
+        a["user_id"]: (a.get("users") or {}).get("main_currency") or DEFAULT_CURRENCY for a in alerts
+    }
     daily_spend = _daily_spend_totals({a["user_id"] for a in alerts if a["metric"] == "daily_spend"}, now)
     stock_prices = _stock_prices({a["ticker"] for a in alerts if a["metric"] == "stock_price"})
-    net_worths = _net_worths({a["user_id"] for a in alerts if a["metric"] == "net_worth"})
-    holdings = _holdings_summaries({a["user_id"] for a in alerts if a["metric"] == "position_pnl"})
+    net_worths = _net_worths({a["user_id"] for a in alerts if a["metric"] == "net_worth"}, currencies)
+    holdings = _holdings_summaries({a["user_id"] for a in alerts if a["metric"] == "position_pnl"}, currencies)
 
     for alert in alerts:
         try:

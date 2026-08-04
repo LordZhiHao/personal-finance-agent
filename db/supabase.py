@@ -1,4 +1,5 @@
 import os
+import uuid
 from datetime import datetime, timezone
 
 from dotenv import load_dotenv
@@ -58,6 +59,68 @@ def insert_portfolio_events(rows: list[dict], user_id: str):
         raise
     logger.info("insert_portfolio_events: saved %d row(s)", len(rows))
     return result
+
+
+def create_receipt(user_id: str, storage_path: str, content_type: str) -> dict:
+    db = get_client(use_service_key=True)
+    result = (
+        db.table("receipts")
+        .insert({"user_id": user_id, "storage_path": storage_path, "content_type": content_type})
+        .execute()
+    )
+    logger.info("create_receipt: user_id=%s storage_path=%s", user_id, storage_path)
+    return result.data[0]
+
+
+def get_receipt(receipt_id: str, user_id: str) -> dict | None:
+    db = get_client(use_service_key=True)
+    rows = db.table("receipts").select("*").eq("id", receipt_id).eq("user_id", user_id).execute().data
+    return rows[0] if rows else None
+
+
+def upload_receipt(user_id: str, receipt_bytes: bytes, content_type: str) -> dict:
+    """Uploads the raw receipt/statement bytes to the private 'receipts' Supabase
+    Storage bucket (must already exist — created manually, not by a migration) and
+    records a receipts row pointing at it. Raises on failure — the caller
+    (bot/handlers.py::save_extraction) treats a receipt as best-effort supplementary
+    data and wraps this in its own try/except so an upload failure never blocks the
+    underlying transaction/portfolio_event save."""
+    ext = content_type.split("/")[-1].replace("jpeg", "jpg")
+    storage_path = f"{user_id}/{uuid.uuid4()}.{ext}"
+    db = get_client(use_service_key=True)
+    db.storage.from_("receipts").upload(storage_path, receipt_bytes, {"content-type": content_type})
+    logger.info("upload_receipt: user_id=%s storage_path=%s", user_id, storage_path)
+    return create_receipt(user_id, storage_path, content_type)
+
+
+def create_signed_receipt_url(storage_path: str, expires_in: int = 300) -> str:
+    """Short-lived signed URL into the private 'receipts' bucket — the frontend never
+    holds a Supabase key, so this is how it gets time-limited read access to a receipt
+    image, via GET /api/transactions/{id}/receipt."""
+    db = get_client(use_service_key=True)
+    result = db.storage.from_("receipts").create_signed_url(storage_path, expires_in)
+    return result["signedURL"]
+
+
+def get_transaction_receipt(transaction_id: str, user_id: str) -> dict | None:
+    """Ownership-checked lookup of the receipt behind a transaction, for
+    GET /api/transactions/{id}/receipt. Scoped via the transaction's account
+    (accounts.user_id), same as every other transaction-ownership check in this file."""
+    account_ids = get_account_ids_for_user(user_id)
+    if not account_ids:
+        return None
+    db = get_client(use_service_key=True)
+    rows = (
+        db.table("transactions")
+        .select("receipt_id")
+        .eq("id", transaction_id)
+        .in_("account_id", account_ids)
+        .execute()
+        .data
+    )
+    if not rows or not rows[0]["receipt_id"]:
+        return None
+    return get_receipt(rows[0]["receipt_id"], user_id)
 
 
 def get_transactions(start_date: str, end_date: str, user_id: str | None = None):
@@ -437,7 +500,7 @@ def get_all_active_alerts() -> list[dict]:
     db = get_client(use_service_key=True)
     return (
         db.table("user_alerts")
-        .select("*, users(telegram_chat_id, notify_email, theme)")
+        .select("*, users(telegram_chat_id, notify_email, theme, main_currency)")
         .eq("active", True)
         .execute()
         .data
@@ -465,6 +528,131 @@ def mark_alert_triggered(alert_id: str, sent_at: datetime, deactivate: bool) -> 
     if deactivate:
         fields["active"] = False
     db.table("user_alerts").update(fields).eq("id", alert_id).execute()
+
+
+def create_user_budget(user_id: str, category: str, monthly_limit: float, currency: str) -> dict:
+    """Upsert on (user_id, category) — re-budgeting a category just updates the limit
+    rather than erroring on the unique constraint, same convention as upsert_asset_snapshot."""
+    db = get_client(use_service_key=True)
+    result = (
+        db.table("user_budgets")
+        .upsert(
+            {"user_id": user_id, "category": category, "monthly_limit": monthly_limit, "currency": currency},
+            on_conflict="user_id,category",
+        )
+        .execute()
+    )
+    logger.info("create_user_budget: user_id=%s category=%s monthly_limit=%s", user_id, category, monthly_limit)
+    return result.data[0]
+
+
+def get_user_budgets(user_id: str) -> list[dict]:
+    db = get_client(use_service_key=True)
+    return (
+        db.table("user_budgets")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .execute()
+        .data
+    )
+
+
+def update_user_budget(budget_id: str, fields: dict, user_id: str) -> dict:
+    db = get_client(use_service_key=True)
+    result = db.table("user_budgets").update(fields).eq("id", budget_id).eq("user_id", user_id).execute()
+    if not result.data:
+        raise LookupError(f"Budget {budget_id} not found")
+    logger.info("update_user_budget: id=%s fields=%s", budget_id, list(fields.keys()))
+    return result.data[0]
+
+
+def delete_user_budget(budget_id: str, user_id: str) -> None:
+    db = get_client(use_service_key=True)
+    result = db.table("user_budgets").delete().eq("id", budget_id).eq("user_id", user_id).execute()
+    if not result.data:
+        raise LookupError(f"Budget {budget_id} not found")
+    logger.info("delete_user_budget: id=%s user_id=%s", budget_id, user_id)
+
+
+def get_all_budgets() -> list[dict]:
+    """System-wide poll source for scheduler/user_budgets.py — same unscoped-by-design
+    pattern as get_all_active_reminders()/get_all_active_alerts()."""
+    db = get_client(use_service_key=True)
+    return (
+        db.table("user_budgets")
+        .select("*, users(telegram_chat_id, notify_email, theme, main_currency)")
+        .execute()
+        .data
+    )
+
+
+def mark_budget_alerted(budget_id: str, month: str) -> None:
+    # No ownership check — only ever called by the poller against a row id it just read.
+    db = get_client(use_service_key=True)
+    db.table("user_budgets").update({"last_alerted_month": month}).eq("id", budget_id).execute()
+
+
+def create_user_goal(
+    user_id: str, name: str, target_amount: float, currency: str, target_date: str | None = None
+) -> dict:
+    db = get_client(use_service_key=True)
+    result = (
+        db.table("user_goals")
+        .insert({
+            "user_id": user_id, "name": name, "target_amount": target_amount,
+            "currency": currency, "target_date": target_date,
+        })
+        .execute()
+    )
+    logger.info("create_user_goal: user_id=%s name=%s target_amount=%s", user_id, name, target_amount)
+    return result.data[0]
+
+
+def get_user_goals(user_id: str) -> list[dict]:
+    db = get_client(use_service_key=True)
+    return (
+        db.table("user_goals")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .execute()
+        .data
+    )
+
+
+def update_user_goal(goal_id: str, fields: dict, user_id: str) -> dict:
+    db = get_client(use_service_key=True)
+    result = db.table("user_goals").update(fields).eq("id", goal_id).eq("user_id", user_id).execute()
+    if not result.data:
+        raise LookupError(f"Goal {goal_id} not found")
+    logger.info("update_user_goal: id=%s fields=%s", goal_id, list(fields.keys()))
+    return result.data[0]
+
+
+def contribute_to_goal(goal_id: str, amount: float, user_id: str) -> dict:
+    db = get_client(use_service_key=True)
+    rows = db.table("user_goals").select("current_amount").eq("id", goal_id).eq("user_id", user_id).execute().data
+    if not rows:
+        raise LookupError(f"Goal {goal_id} not found")
+    new_amount = rows[0]["current_amount"] + amount
+    result = (
+        db.table("user_goals")
+        .update({"current_amount": new_amount})
+        .eq("id", goal_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    logger.info("contribute_to_goal: id=%s amount=%s new_amount=%s", goal_id, amount, new_amount)
+    return result.data[0]
+
+
+def delete_user_goal(goal_id: str, user_id: str) -> None:
+    db = get_client(use_service_key=True)
+    result = db.table("user_goals").delete().eq("id", goal_id).eq("user_id", user_id).execute()
+    if not result.data:
+        raise LookupError(f"Goal {goal_id} not found")
+    logger.info("delete_user_goal: id=%s user_id=%s", goal_id, user_id)
 
 
 def get_portfolio_events(start_date: str | None = None, end_date: str | None = None, user_id: str | None = None):

@@ -145,13 +145,17 @@ async def upload_file(file: UploadFile, user_id: str = Depends(get_current_user)
             ],
         }
 
-    result = save_extraction(data, user_id, match["account_id"])
+    result = save_extraction(data, user_id, match["account_id"], file_bytes, file.content_type)
     return _build_saved_response(data, result)
 
 
 @router.post("/chat/commit")
 def commit_upload(payload: ChatCommitRequest, user_id: str = Depends(get_current_user)):
     """Finalizes an upload that POST /api/chat/upload flagged needs_account_selection —
-    no re-extraction, just commits the already-extracted data to the chosen account."""
+    no re-extraction, just commits the already-extracted data to the chosen account. The
+    original file bytes aren't available here (they weren't stashed anywhere between the
+    two requests), so unlike the confident-match path above, no receipt is stored for
+    this deferred-account-choice case — a receipt is best-effort supplementary data, not
+    required for the save to succeed."""
     result = save_extraction(payload.data, user_id, payload.account_id)
     return _build_saved_response(payload.data, result)

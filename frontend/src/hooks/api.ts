@@ -4,14 +4,18 @@ import type {
   Account,
   AssetSnapshot,
   BalancesSummary,
+  Budget,
+  BudgetStatus,
   ChatResult,
   CustomCategory,
   DividendForecast,
   ExpenseSummary,
+  Goal,
   HoldingsSummary,
   Memory,
   Meta,
   PortfolioEvent,
+  ReceiptUrl,
   Transaction,
   UploadResult,
   UploadSaved,
@@ -33,6 +37,14 @@ export function useTransactions(startDate: string, endDate: string) {
   return useQuery({
     queryKey: ["transactions", startDate, endDate],
     queryFn: () => api.get<Transaction[]>(`/api/transactions${qs({ start_date: startDate, end_date: endDate })}`),
+  });
+}
+
+export function useTransactionReceipt(transactionId: string) {
+  return useQuery({
+    queryKey: ["transaction-receipt", transactionId],
+    queryFn: () => api.get<ReceiptUrl>(`/api/transactions/${transactionId}/receipt`),
+    enabled: false, // fetched on demand (icon click), not eagerly for every row in a list
   });
 }
 
@@ -225,6 +237,82 @@ export function useDeleteMemory() {
     mutationFn: (id: string) => api.delete(`/api/memories/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["memories"] });
+    },
+  });
+}
+
+export function useBudgets() {
+  return useQuery({
+    queryKey: ["budgets"],
+    queryFn: () => api.get<Budget[]>("/api/budgets"),
+  });
+}
+
+export function useBudgetStatus() {
+  return useQuery({
+    queryKey: ["budget-status"],
+    queryFn: () => api.get<BudgetStatus[]>("/api/budgets/status"),
+  });
+}
+
+export function useCreateBudget() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { category: string; monthly_limit: number; currency: string }) =>
+      api.post<Budget>("/api/budgets", payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["budgets"] });
+      queryClient.invalidateQueries({ queryKey: ["budget-status"] });
+    },
+  });
+}
+
+export function useDeleteBudget() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/api/budgets/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["budgets"] });
+      queryClient.invalidateQueries({ queryKey: ["budget-status"] });
+    },
+  });
+}
+
+export function useGoals() {
+  return useQuery({
+    queryKey: ["goals"],
+    queryFn: () => api.get<Goal[]>("/api/goals"),
+  });
+}
+
+export function useCreateGoal() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { name: string; target_amount: number; currency: string; target_date?: string }) =>
+      api.post<Goal>("/api/goals", payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["goals"] });
+    },
+  });
+}
+
+export function useContributeToGoal() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, amount }: { id: string; amount: number }) =>
+      api.post<Goal>(`/api/goals/${id}/contribute`, { amount }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["goals"] });
+    },
+  });
+}
+
+export function useDeleteGoal() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/api/goals/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["goals"] });
     },
   });
 }

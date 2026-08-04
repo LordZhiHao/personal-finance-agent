@@ -9,6 +9,7 @@ from backend.config import CORS_ALLOWED_ORIGINS  # noqa: E402
 from backend.routers import (  # noqa: E402
     accounts,
     auth_routes,
+    budgets,
     categories,
     chat,
     investments,
@@ -48,6 +49,8 @@ app.include_router(accounts.router)
 app.include_router(categories.router)
 app.include_router(chat.router)
 app.include_router(memories.router)
+app.include_router(budgets.router)
+app.include_router(budgets.goals_router)
 
 
 @app.get("/health")

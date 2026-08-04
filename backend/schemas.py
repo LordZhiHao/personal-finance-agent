@@ -158,6 +158,117 @@ class CategoryCreate(BaseModel):
         return v
 
 
+class BudgetCreate(BaseModel):
+    category: str
+    monthly_limit: float
+    currency: str
+
+    @field_validator("category")
+    @classmethod
+    def category_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Category is required.")
+        return v
+
+    @field_validator("monthly_limit")
+    @classmethod
+    def limit_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("monthly_limit must be greater than 0.")
+        return v
+
+    @field_validator("currency")
+    @classmethod
+    def currency_valid(cls, v: str) -> str:
+        if v not in CURRENCIES:
+            raise ValueError(f"currency must be one of {CURRENCIES}")
+        return v
+
+
+class BudgetUpdate(BaseModel):
+    """All fields optional for partial updates — only fields the client actually changed are sent."""
+    category: str | None = None
+    monthly_limit: float | None = None
+    currency: str | None = None
+
+    @field_validator("monthly_limit")
+    @classmethod
+    def limit_positive(cls, v: float | None) -> float | None:
+        if v is not None and v <= 0:
+            raise ValueError("monthly_limit must be greater than 0.")
+        return v
+
+    @field_validator("currency")
+    @classmethod
+    def currency_valid(cls, v: str | None) -> str | None:
+        if v is not None and v not in CURRENCIES:
+            raise ValueError(f"currency must be one of {CURRENCIES}")
+        return v
+
+
+class GoalCreate(BaseModel):
+    name: str
+    target_amount: float
+    currency: str
+    target_date: date | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Name is required.")
+        return v
+
+    @field_validator("target_amount")
+    @classmethod
+    def target_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("target_amount must be greater than 0.")
+        return v
+
+    @field_validator("currency")
+    @classmethod
+    def currency_valid(cls, v: str) -> str:
+        if v not in CURRENCIES:
+            raise ValueError(f"currency must be one of {CURRENCIES}")
+        return v
+
+
+class GoalUpdate(BaseModel):
+    """All fields optional for partial updates — only fields the client actually changed are sent."""
+    name: str | None = None
+    target_amount: float | None = None
+    currency: str | None = None
+    target_date: date | None = None
+
+    @field_validator("target_amount")
+    @classmethod
+    def target_positive(cls, v: float | None) -> float | None:
+        if v is not None and v <= 0:
+            raise ValueError("target_amount must be greater than 0.")
+        return v
+
+    @field_validator("currency")
+    @classmethod
+    def currency_valid(cls, v: str | None) -> str | None:
+        if v is not None and v not in CURRENCIES:
+            raise ValueError(f"currency must be one of {CURRENCIES}")
+        return v
+
+
+class GoalContribute(BaseModel):
+    amount: float
+
+    @field_validator("amount")
+    @classmethod
+    def amount_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("amount must be greater than 0.")
+        return v
+
+
 class MemoryCreate(BaseModel):
     content: str
 

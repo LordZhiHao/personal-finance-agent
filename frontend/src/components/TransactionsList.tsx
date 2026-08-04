@@ -1,11 +1,36 @@
 import { useState } from "react";
 import { format, parseISO } from "date-fns";
+import { Paperclip } from "lucide-react";
 import type { Account, Transaction } from "../types";
 import { formatMoney } from "../lib/format";
 import { groupTransactionsByDay } from "../lib/dates";
 import { iconForCategory } from "../lib/categoryIcons";
 import { IconBadge } from "./ui";
 import { EditTransactionDialog } from "./EditTransactionDialog";
+import { useTransactionReceipt } from "../hooks/api";
+
+function ReceiptButton({ transactionId }: { transactionId: string }) {
+  const receiptQuery = useTransactionReceipt(transactionId);
+
+  async function handleClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    const result = await receiptQuery.refetch();
+    if (result.data?.url) window.open(result.data.url, "_blank", "noopener,noreferrer");
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={receiptQuery.isFetching}
+      title="View receipt"
+      className="shrink-0 p-1 rounded-md hover:bg-black/[0.04]"
+      style={{ color: "var(--text-muted)" }}
+    >
+      <Paperclip size={14} />
+    </button>
+  );
+}
 
 export function TransactionsList({
   transactions,
@@ -57,11 +82,13 @@ export function TransactionsList({
                 {day.transactions.map((t) => {
                   const Icon = iconForCategory(t.category);
                   return (
-                    <button
+                    <div
                       key={t.id}
-                      type="button"
+                      role="button"
+                      tabIndex={0}
                       onClick={() => setEditing(t)}
-                      className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-black/[0.02] text-left transition-colors"
+                      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setEditing(t)}
+                      className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-black/[0.02] text-left transition-colors cursor-pointer"
                     >
                       <IconBadge icon={<Icon size={18} />} tint="neutral" />
                       <div className="flex-1 min-w-0">
@@ -72,13 +99,14 @@ export function TransactionsList({
                           {t.accounts?.name ?? "—"}
                         </p>
                       </div>
+                      {t.receipt_id && <ReceiptButton transactionId={t.id} />}
                       <span
                         className="text-sm font-semibold shrink-0"
                         style={{ color: t.amount < 0 ? "var(--tint-red-text)" : "var(--tint-green-text)" }}
                       >
                         {formatMoney(t.amount, t.currency)}
                       </span>
-                    </button>
+                    </div>
                   );
                 })}
               </div>

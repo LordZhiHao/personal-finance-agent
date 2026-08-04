@@ -3,6 +3,8 @@ from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
 
 from db.supabase import get_account_ids_for_user, get_client
+from utils.constants import DEFAULT_CURRENCY
+from utils.fx import convert
 
 
 def summarize_transactions(txns: list[dict]) -> dict:
@@ -27,6 +29,24 @@ def summarize_transactions(txns: list[dict]) -> dict:
         "savings_rate": savings_rate,
         "by_category": by_category,
     }
+
+
+def budget_status(txns: list[dict], budgets: list[dict]) -> list[dict]:
+    """Month-to-date spend vs. each budgeted category's monthly_limit. `txns` should
+    already be scoped to the current calendar month — shared by the finance agent's
+    get_budget_status tool, GET /api/budgets/status, and scheduler/user_budgets.py's
+    over-limit poll, so all three agree on the same numbers."""
+    by_category = summarize_transactions(txns)["by_category"]
+    return [
+        {
+            "id": b["id"],
+            "category": b["category"],
+            "monthly_limit": b["monthly_limit"],
+            "currency": b["currency"],
+            "spent": by_category.get(b["category"], 0.0),
+        }
+        for b in budgets
+    ]
 
 
 def month_comparison(txns: list[dict]) -> list[dict]:
@@ -63,7 +83,7 @@ def month_comparison(txns: list[dict]) -> list[dict]:
     return rows
 
 
-def get_weekly_data(user_id: str) -> dict:
+def get_weekly_data(user_id: str, display_currency: str = DEFAULT_CURRENCY) -> dict:
     db = get_client()
     today = date.today()
     # Last full Mon–Sun window
@@ -101,7 +121,7 @@ def get_weekly_data(user_id: str) -> dict:
         if s["account_id"] not in seen:
             seen[s["account_id"]] = s
     latest_snapshots = list(seen.values())
-    total_assets = sum(s["total_value"] for s in latest_snapshots)
+    total_assets = sum(convert(s["total_value"], s["currency"], display_currency) for s in latest_snapshots)
 
     return {
         "week_start": week_start,
@@ -109,4 +129,5 @@ def get_weekly_data(user_id: str) -> dict:
         **summary,
         "snapshots": latest_snapshots,
         "total_assets": total_assets,
+        "currency": display_currency,
     }

@@ -16,19 +16,30 @@ export const CATEGORICAL = [
 ] as const;
 
 // A 9th+ series is never a generated/wrapped hue (that repaints two unrelated
-// entities the same color) — it folds to this neutral instead.
+// entities the same color) — it folds to this neutral instead. 8 isn't an
+// arbitrary cap: it's the measured ceiling for this ramp's hue/lightness
+// range — `node scripts/validate_palette.js --ordinal` (dataviz skill) on a
+// 9-step interpolation of these same endpoints fails the adjacent-ΔL >= 0.06
+// check (steps land ~0.05 apart), so a 9th distinguishable shade isn't
+// available in this hue without leaving the validated lightness band.
 export const NEUTRAL_FALLBACK = "var(--text-muted)";
 
-// Bit-spread traversal of the 8 ramp slots so a low item count (the common
-// case — 2-4 brokers/currencies, up to 8 expense categories) lands on
-// well-separated shades instead of clustering at the lightest end, now that
-// CATEGORICAL is a monochrome ramp rather than 8 distinct hues. A pure fixed
-// reindex — colorForKey's "stable by key" guarantee is unaffected.
-const SPREAD_ORDER = [0, 7, 3, 5, 1, 6, 2, 4];
+// Proportionally spreads however many series are actually present (up to the
+// 8 validated slots) across the full light->dark range, so the ramp always
+// reads as one smooth gradient scaled to the real count — 2 series land far
+// apart (light + dark), 8 fill in every step — rather than a fixed lookup
+// table tuned for one specific count. `total` beyond 8 still maps its first
+// 8 keys 1:1 onto the 8 slots (no further compression, which would breach
+// the validated ΔL floor above); a 9th+ key is caught by the range check.
+function spreadIndex(index: number, total: number): number {
+  const slots = Math.min(total, CATEGORICAL.length);
+  if (slots <= 1) return 0;
+  return Math.round((index * (CATEGORICAL.length - 1)) / (slots - 1));
+}
 
-export function categoricalColor(index: number): string {
-  if (index < 0 || index >= CATEGORICAL.length) return NEUTRAL_FALLBACK;
-  return CATEGORICAL[SPREAD_ORDER[index]];
+export function categoricalColor(index: number, total: number = CATEGORICAL.length): string {
+  if (index < 0 || index >= CATEGORICAL.length || index >= total) return NEUTRAL_FALLBACK;
+  return CATEGORICAL[spreadIndex(index, total)];
 }
 
 // Stable key -> color assignment so a series keeps its color across
@@ -36,7 +47,7 @@ export function categoricalColor(index: number): string {
 // Keys beyond the 8 validated slots fold to the neutral fallback rather than
 // wrapping onto (and colliding with) an earlier key's color.
 export function colorForKey(key: string, knownKeys: string[]): string {
-  return categoricalColor(knownKeys.indexOf(key));
+  return categoricalColor(knownKeys.indexOf(key), knownKeys.length);
 }
 
 // Salary and Investment are income-only (every category-colored chart filters to

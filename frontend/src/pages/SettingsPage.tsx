@@ -5,16 +5,24 @@ import { z } from "zod";
 import { Card } from "../components/ui/Card";
 import { Button, Field, Input, Overlay, Select } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
+import { formatMoney } from "../lib/format";
 import {
   useAccounts,
+  useBudgetStatus,
+  useContributeToGoal,
   useCreateAccount,
+  useCreateBudget,
   useCreateCategory,
+  useCreateGoal,
   useCreateMemory,
   useCustomCategories,
   useDeleteAccount,
+  useDeleteBudget,
   useDeleteCategory,
+  useDeleteGoal,
   useDeleteMemory,
   useGenerateTelegramLinkCode,
+  useGoals,
   useMemories,
   useMeta,
   useUpdateAccount,
@@ -22,7 +30,7 @@ import {
   useUpdateMainCurrency,
   useUpdateTheme,
 } from "../hooks/api";
-import type { Account, CustomCategory, Memory, Meta } from "../types";
+import type { Account, BudgetStatus, CustomCategory, Goal, Memory, Meta } from "../types";
 
 const accountSchema = z.object({
   name: z.string().min(1, "Name is required."),
@@ -41,6 +49,24 @@ const memorySchema = z.object({
   content: z.string().min(1, "Please enter something to remember."),
 });
 type MemoryFormValues = z.infer<typeof memorySchema>;
+
+const budgetSchema = z.object({
+  category: z.string().min(1, "Category is required."),
+  monthly_limit: z.coerce.number().positive("Must be greater than 0."),
+});
+type BudgetFormValues = z.infer<typeof budgetSchema>;
+
+const goalSchema = z.object({
+  name: z.string().min(1, "Name is required."),
+  target_amount: z.coerce.number().positive("Must be greater than 0."),
+  target_date: z.string().optional(),
+});
+type GoalFormValues = z.infer<typeof goalSchema>;
+
+const contributeSchema = z.object({
+  amount: z.coerce.number().positive("Must be greater than 0."),
+});
+type ContributeFormValues = z.infer<typeof contributeSchema>;
 
 function AccountDialog({
   account,
@@ -396,6 +422,264 @@ function MemoriesCard() {
   );
 }
 
+function ProgressBar({ fraction, overBudget }: { fraction: number; overBudget: boolean }) {
+  const pct = Math.max(0, Math.min(1, fraction)) * 100;
+  return (
+    <div
+      className="w-full h-2 mt-1"
+      style={{ background: "var(--gridline)", borderRadius: "var(--radius-control)" }}
+    >
+      <div
+        className="h-2"
+        style={{
+          width: `${pct}%`,
+          background: overBudget ? "var(--tint-red-text)" : "var(--brand)",
+          borderRadius: "var(--radius-control)",
+        }}
+      />
+    </div>
+  );
+}
+
+function BudgetRow({ budget }: { budget: BudgetStatus }) {
+  const deleteMutation = useDeleteBudget();
+  const overBudget = budget.spent > budget.monthly_limit;
+
+  function handleDelete() {
+    if (!window.confirm(`Remove the budget for ${budget.category}?`)) return;
+    deleteMutation.mutate(budget.id);
+  }
+
+  return (
+    <div className="py-2" style={{ borderBottom: "1px solid var(--gridline)" }}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm" style={{ color: "var(--text-primary)" }}>
+          {budget.category}
+        </p>
+        <div className="flex items-center gap-2">
+          <span
+            className="text-xs"
+            style={{ color: overBudget ? "var(--tint-red-text)" : "var(--text-secondary)" }}
+          >
+            {formatMoney(budget.spent, budget.currency)} / {formatMoney(budget.monthly_limit, budget.currency)}
+          </span>
+          <Button
+            variant="ghost"
+            onClick={handleDelete}
+            disabled={deleteMutation.isPending}
+            style={{ color: "var(--tint-red-text)" }}
+          >
+            Delete
+          </Button>
+        </div>
+      </div>
+      <ProgressBar fraction={budget.spent / budget.monthly_limit} overBudget={overBudget} />
+    </div>
+  );
+}
+
+function BudgetsCard() {
+  const statusQuery = useBudgetStatus();
+  const metaQuery = useMeta();
+  const { mainCurrency } = useAuth();
+  const mutation = useCreateBudget();
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<BudgetFormValues>({ resolver: zodResolver(budgetSchema), defaultValues: { category: "", monthly_limit: 0 } });
+
+  return (
+    <Card>
+      <h2 className="text-sm font-semibold mb-1" style={{ color: "var(--text-heading)" }}>
+        Monthly Budgets
+      </h2>
+      <p className="text-sm mb-3" style={{ color: "var(--text-secondary)" }}>
+        Set a monthly spending limit per category — Finn will let you know when you go over.
+      </p>
+      {(statusQuery.data?.length ?? 0) > 0 && (
+        <div className="mb-3">
+          {statusQuery.data!.map((b) => (
+            <BudgetRow key={b.id} budget={b} />
+          ))}
+        </div>
+      )}
+      {statusQuery.data?.length === 0 && (
+        <p className="text-sm py-1" style={{ color: "var(--text-secondary)" }}>
+          No budgets set yet.
+        </p>
+      )}
+      <form
+        onSubmit={handleSubmit((values) => {
+          mutation.mutate(
+            { category: values.category, monthly_limit: values.monthly_limit, currency: mainCurrency },
+            { onSuccess: () => reset() },
+          );
+        })}
+        className="flex flex-wrap items-end gap-2 mt-2"
+      >
+        <label className="flex flex-col gap-1 min-w-[160px]">
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            Category
+          </span>
+          <Select {...register("category")} className="w-full">
+            <option value="">Select…</option>
+            {metaQuery.data?.categories.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <label className="flex flex-col gap-1 w-32">
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            Monthly limit ({mainCurrency})
+          </span>
+          <Input type="number" step="0.01" {...register("monthly_limit")} className="w-full" />
+        </label>
+        <Button type="submit" variant="primary" disabled={isSubmitting || mutation.isPending}>
+          {mutation.isPending ? "Saving…" : "＋ Add Budget"}
+        </Button>
+      </form>
+      {(errors.category || errors.monthly_limit) && (
+        <p className="text-xs mt-1" style={{ color: "var(--tint-red-text)" }}>
+          {errors.category?.message || errors.monthly_limit?.message}
+        </p>
+      )}
+    </Card>
+  );
+}
+
+function GoalRow({ goal }: { goal: Goal }) {
+  const deleteMutation = useDeleteGoal();
+  const contributeMutation = useContributeToGoal();
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { isSubmitting },
+  } = useForm<ContributeFormValues>({ resolver: zodResolver(contributeSchema), defaultValues: { amount: 0 } });
+  const fraction = goal.target_amount > 0 ? goal.current_amount / goal.target_amount : 0;
+
+  function handleDelete() {
+    if (!window.confirm(`Remove the goal "${goal.name}"?`)) return;
+    deleteMutation.mutate(goal.id);
+  }
+
+  return (
+    <div className="py-2" style={{ borderBottom: "1px solid var(--gridline)" }}>
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <p className="text-sm" style={{ color: "var(--text-primary)" }}>
+            {goal.name}
+          </p>
+          <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+            {formatMoney(goal.current_amount, goal.currency)} / {formatMoney(goal.target_amount, goal.currency)}
+            {goal.target_date ? ` · by ${goal.target_date}` : ""}
+          </span>
+        </div>
+        <Button
+          variant="ghost"
+          onClick={handleDelete}
+          disabled={deleteMutation.isPending}
+          style={{ color: "var(--tint-red-text)" }}
+        >
+          Delete
+        </Button>
+      </div>
+      <ProgressBar fraction={fraction} overBudget={false} />
+      <form
+        onSubmit={handleSubmit((values) => {
+          contributeMutation.mutate({ id: goal.id, amount: values.amount }, { onSuccess: () => reset() });
+        })}
+        className="flex items-center gap-2 mt-2"
+      >
+        <Input type="number" step="0.01" {...register("amount")} className="w-28" placeholder="Amount" />
+        <Button type="submit" variant="outline" disabled={isSubmitting || contributeMutation.isPending}>
+          {contributeMutation.isPending ? "Adding…" : "Add contribution"}
+        </Button>
+      </form>
+    </div>
+  );
+}
+
+function GoalsCard() {
+  const goalsQuery = useGoals();
+  const { mainCurrency } = useAuth();
+  const mutation = useCreateGoal();
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<GoalFormValues>({ resolver: zodResolver(goalSchema), defaultValues: { name: "", target_amount: 0, target_date: "" } });
+
+  return (
+    <Card>
+      <h2 className="text-sm font-semibold mb-1" style={{ color: "var(--text-heading)" }}>
+        Savings Goals
+      </h2>
+      <p className="text-sm mb-3" style={{ color: "var(--text-secondary)" }}>
+        Track progress toward a savings target. Add contributions here or by telling Finn.
+      </p>
+      {(goalsQuery.data?.length ?? 0) > 0 && (
+        <div className="mb-3">
+          {goalsQuery.data!.map((g) => (
+            <GoalRow key={g.id} goal={g} />
+          ))}
+        </div>
+      )}
+      {goalsQuery.data?.length === 0 && (
+        <p className="text-sm py-1" style={{ color: "var(--text-secondary)" }}>
+          No goals yet.
+        </p>
+      )}
+      <form
+        onSubmit={handleSubmit((values) => {
+          mutation.mutate(
+            {
+              name: values.name,
+              target_amount: values.target_amount,
+              currency: mainCurrency,
+              target_date: values.target_date || undefined,
+            },
+            { onSuccess: () => reset() },
+          );
+        })}
+        className="flex flex-wrap items-end gap-2 mt-2"
+      >
+        <label className="flex flex-col gap-1 flex-1 min-w-[160px]">
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            Goal name
+          </span>
+          <Input {...register("name")} placeholder="e.g. House downpayment" className="w-full" />
+        </label>
+        <label className="flex flex-col gap-1 w-32">
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            Target ({mainCurrency})
+          </span>
+          <Input type="number" step="0.01" {...register("target_amount")} className="w-full" />
+        </label>
+        <label className="flex flex-col gap-1 w-40">
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            Target date (optional)
+          </span>
+          <Input type="date" {...register("target_date")} className="w-full" />
+        </label>
+        <Button type="submit" variant="primary" disabled={isSubmitting || mutation.isPending}>
+          {mutation.isPending ? "Saving…" : "＋ Add Goal"}
+        </Button>
+      </form>
+      {(errors.name || errors.target_amount) && (
+        <p className="text-xs mt-1" style={{ color: "var(--tint-red-text)" }}>
+          {errors.name?.message || errors.target_amount?.message}
+        </p>
+      )}
+    </Card>
+  );
+}
+
 function MainCurrencyCard() {
   const { mainCurrency, refreshMe } = useAuth();
   const metaQuery = useMeta();
@@ -572,6 +856,8 @@ export function SettingsPage() {
         <div className="lg:col-span-8 flex flex-col gap-4">
           <AccountsCard />
           <CategoriesCard />
+          <BudgetsCard />
+          <GoalsCard />
           <MemoriesCard />
         </div>
       </div>

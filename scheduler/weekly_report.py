@@ -1,14 +1,16 @@
 from db.supabase import get_all_users
 from scheduler.emailer import send_email
 from scheduler.report_builder import get_weekly_data
+from utils.constants import DEFAULT_CURRENCY
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 
 def format_telegram_message(data: dict) -> str:
+    currency = data["currency"]
     cat_lines = "\n".join(
-        f"  {'📍' if i == 0 else '▪️'} {cat}: SGD {amt:,.2f}"
+        f"  {'📍' if i == 0 else '▪️'} {cat}: {currency} {amt:,.2f}"
         for i, (cat, amt) in enumerate(data["by_category"].items())
     ) or "  No expenses this week 🎉"
 
@@ -22,9 +24,9 @@ def format_telegram_message(data: dict) -> str:
 {data['week_start'].strftime('%d %b')} – {data['week_end'].strftime('%d %b %Y')}
 
 💰 *Income & Expenses*
-├ Income:    SGD {data['income']:,.2f}
-├ Spent:     SGD {data['expenses']:,.2f}
-├ Net:       SGD {data['net']:+,.2f}
+├ Income:    {currency} {data['income']:,.2f}
+├ Spent:     {currency} {data['expenses']:,.2f}
+├ Net:       {currency} {data['net']:+,.2f}
 └ Savings:   {data['savings_rate']}%
 
 🧾 *Spend by Category*
@@ -32,7 +34,7 @@ def format_telegram_message(data: dict) -> str:
 
 🏦 *Portfolio Snapshot*
 {snapshot_lines}
-└ Total: SGD {data['total_assets']:,.2f}
+└ Total: {currency} {data['total_assets']:,.2f}
 
 _Next update: Sunday 8pm SGT_
 """.strip()
@@ -43,7 +45,7 @@ async def send_weekly_report(bot):
     logger.info("send_weekly_report: building reports for %d user(s)", len(users))
     for user in users:
         try:
-            data = get_weekly_data(user["id"])
+            data = get_weekly_data(user["id"], user.get("main_currency", DEFAULT_CURRENCY))
         except Exception:
             logger.exception("send_weekly_report: failed building data for user_id=%s", user["id"])
             continue
