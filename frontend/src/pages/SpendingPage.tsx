@@ -94,8 +94,8 @@ export function SpendingPage() {
     [filtered, classifications],
   );
 
-  const { monthlyIncome, monthlySpend, monthlyInvested, savingsRate } = useMemo(() => {
-    if (filtered.length === 0) return { monthlyIncome: 0, monthlySpend: 0, monthlyInvested: 0, savingsRate: 0 };
+  const { monthlyIncome, monthlySpend, savingsRate } = useMemo(() => {
+    if (filtered.length === 0) return { monthlyIncome: 0, monthlySpend: 0, savingsRate: 0 };
     const latestMonth = filtered.reduce((max, t) => (monthKey(t.date) > max ? monthKey(t.date) : max), "");
     const income = filtered
       .filter((t) => t.amount > 0 && monthKey(t.date) === latestMonth)
@@ -171,12 +171,6 @@ export function SpendingPage() {
         icon={<Banknote size={20} />}
         tint="green"
       />
-      {/* <StatCard
-        label="Invested"
-        value={formatMoney(monthlyInvested, mainCurrency)}
-        icon={<TrendingUp size={20} />}
-        tint="amber"
-      /> */}
       <StatCard label="Savings Rate" value={`${savingsRate}%`} icon={<PiggyBank size={20} />} tint="amber" />
       <StatCard
         label="Spend Trend"
