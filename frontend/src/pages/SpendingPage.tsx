@@ -171,12 +171,12 @@ export function SpendingPage() {
         icon={<Banknote size={20} />}
         tint="green"
       />
-      <StatCard
+      {/* <StatCard
         label="Invested"
         value={formatMoney(monthlyInvested, mainCurrency)}
         icon={<TrendingUp size={20} />}
         tint="amber"
-      />
+      /> */}
       <StatCard label="Savings Rate" value={`${savingsRate}%`} icon={<PiggyBank size={20} />} tint="amber" />
       <StatCard
         label="Spend Trend"
