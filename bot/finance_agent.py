@@ -34,13 +34,24 @@ from db.supabase import (
     get_user_goals,
     get_user_memories,
     get_user_reminders,
+    query_records,
     update_account,
     update_custom_category,
     update_user,
 )
 from scheduler.report_builder import budget_status, month_comparison, summarize_transactions
 from utils.balances import compute_account_balances, compute_net_worth_trend
-from utils.constants import ACCOUNT_TYPES, CURRENCIES, DASHBOARD_URL, DEFAULT_CURRENCY, THEME_COLORS, TICKER_YFINANCE_MAP
+from utils.constants import (
+    ACCOUNT_TYPES,
+    CURRENCIES,
+    DASHBOARD_URL,
+    DEFAULT_CURRENCY,
+    QUERYABLE_MAX_LIMIT,
+    QUERYABLE_OPERATORS,
+    QUERYABLE_SCHEMA,
+    THEME_COLORS,
+    TICKER_YFINANCE_MAP,
+)
 from utils.equity_pricing import fetch_dividend_forecast
 from utils.logger import get_logger
 from utils.period import parse_period
@@ -120,7 +131,13 @@ You can also surface likely recurring subscriptions (list_subscriptions) detecte
 ~6 months of transactions, and schedule a reminder ahead of one's next expected charge
 (create_reminder_from_subscription). This detection is heuristic — pattern-matched from transaction
 history, not a real subscription list — so mention that it might miss something irregular or occasionally
-flag a false positive, and suggest the user double-check before relying on it."""
+flag a false positive, and suggest the user double-check before relying on it.
+
+If a question doesn't fit any tool above (e.g. filtering transactions/trades/snapshots by an arbitrary
+field or value combination), use query_financial_records as a fallback — it reads raw rows from
+transactions, portfolio_events, or asset_snapshots with your own filters, always scoped to this user's
+own data. Always give it a start_date/end_date. If its result says truncated, narrow your filters and
+call it again rather than summarizing a partial result as if it were complete."""
 
 
 def _memories_block(memories: list[dict]) -> str:
@@ -748,6 +765,62 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_financial_records",
+            "description": (
+                "Fallback for ad-hoc questions the tools above don't cover, e.g. 'transactions "
+                "over $200 in June', 'all my SELL trades on CSPX', 'transactions at Grab'. Prefer "
+                "the specific tools above (get_spending_summary, get_holdings, get_portfolio_trades, "
+                "etc.) for anything they already handle — only use this when nothing else fits. "
+                "Reads raw, filtered rows from one table; never writes. Note: transactions.amount is "
+                "negative for expenses, positive for income."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "table": {
+                        "type": "string",
+                        "enum": list(QUERYABLE_SCHEMA.keys()),
+                        "description": "Which table to read from.",
+                    },
+                    "start_date": {"type": "string", "description": "YYYY-MM-DD, inclusive. Required."},
+                    "end_date": {"type": "string", "description": "YYYY-MM-DD, inclusive. Required."},
+                    "filters": {
+                        "type": "array",
+                        "description": "Optional extra conditions, ANDed together.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "field": {
+                                    "type": "string",
+                                    "description": "A field name valid for the chosen table.",
+                                },
+                                "op": {"type": "string", "enum": list(QUERYABLE_OPERATORS.keys())},
+                                "value": {
+                                    "description": "The value to compare against. A list of values when op is 'in'."
+                                },
+                            },
+                            "required": ["field", "op", "value"],
+                        },
+                    },
+                    "group_by": {
+                        "type": "string",
+                        "description": (
+                            "Optional field to group by, returning per-group count (and sum, where "
+                            "meaningful) alongside the raw rows. Must be one of that table's groupable fields."
+                        ),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": f"Max rows to return (1-{QUERYABLE_MAX_LIMIT}). Defaults to {QUERYABLE_MAX_LIMIT}.",
+                    },
+                },
+                "required": ["table", "start_date", "end_date"],
+            },
+        },
+    },
 ]
 
 
@@ -1046,6 +1119,37 @@ def _run_tool(name: str, args: dict, user_id: str, currency: str) -> dict:
             day_of_month=remind_date.day,
         )
         return {"status": "created", "reminder_id": reminder["id"]}
+    if name == "query_financial_records":
+        table = args.get("table")
+        if table not in QUERYABLE_SCHEMA:
+            return {"error": f"table must be one of {', '.join(QUERYABLE_SCHEMA)}"}
+        schema = QUERYABLE_SCHEMA[table]
+        start_date, end_date = args.get("start_date"), args.get("end_date")
+        if not start_date or not end_date:
+            return {"error": "start_date and end_date are both required"}
+        filters = args.get("filters") or []
+        for f in filters:
+            field, op = f.get("field"), f.get("op")
+            if field not in schema["fields"]:
+                return {"error": f"'{field}' is not a valid field for table '{table}'"}
+            if op not in QUERYABLE_OPERATORS:
+                return {"error": f"op must be one of {', '.join(QUERYABLE_OPERATORS)}"}
+            if op == "like" and schema["fields"][field] != "text":
+                return {"error": f"operator 'like' is not valid for field '{field}'"}
+        group_by = args.get("group_by")
+        if group_by and group_by not in schema["groupable_fields"]:
+            return {"error": f"group_by must be one of {', '.join(schema['groupable_fields'])}"}
+        limit = max(1, min(int(args.get("limit") or QUERYABLE_MAX_LIMIT), QUERYABLE_MAX_LIMIT))
+        try:
+            result = query_records(user_id, table, filters, start_date, end_date, group_by, limit)
+        except Exception as e:
+            return {"error": str(e)}
+        if result["truncated"]:
+            result["note"] = (
+                "Result was truncated at the row limit — narrow the date range or filters "
+                "and retry if you need the full set, rather than treating this as complete."
+            )
+        return result
     return {"error": f"unknown tool {name!r}"}
 
 

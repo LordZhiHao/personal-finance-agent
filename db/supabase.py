@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from supabase import create_client
 
-from utils.constants import CATEGORIES
+from utils.constants import CATEGORIES, QUERYABLE_OPERATORS, QUERYABLE_SCHEMA
 from utils.logger import get_logger
 
 load_dotenv()
@@ -763,6 +763,78 @@ def get_account_cash_totals(user_id: str) -> dict[str, float]:
     for r in rows:
         totals[r["account_id"]] = totals.get(r["account_id"], 0) + r["amount"]
     return totals
+
+
+def _apply_operator(query, field: str, op: str, value, field_type: str):
+    """Applies one already-validated {field, op, value} filter to a supabase-py
+    query builder chain, for query_records below. `field_type` (from
+    QUERYABLE_SCHEMA) further restricts which operators are valid per field —
+    e.g. 'like' only makes sense on text columns."""
+    if op == "like" and field_type != "text":
+        raise ValueError(f"operator 'like' is not valid for field '{field}'")
+    if op == "in":
+        if not isinstance(value, list):
+            raise ValueError("operator 'in' requires a list value")
+        return query.in_(field, value)
+    if op == "like":
+        return query.ilike(field, f"%{value}%")
+    return getattr(query, QUERYABLE_OPERATORS[op])(field, value)
+
+
+def _group_rows(rows: list[dict], group_by: str, metric_field: str | None) -> list[dict]:
+    """Python-side group-by-count(-and-sum) over an already-fetched, already-capped
+    row list — query_records never pushes aggregation into SQL, so nothing beyond
+    SELECT/WHERE/ORDER/LIMIT is ever needed for this tool."""
+    groups: dict = {}
+    for r in rows:
+        key = r.get(group_by)
+        g = groups.setdefault(key, {group_by: key, "count": 0, "sum": 0.0})
+        g["count"] += 1
+        if metric_field:
+            g["sum"] += r.get(metric_field) or 0
+    if not metric_field:
+        for g in groups.values():
+            del g["sum"]
+    return sorted(groups.values(), key=lambda g: g["count"], reverse=True)
+
+
+def query_records(
+    user_id: str,
+    table: str,
+    filters: list[dict],
+    start_date: str | None,
+    end_date: str | None,
+    group_by: str | None,
+    limit: int,
+) -> dict:
+    """Generic, allowlist-scoped read backing bot/finance_agent.py's
+    query_financial_records tool — the agent's fallback for ad-hoc questions that
+    don't fit one of its purpose-built tools. `table` must be a QUERYABLE_SCHEMA key,
+    and every filter's field/op plus group_by must already be validated by the caller
+    against that table's schema (same convention as other tool args re-validated in
+    bot/finance_agent.py::_run_tool, since a DeepSeek tool call's JSON isn't
+    FastAPI/Pydantic-validated). Tenant scoping is applied here unconditionally,
+    regardless of what filters the caller passes in — never left to the LLM."""
+    schema = QUERYABLE_SCHEMA[table]
+    db = get_client()
+    query = db.table(table).select("*")
+    if schema["scope"] == "account":
+        query = query.in_("account_id", get_account_ids_for_user(user_id))
+    else:
+        query = query.eq("user_id", user_id)
+    date_field = schema["date_field"]
+    if start_date:
+        query = query.gte(date_field, start_date)
+    if end_date:
+        query = query.lte(date_field, end_date)
+    for f in filters:
+        field_type = schema["fields"][f["field"]]
+        query = _apply_operator(query, f["field"], f["op"], f["value"], field_type)
+    rows = query.order(date_field, desc=True).limit(limit).execute().data
+    result = {"rows": rows, "row_count": len(rows), "truncated": len(rows) == limit}
+    if group_by:
+        result["grouped"] = _group_rows(rows, group_by, schema.get("metric_field"))
+    return result
 
 
 def delete_transactions(ids: list[str], user_id: str):
