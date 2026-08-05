@@ -11,7 +11,7 @@ import {
   startOfWeek,
   subMonths,
 } from "date-fns";
-import { useTransactions } from "../../hooks/api";
+import { useMeta, useTransactions } from "../../hooks/api";
 import { dailySpendTotals, type DailyTotal } from "../../lib/dates";
 import { SEQUENTIAL } from "../../lib/palette";
 import { formatMoney } from "../../lib/format";
@@ -58,12 +58,15 @@ export function SpendingHeatmap({
   const monthStart = format(startOfMonth(month), "yyyy-MM-dd");
   const monthEnd = format(endOfMonth(month), "yyyy-MM-dd");
   const txQuery = useTransactions(monthStart, monthEnd);
+  const metaQuery = useMeta();
+  const classifications = metaQuery.data?.category_classifications ?? {};
 
   const monthTransactions = useMemo(() => {
     const txns = txQuery.data ?? [];
-    if (!accounts || accounts.length === 0) return txns;
-    return txns.filter((t) => accounts.includes(t.accounts?.name ?? ""));
-  }, [txQuery.data, accounts]);
+    const spendOnly = txns.filter((t) => (classifications[t.category || "Other"] ?? "expense") === "expense");
+    if (!accounts || accounts.length === 0) return spendOnly;
+    return spendOnly.filter((t) => accounts.includes(t.accounts?.name ?? ""));
+  }, [txQuery.data, accounts, classifications]);
 
   const daily = useMemo(() => dailySpendTotals(monthTransactions), [monthTransactions]);
   const totalsByDate = useMemo(() => new Map(daily.map((d) => [d.date, d.total])), [daily]);

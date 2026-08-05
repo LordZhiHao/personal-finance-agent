@@ -26,6 +26,7 @@ def format_telegram_message(data: dict) -> str:
 💰 *Income & Expenses*
 ├ Income:    {currency} {data['income']:,.2f}
 ├ Spent:     {currency} {data['expenses']:,.2f}
+├ Invested:  {currency} {data['invested']:,.2f}
 ├ Net:       {currency} {data['net']:+,.2f}
 └ Savings:   {data['savings_rate']}%
 

@@ -1,24 +1,36 @@
 import { useState } from "react";
-import { Button, Input } from "../components/ui";
+import { Button, Input, Select } from "../components/ui";
 import { useCreateCategory, useCustomCategories, useMeta } from "../hooks/api";
+import type { CategoryClassification } from "../types";
 import type { OnboardingStepProps } from "./OnboardingWizard";
 import { WizardFooter } from "./WizardFooter";
+
+const CLASSIFICATION_LABELS: Record<CategoryClassification, string> = {
+  expense: "Expense",
+  income: "Income",
+  transfer: "Transfer",
+  investment: "Investment",
+};
 
 export function CategoriesStep({ onNext, onBack }: OnboardingStepProps) {
   const metaQuery = useMeta();
   const customQuery = useCustomCategories();
   const mutation = useCreateCategory();
   const [draft, setDraft] = useState("");
+  const [classification, setClassification] = useState<CategoryClassification>("expense");
   const [error, setError] = useState<string | null>(null);
 
   function handleAdd() {
     const name = draft.trim();
     if (!name) return;
     setError(null);
-    mutation.mutate(name, {
-      onSuccess: () => setDraft(""),
-      onError: () => setError("Could not add — it may already exist."),
-    });
+    mutation.mutate(
+      { name, classification },
+      {
+        onSuccess: () => setDraft(""),
+        onError: () => setError("Could not add — it may already exist."),
+      },
+    );
   }
 
   if (!metaQuery.data) return null;
@@ -69,6 +81,17 @@ export function CategoriesStep({ onNext, onBack }: OnboardingStepProps) {
             }
           }}
         />
+        <Select
+          value={classification}
+          onChange={(e) => setClassification(e.target.value as CategoryClassification)}
+          className="w-36"
+        >
+          {Object.entries(CLASSIFICATION_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </Select>
         <Button variant="outline" onClick={handleAdd} disabled={mutation.isPending || !draft.trim()}>
           {mutation.isPending ? "Adding…" : "＋ Add"}
         </Button>

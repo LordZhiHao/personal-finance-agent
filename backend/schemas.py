@@ -3,7 +3,7 @@ from datetime import date as _date
 
 from pydantic import BaseModel, field_validator, model_validator
 
-from utils.constants import ACCOUNT_TYPES, CURRENCIES, PORTFOLIO_ACTIONS
+from utils.constants import ACCOUNT_TYPES, CLASSIFICATIONS, CURRENCIES, PORTFOLIO_ACTIONS
 
 
 class LoginRequest(BaseModel):
@@ -104,14 +104,25 @@ class MeUpdate(BaseModel):
 
 
 class CustomCategoryUpdate(BaseModel):
-    name: str
+    """Both fields optional for partial updates (exclude_unset=True) — a request can
+    rename, reclassify, or both."""
+    name: str | None = None
+    classification: str | None = None
 
     @field_validator("name")
     @classmethod
-    def name_not_blank(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("Category name is required.")
+    def name_not_blank(cls, v: str | None) -> str | None:
+        if v is not None:
+            v = v.strip()
+            if not v:
+                raise ValueError("Category name is required.")
+        return v
+
+    @field_validator("classification")
+    @classmethod
+    def classification_valid(cls, v: str | None) -> str | None:
+        if v is not None and v not in CLASSIFICATIONS:
+            raise ValueError(f"classification must be one of {CLASSIFICATIONS}")
         return v
 
 
@@ -148,6 +159,7 @@ class TransactionCreate(BaseModel):
 
 class CategoryCreate(BaseModel):
     name: str
+    classification: str = "expense"
 
     @field_validator("name")
     @classmethod
@@ -155,6 +167,13 @@ class CategoryCreate(BaseModel):
         v = v.strip()
         if not v:
             raise ValueError("Category name is required.")
+        return v
+
+    @field_validator("classification")
+    @classmethod
+    def classification_valid(cls, v: str) -> str:
+        if v not in CLASSIFICATIONS:
+            raise ValueError(f"classification must be one of {CLASSIFICATIONS}")
         return v
 
 

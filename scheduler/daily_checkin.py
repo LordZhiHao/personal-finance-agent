@@ -1,6 +1,6 @@
 from datetime import date
 
-from db.supabase import get_transactions, get_users_with_telegram
+from db.supabase import get_category_classifications_for_user, get_transactions, get_users_with_telegram
 from scheduler.report_builder import summarize_transactions
 from utils.constants import DEFAULT_CURRENCY
 from utils.formatters import format_money
@@ -9,7 +9,10 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 
-def format_checkin_message(txns: list, today: date, currency: str = DEFAULT_CURRENCY) -> str:
+def format_checkin_message(
+    txns: list, today: date, currency: str = DEFAULT_CURRENCY, classifications: dict[str, str] | None = None,
+) -> str:
+    classifications = classifications or {}
     header = f"🌙 *Daily Check-in* — {today.strftime('%d %b %Y')}"
 
     if not txns:
@@ -26,7 +29,7 @@ def format_checkin_message(txns: list, today: date, currency: str = DEFAULT_CURR
             f"▪️ {t['description']} | {sign}{t['amount']:.2f} {t['currency']} | _{t['category']}_"
         )
 
-    summary = summarize_transactions(txns)
+    summary = summarize_transactions(txns, classifications)
     lines.append("")
     lines.append(f"Total spent today: {format_money(summary['expenses'], currency)}")
     return "\n".join(lines)
@@ -39,7 +42,8 @@ async def send_daily_checkin(bot):
     for user in users:
         try:
             txns = get_transactions(today.isoformat(), today.isoformat(), user["id"])
-            msg = format_checkin_message(txns, today, user.get("main_currency", DEFAULT_CURRENCY))
+            classifications = get_category_classifications_for_user(user["id"])
+            msg = format_checkin_message(txns, today, user.get("main_currency", DEFAULT_CURRENCY), classifications)
             await bot.send_message(chat_id=user["telegram_chat_id"], text=msg, parse_mode="Markdown")
             logger.info("send_daily_checkin: sent to user_id=%s — %d transaction(s) found", user["id"], len(txns))
         except Exception:

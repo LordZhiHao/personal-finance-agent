@@ -6,6 +6,7 @@ import type {
   BalancesSummary,
   Budget,
   BudgetStatus,
+  CategoryClassification,
   ChatResult,
   CustomCategory,
   DividendForecast,
@@ -189,7 +190,8 @@ export function useCustomCategories() {
 export function useCreateCategory() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) => api.post<CustomCategory>("/api/categories", { name }),
+    mutationFn: ({ name, classification }: { name: string; classification?: CategoryClassification }) =>
+      api.post<CustomCategory>("/api/categories", { name, classification }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["meta"] });
       queryClient.invalidateQueries({ queryKey: ["categories"] });
@@ -200,8 +202,8 @@ export function useCreateCategory() {
 export function useUpdateCategory() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) =>
-      api.patch<CustomCategory>(`/api/categories/${id}`, { name }),
+    mutationFn: ({ id, name, classification }: { id: string; name?: string; classification?: CategoryClassification }) =>
+      api.patch<CustomCategory>(`/api/categories/${id}`, { name, classification }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["meta"] });
       queryClient.invalidateQueries({ queryKey: ["categories"] });

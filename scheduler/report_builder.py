@@ -2,41 +2,56 @@ from datetime import date, timedelta
 
 from dateutil.relativedelta import relativedelta
 
-from db.supabase import get_account_ids_for_user, get_client
+from db.supabase import get_account_ids_for_user, get_category_classifications_for_user, get_client
 from utils.constants import DEFAULT_CURRENCY
 from utils.fx import convert
 
 
-def summarize_transactions(txns: list[dict]) -> dict:
+def summarize_transactions(txns: list[dict], classifications: dict[str, str]) -> dict:
     """Income/expense/category aggregation shared by the weekly report and
-    the /expense command — only the date range differs between callers."""
-    income = sum(t["amount"] for t in txns if t["amount"] > 0)
-    expenses = abs(sum(t["amount"] for t in txns if t["amount"] < 0))
-    net = income - expenses
-    savings_rate = round((net / income * 100), 1) if income else 0
+    the /expense command — only the date range differs between callers.
 
+    `classifications` (category name -> "expense" | "income" | "transfer" | "investment",
+    from db.supabase.get_category_classifications_for_user) decides whether a negative-
+    amount row counts as spending. Only "expense"-classified rows count toward `expenses`/
+    `by_category`; "investment"-classified rows are broken out into `invested` instead;
+    "income"/"transfer"-classified rows with a negative amount (e.g. an outgoing transfer)
+    count toward neither — they're not spending and not investing."""
+    income = sum(t["amount"] for t in txns if t["amount"] > 0)
+    expenses = 0.0
+    invested = 0.0
     by_category = {}
     for t in txns:
-        if t["amount"] < 0:
-            cat = t.get("category") or "Other"
-            by_category[cat] = by_category.get(cat, 0) + abs(t["amount"])
+        if t["amount"] >= 0:
+            continue
+        cat = t.get("category") or "Other"
+        amount = abs(t["amount"])
+        classification = classifications.get(cat, "expense")
+        if classification == "investment":
+            invested += amount
+        elif classification == "expense":
+            expenses += amount
+            by_category[cat] = by_category.get(cat, 0) + amount
+    net = income - expenses
+    savings_rate = round((net / income * 100), 1) if income else 0
     by_category = dict(sorted(by_category.items(), key=lambda x: x[1], reverse=True))
 
     return {
         "income": income,
         "expenses": expenses,
+        "invested": invested,
         "net": net,
         "savings_rate": savings_rate,
         "by_category": by_category,
     }
 
 
-def budget_status(txns: list[dict], budgets: list[dict]) -> list[dict]:
+def budget_status(txns: list[dict], budgets: list[dict], classifications: dict[str, str]) -> list[dict]:
     """Month-to-date spend vs. each budgeted category's monthly_limit. `txns` should
     already be scoped to the current calendar month — shared by the finance agent's
     get_budget_status tool, GET /api/budgets/status, and scheduler/user_budgets.py's
     over-limit poll, so all three agree on the same numbers."""
-    by_category = summarize_transactions(txns)["by_category"]
+    by_category = summarize_transactions(txns, classifications)["by_category"]
     return [
         {
             "id": b["id"],
@@ -49,12 +64,14 @@ def budget_status(txns: list[dict], budgets: list[dict]) -> list[dict]:
     ]
 
 
-def month_comparison(txns: list[dict]) -> list[dict]:
+def month_comparison(txns: list[dict], classifications: dict[str, str]) -> list[dict]:
     """Expense-by-category totals across three calendar-month buckets — current,
     previous, and the same month one year ago — mirroring
     frontend/src/lib/dates.ts's monthComparison() so the bot's /compare command
     and the dashboard's MonthComparisonBarChart agree on the same buckets.
-    Sorted descending by current-month spend."""
+    Sorted descending by current-month spend. Only "expense"-classified categories
+    (see summarize_transactions) are included — Investment/Transfer no longer show
+    up as comparison columns."""
     today = date.today()
     current_month = today.replace(day=1)
     previous_month = current_month - relativedelta(months=1)
@@ -63,6 +80,9 @@ def month_comparison(txns: list[dict]) -> list[dict]:
     totals: dict[str, dict[str, float]] = {}
     for t in txns:
         if t["amount"] >= 0:
+            continue
+        cat = t.get("category") or "Other"
+        if classifications.get(cat, "expense") != "expense":
             continue
         t_month = date.fromisoformat(t["date"]).replace(day=1)
         if t_month == current_month:
@@ -74,7 +94,6 @@ def month_comparison(txns: list[dict]) -> list[dict]:
         else:
             continue
 
-        cat = t.get("category") or "Other"
         row = totals.setdefault(cat, {"current": 0.0, "previous": 0.0, "year_ago": 0.0})
         row[bucket] += abs(t["amount"])
 
@@ -104,7 +123,7 @@ def get_weekly_data(user_id: str, display_currency: str = DEFAULT_CURRENCY) -> d
         if account_ids else []
     )
 
-    summary = summarize_transactions(txns)
+    summary = summarize_transactions(txns, get_category_classifications_for_user(user_id))
 
     snapshots = (
         db.table("asset_snapshots")

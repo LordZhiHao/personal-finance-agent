@@ -12,6 +12,19 @@ CATEGORIES = [
     "Other",
 ]
 
+# A category's classification controls whether it counts as spending. "expense" is
+# the default for every built-in not listed here and for every custom category unless
+# the user picks otherwise (see migrations/0015_category_classification.sql). Negative-
+# amount rows in a non-"expense" category are excluded from spend totals/budgets/
+# subscription detection — see scheduler/report_builder.py::summarize_transactions.
+CLASSIFICATIONS = ["expense", "income", "transfer", "investment"]
+
+BUILTIN_CATEGORY_CLASSIFICATIONS = {
+    "Salary": "income",
+    "Investment": "investment",
+    "Transfer": "transfer",
+}
+
 CURRENCIES = ["SGD", "MYR", "USD"]
 
 DEFAULT_CURRENCY = "SGD"

@@ -23,6 +23,7 @@ from db.supabase import (
     delete_user_memory,
     delete_user_reminder,
     get_accounts,
+    get_category_classifications_for_user,
     get_custom_categories_full,
     get_held_positions,
     get_portfolio_events,
@@ -43,6 +44,7 @@ from scheduler.report_builder import budget_status, month_comparison, summarize_
 from utils.balances import compute_account_balances, compute_net_worth_trend
 from utils.constants import (
     ACCOUNT_TYPES,
+    CLASSIFICATIONS,
     CURRENCIES,
     DASHBOARD_URL,
     DEFAULT_CURRENCY,
@@ -84,6 +86,15 @@ in {currency} (this user's chosen main currency) unless a tool result states oth
 doesn't specify a timeframe. When a question refers to "this month" or "the current month," use the
 "month_to_date" period, not "month" — "month" is a trailing ~30-day window, while "month_to_date" is the
 current calendar month from the 1st.
+
+Every category has a classification: "expense" (real spending), "income", "transfer" (moving money between
+the user's own accounts), or "investment" (e.g. a brokerage top-up). get_spending_summary/
+get_month_comparison/get_budget_status/list_subscriptions only count "expense"-classified transactions
+toward spend/budgets/subscriptions — money moved into an "investment"-classified category shows up
+separately as `invested` in get_spending_summary's result, not as spending. Talk about the two separately
+("you spent $X and invested $Y this month"), don't add them together as if both were spending.
+create_category lets the user mark their own custom category with one of these four classifications
+(defaults to "expense"); create_budget rejects a non-"expense" category.
 
 When asked about a specific ticker's performance (e.g. "how's CSPX doing"), call get_holdings and find
 that ticker in the results, then explicitly state its average buy price vs. current price and say
@@ -442,10 +453,25 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "create_category",
-            "description": "Add a new custom transaction category for the user. Executes immediately, no confirmation needed.",
+            "description": (
+                "Add a new custom transaction category for the user. Executes immediately, no "
+                "confirmation needed."
+            ),
             "parameters": {
                 "type": "object",
-                "properties": {"name": {"type": "string"}},
+                "properties": {
+                    "name": {"type": "string"},
+                    "classification": {
+                        "type": "string",
+                        "enum": CLASSIFICATIONS,
+                        "description": (
+                            "Whether this category counts as spending. Defaults to 'expense' if omitted. "
+                            "Use 'investment' for a category like a personal brokerage/crypto DCA, 'transfer' "
+                            "for moving money between the user's own accounts, 'income' for money coming in — "
+                            "none of these three count toward spend totals or budgets."
+                        ),
+                    },
+                },
                 "required": ["name"],
             },
         },
@@ -838,11 +864,11 @@ def _catch_lookup(fn, *args, **kwargs):
 _TIME_OF_DAY_RE = re.compile(r"[0-2]\d:[0-5]\d")
 
 
-def _run_tool(name: str, args: dict, user_id: str, currency: str) -> dict:
+def _run_tool(name: str, args: dict, user_id: str, currency: str, classifications: dict[str, str]) -> dict:
     if name == "get_spending_summary":
         start, end, label = parse_period(args.get("period"))
         txns = get_transactions(start.isoformat(), end.isoformat(), user_id)
-        return {"period": label, **summarize_transactions(txns)}
+        return {"period": label, **summarize_transactions(txns, classifications)}
     if name == "get_transactions_list":
         start, end, label = parse_period(args.get("period"))
         txns = get_transactions(start.isoformat(), end.isoformat(), user_id)
@@ -865,7 +891,7 @@ def _run_tool(name: str, args: dict, user_id: str, currency: str) -> dict:
     if name == "get_month_comparison":
         start = date.today() - relativedelta(months=13)
         txns = get_transactions(start.isoformat(), date.today().isoformat(), user_id)
-        return {"categories": month_comparison(txns)[:8]}
+        return {"categories": month_comparison(txns, classifications)[:8]}
     if name == "get_dividend_forecast":
         positions = get_held_positions(user_id)
         tickers = sorted({p["ticker"] for p in positions})
@@ -954,7 +980,10 @@ def _run_tool(name: str, args: dict, user_id: str, currency: str) -> dict:
         cat_name = (args.get("name") or "").strip()
         if not cat_name:
             return {"error": "name is required"}
-        category = create_custom_category(user_id, cat_name)
+        cat_classification = args.get("classification") or "expense"
+        if cat_classification not in CLASSIFICATIONS:
+            return {"error": f"classification must be one of {CLASSIFICATIONS}"}
+        category = create_custom_category(user_id, cat_name, cat_classification)
         return {"status": "created", "category_id": category["id"]}
     if name == "rename_category":
         category_id = (args.get("category_id") or "").strip()
@@ -963,7 +992,7 @@ def _run_tool(name: str, args: dict, user_id: str, currency: str) -> dict:
             return {"error": "category_id is required"}
         if not new_name:
             return {"error": "name is required"}
-        _, err = _catch_lookup(update_custom_category, category_id, new_name, user_id)
+        _, err = _catch_lookup(update_custom_category, category_id, user_id, {"name": new_name})
         return {"error": err} if err else {"status": "updated"}
     if name == "delete_category":
         category_id = (args.get("category_id") or "").strip()
@@ -1041,6 +1070,11 @@ def _run_tool(name: str, args: dict, user_id: str, currency: str) -> dict:
         monthly_limit = args.get("monthly_limit")
         if not category:
             return {"error": "category is required"}
+        if classifications.get(category, "expense") != "expense":
+            return {
+                "error": f"'{category}' is classified as {classifications.get(category)}, not an expense "
+                "category — budgets can only be set on spending categories."
+            }
         if not isinstance(monthly_limit, (int, float)) or monthly_limit <= 0:
             return {"error": "monthly_limit must be greater than 0"}
         budget_currency = args.get("currency") or currency
@@ -1062,7 +1096,7 @@ def _run_tool(name: str, args: dict, user_id: str, currency: str) -> dict:
             return {"budgets": []}
         start, end, _ = parse_period("month_to_date")
         txns = get_transactions(start.isoformat(), end.isoformat(), user_id)
-        return {"budgets": budget_status(txns, budgets)}
+        return {"budgets": budget_status(txns, budgets, classifications)}
     if name == "create_goal":
         goal_name = (args.get("name") or "").strip()
         target_amount = args.get("target_amount")
@@ -1095,7 +1129,7 @@ def _run_tool(name: str, args: dict, user_id: str, currency: str) -> dict:
     if name == "list_subscriptions":
         start = date.today() - relativedelta(months=6)
         txns = get_transactions(start.isoformat(), date.today().isoformat(), user_id)
-        return {"subscriptions": detect_recurring_charges(txns)}
+        return {"subscriptions": detect_recurring_charges(txns, classifications)}
     if name == "create_reminder_from_subscription":
         description = (args.get("description") or "").strip().lower()
         if not description:
@@ -1104,7 +1138,8 @@ def _run_tool(name: str, args: dict, user_id: str, currency: str) -> dict:
         start = date.today() - relativedelta(months=6)
         txns = get_transactions(start.isoformat(), date.today().isoformat(), user_id)
         match = next(
-            (s for s in detect_recurring_charges(txns) if description in s["description"].lower()), None
+            (s for s in detect_recurring_charges(txns, classifications) if description in s["description"].lower()),
+            None,
         )
         if not match:
             return {"error": f"no detected subscription matching {description!r} — call list_subscriptions first"}
@@ -1169,6 +1204,7 @@ def answer_question(uid: int | str, raw_text: str, user_id: str, channel: str = 
         memories = []
     user = get_user_by_id(user_id)
     currency = (user or {}).get("main_currency") or DEFAULT_CURRENCY
+    classifications = get_category_classifications_for_user(user_id)
     system_prompt = _build_system_prompt(channel, memories, currency)
     messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": raw_text}]
 
@@ -1189,7 +1225,7 @@ def answer_question(uid: int | str, raw_text: str, user_id: str, channel: str = 
             for tc in msg.tool_calls:
                 args = json.loads(tc.function.arguments or "{}")
                 logger.info("answer_question: tool=%s args=%s user_id=%s", tc.function.name, args, uid)
-                result = _run_tool(tc.function.name, args, user_id, currency)
+                result = _run_tool(tc.function.name, args, user_id, currency, classifications)
                 messages.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(result, default=str)})
         if final_text is None:
             final_text = "Sorry, I couldn't finish answering that — try a more specific question."

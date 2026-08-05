@@ -69,6 +69,7 @@ export function SpendingPage() {
   const accountsQuery = useAccounts(["bank", "ewallet"]);
   const metaQuery = useMeta();
   const txQuery = useTransactions(filters.startDate, filters.endDate);
+  const classifications = metaQuery.data?.category_classifications ?? {};
 
   const filtered = useMemo(() => {
     const txns = txQuery.data ?? [];
@@ -83,18 +84,34 @@ export function SpendingPage() {
     });
   }, [txQuery.data, filters.accounts, filters.months, filters.types]);
 
-  const { monthlyIncome, monthlySpend, savingsRate } = useMemo(() => {
-    if (filtered.length === 0) return { monthlyIncome: 0, monthlySpend: 0, savingsRate: 0 };
+  // Only "expense"-classified negative-amount rows count as spending — an
+  // Investment/Transfer-classified transaction (e.g. a brokerage top-up) is real
+  // cash movement but not spending, so it's excluded from every spend chart/KPI
+  // below and surfaced separately via monthlyInvested instead. Positive-amount
+  // (income) rows are always kept, same as before this classification existed.
+  const spendTxns = useMemo(
+    () => filtered.filter((t) => t.amount >= 0 || (classifications[t.category || "Other"] ?? "expense") === "expense"),
+    [filtered, classifications],
+  );
+
+  const { monthlyIncome, monthlySpend, monthlyInvested, savingsRate } = useMemo(() => {
+    if (filtered.length === 0) return { monthlyIncome: 0, monthlySpend: 0, monthlyInvested: 0, savingsRate: 0 };
     const latestMonth = filtered.reduce((max, t) => (monthKey(t.date) > max ? monthKey(t.date) : max), "");
     const income = filtered
       .filter((t) => t.amount > 0 && monthKey(t.date) === latestMonth)
       .reduce((sum, t) => sum + t.amount, 0);
-    const spend = filtered
+    const spend = spendTxns
       .filter((t) => t.amount < 0 && monthKey(t.date) === latestMonth)
       .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+    const invested = filtered
+      .filter(
+        (t) =>
+          t.amount < 0 && monthKey(t.date) === latestMonth && classifications[t.category || "Other"] === "investment",
+      )
+      .reduce((sum, t) => sum + Math.abs(t.amount), 0);
     const rate = income ? Math.round(((income - spend) / income) * 10000) / 100 : 0;
-    return { monthlyIncome: income, monthlySpend: spend, savingsRate: rate };
-  }, [filtered]);
+    return { monthlyIncome: income, monthlySpend: spend, monthlyInvested: invested, savingsRate: rate };
+  }, [filtered, spendTxns, classifications]);
 
   // Month-to-date spend vs. the same day-of-month cutoff last month, for the
   // "Spend Trend" card — "up" (spending more) is unfavorable, unlike the
@@ -111,7 +128,7 @@ export function SpendingPage() {
     );
 
     const sumExpenses = (start: Date, end: Date) =>
-      filtered
+      spendTxns
         .filter((t) => t.amount < 0 && parseISO(t.date) >= start && parseISO(t.date) <= end)
         .reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
@@ -119,7 +136,7 @@ export function SpendingPage() {
     const prevMtdSpend = sumExpenses(prevMtdStart, prevMtdEnd);
     const delta = mtdSpend - prevMtdSpend;
     return { trendDelta: delta, trendPct: prevMtdSpend > 0 ? (delta / prevMtdSpend) * 100 : null };
-  }, [filtered]);
+  }, [spendTxns]);
 
   const categories = metaQuery.data?.categories ?? [];
   // Color order is scoped to categories actually present in this period's
@@ -133,8 +150,8 @@ export function SpendingPage() {
     for (const t of txQuery.data ?? []) {
       if (t.amount < 0) present.add(t.category || "Other");
     }
-    return categoryColorOrder(categories.filter((c) => present.has(c)));
-  }, [txQuery.data, categories]);
+    return categoryColorOrder(categories.filter((c) => present.has(c)), classifications);
+  }, [txQuery.data, categories, classifications]);
 
   if (txQuery.isLoading || accountsQuery.isLoading) {
     return <LoadingFinn />;
@@ -153,6 +170,12 @@ export function SpendingPage() {
         value={formatMoney(monthlyIncome, mainCurrency)}
         icon={<Banknote size={20} />}
         tint="green"
+      />
+      <StatCard
+        label="Invested"
+        value={formatMoney(monthlyInvested, mainCurrency)}
+        icon={<TrendingUp size={20} />}
+        tint="amber"
       />
       <StatCard label="Savings Rate" value={`${savingsRate}%`} icon={<PiggyBank size={20} />} tint="amber" />
       <StatCard
@@ -180,22 +203,22 @@ export function SpendingPage() {
 
   const monthlySpendChart = (
     <ChartCard title="Monthly Spend by Category" fill className={mobileChartHeight}>
-      <MonthlySpendBarChart transactions={filtered} categories={categories} categoryColors={categoryColors} fill />
+      <MonthlySpendBarChart transactions={spendTxns} categories={categories} categoryColors={categoryColors} fill />
     </ChartCard>
   );
   const spendByCategoryChart = (
     <ChartCard title="Spend by Category" fill className={mobileChartHeight}>
-      <SpendByCategoryDonut transactions={filtered} categoryColors={categoryColors} fill />
+      <SpendByCategoryDonut transactions={spendTxns} categoryColors={categoryColors} fill />
     </ChartCard>
   );
   const incomeVsSpendChart = (
     <ChartCard title="Income vs Spend Over Time" fill className={mobileChartHeight}>
-      <IncomeVsSpendLineChart transactions={filtered} fill />
+      <IncomeVsSpendLineChart transactions={spendTxns} fill />
     </ChartCard>
   );
   const savingsRateChart = (
     <ChartCard title="Savings Rate Over Time (%)" fill className={mobileChartHeight}>
-      <SavingsRateLineChart transactions={filtered} fill />
+      <SavingsRateLineChart transactions={spendTxns} fill />
     </ChartCard>
   );
   const spendingCalendarChart = (
@@ -205,7 +228,7 @@ export function SpendingPage() {
   );
   const momComparisonChart = (
     <ChartCard title="Month-over-Month by Category" fill className={mobileChartHeight}>
-      <MonthComparisonBarChart transactions={filtered} fill />
+      <MonthComparisonBarChart transactions={spendTxns} fill />
     </ChartCard>
   );
   const transactionsPanel = (

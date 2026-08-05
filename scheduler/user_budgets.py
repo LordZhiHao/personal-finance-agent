@@ -1,7 +1,7 @@
 from collections import defaultdict
 from datetime import date
 
-from db.supabase import get_all_budgets, get_transactions, mark_budget_alerted
+from db.supabase import get_all_budgets, get_category_classifications_for_user, get_transactions, mark_budget_alerted
 from scheduler.emailer import send_reminder_email
 from scheduler.report_builder import budget_status
 from utils.logger import get_logger
@@ -31,7 +31,8 @@ async def check_budgets(bot):
     for user_id, user_budgets in by_user.items():
         try:
             txns = get_transactions(month_start, today, user_id)
-            statuses = budget_status(txns, user_budgets)
+            classifications = get_category_classifications_for_user(user_id)
+            statuses = budget_status(txns, user_budgets, classifications)
         except Exception:
             logger.exception("check_budgets: failed computing status for user_id=%s", user_id)
             continue

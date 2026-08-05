@@ -21,12 +21,12 @@ def list_categories(user_id: str = Depends(get_current_user)):
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_category_route(payload: CategoryCreate, user_id: str = Depends(get_current_user)):
-    return create_custom_category(user_id, payload.name)
+    return create_custom_category(user_id, payload.name, payload.classification)
 
 
 @router.patch("/{category_id}")
 def patch_category(category_id: str, fields: CustomCategoryUpdate, user_id: str = Depends(get_current_user)):
-    return update_custom_category(category_id, fields.name, user_id)
+    return update_custom_category(category_id, user_id, fields.model_dump(exclude_unset=True))
 
 
 @router.delete("/{category_id}")

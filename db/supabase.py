@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from supabase import create_client
 
-from utils.constants import CATEGORIES, QUERYABLE_OPERATORS, QUERYABLE_SCHEMA
+from utils.constants import BUILTIN_CATEGORY_CLASSIFICATIONS, CATEGORIES, QUERYABLE_OPERATORS, QUERYABLE_SCHEMA
 from utils.logger import get_logger
 
 load_dotenv()
@@ -289,10 +289,14 @@ def deactivate_account(account_id: str, user_id: str) -> None:
     logger.info("deactivate_account: id=%s user_id=%s", account_id, user_id)
 
 
-def create_custom_category(user_id: str, name: str) -> dict:
+def create_custom_category(user_id: str, name: str, classification: str = "expense") -> dict:
     db = get_client(use_service_key=True)
-    result = db.table("custom_categories").insert({"user_id": user_id, "name": name}).execute()
-    logger.info("create_custom_category: user_id=%s name=%s", user_id, name)
+    result = (
+        db.table("custom_categories")
+        .insert({"user_id": user_id, "name": name, "classification": classification})
+        .execute()
+    )
+    logger.info("create_custom_category: user_id=%s name=%s classification=%s", user_id, name, classification)
     return result.data[0]
 
 
@@ -306,25 +310,35 @@ def get_custom_categories(user_id: str) -> list[str]:
 
 
 def get_custom_categories_full(user_id: str) -> list[dict]:
-    """Full {id, name} rows for the Settings page's manage-categories UI — distinct from
-    get_custom_categories(), which returns bare names for merging into get_categories_for_user()."""
+    """Full {id, name, classification} rows for the Settings page's manage-categories UI —
+    distinct from get_custom_categories(), which returns bare names for merging into
+    get_categories_for_user()."""
     # Service key — see get_custom_categories() above for why anon can't read this table.
     db = get_client(use_service_key=True)
-    return db.table("custom_categories").select("id, name").eq("user_id", user_id).order("name").execute().data
+    return (
+        db.table("custom_categories")
+        .select("id, name, classification")
+        .eq("user_id", user_id)
+        .order("name")
+        .execute()
+        .data
+    )
 
 
-def update_custom_category(category_id: str, name: str, user_id: str) -> dict:
+def update_custom_category(category_id: str, user_id: str, fields: dict) -> dict:
+    """`fields` is a partial update (e.g. {"name": ...} and/or {"classification": ...}),
+    same convention as update_account/update_user_budget."""
     db = get_client(use_service_key=True)
     result = (
         db.table("custom_categories")
-        .update({"name": name})
+        .update(fields)
         .eq("id", category_id)
         .eq("user_id", user_id)
         .execute()
     )
     if not result.data:
         raise LookupError(f"Category {category_id} not found")
-    logger.info("update_custom_category: id=%s name=%s", category_id, name)
+    logger.info("update_custom_category: id=%s fields=%s", category_id, fields)
     return result.data[0]
 
 
@@ -346,6 +360,18 @@ def get_categories_for_user(user_id: str) -> list[str]:
     """Built-in CATEGORIES plus this user's own custom categories — the one list every
     caller (extraction prompts, GET /api/meta, transaction category validation) uses."""
     return CATEGORIES + get_custom_categories(user_id)
+
+
+def get_category_classifications_for_user(user_id: str) -> dict[str, str]:
+    """Category name -> classification ("expense" | "income" | "transfer" | "investment")
+    for every category this user can use — built-ins from BUILTIN_CATEGORY_CLASSIFICATIONS
+    (defaulting to "expense") overlaid with this user's own custom categories' own
+    classification. The one shared lookup every spend/budget/subscription aggregation
+    uses to decide whether a negative-amount row counts as spending."""
+    classifications = {c: BUILTIN_CATEGORY_CLASSIFICATIONS.get(c, "expense") for c in CATEGORIES}
+    for row in get_custom_categories_full(user_id):
+        classifications[row["name"]] = row["classification"]
+    return classifications
 
 
 def create_user_memory(user_id: str, content: str, source: str = "agent") -> dict:

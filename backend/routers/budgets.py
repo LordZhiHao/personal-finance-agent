@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from backend.auth import get_current_user
 from backend.schemas import BudgetCreate, BudgetUpdate, GoalContribute, GoalCreate, GoalUpdate
@@ -8,6 +8,7 @@ from db.supabase import (
     create_user_goal,
     delete_user_budget,
     delete_user_goal,
+    get_category_classifications_for_user,
     get_transactions,
     get_user_budgets,
     get_user_goals,
@@ -21,6 +22,19 @@ router = APIRouter(prefix="/api/budgets", tags=["budgets"])
 goals_router = APIRouter(prefix="/api/goals", tags=["goals"])
 
 
+def _require_expense_category(category: str, user_id: str) -> None:
+    """Budgets are a spending-discipline feature — reject a category that isn't
+    classified "expense" (e.g. Investment), same rule enforced by the finance
+    agent's create_budget tool."""
+    classification = get_category_classifications_for_user(user_id).get(category, "expense")
+    if classification != "expense":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"'{category}' is classified as {classification}, not an expense category — "
+            "budgets can only be set on spending categories.",
+        )
+
+
 @router.get("")
 def list_budgets(user_id: str = Depends(get_current_user)):
     return get_user_budgets(user_id)
@@ -28,12 +42,16 @@ def list_budgets(user_id: str = Depends(get_current_user)):
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_budget_route(payload: BudgetCreate, user_id: str = Depends(get_current_user)):
+    _require_expense_category(payload.category, user_id)
     return create_user_budget(user_id, payload.category, payload.monthly_limit, payload.currency)
 
 
 @router.patch("/{budget_id}")
 def patch_budget(budget_id: str, fields: BudgetUpdate, user_id: str = Depends(get_current_user)):
-    return update_user_budget(budget_id, fields.model_dump(exclude_unset=True), user_id)
+    updates = fields.model_dump(exclude_unset=True)
+    if "category" in updates:
+        _require_expense_category(updates["category"], user_id)
+    return update_user_budget(budget_id, updates, user_id)
 
 
 @router.delete("/{budget_id}")
@@ -51,7 +69,7 @@ def get_budgets_status(user_id: str = Depends(get_current_user)):
         return []
     start, end, _ = parse_period("month_to_date")
     txns = get_transactions(start.isoformat(), end.isoformat(), user_id)
-    return budget_status(txns, budgets)
+    return budget_status(txns, budgets, get_category_classifications_for_user(user_id))
 
 
 @goals_router.get("")

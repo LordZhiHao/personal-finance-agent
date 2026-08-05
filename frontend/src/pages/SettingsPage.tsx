@@ -30,7 +30,14 @@ import {
   useUpdateMainCurrency,
   useUpdateTheme,
 } from "../hooks/api";
-import type { Account, BudgetStatus, CustomCategory, Goal, Memory, Meta } from "../types";
+import type { Account, BudgetStatus, CategoryClassification, CustomCategory, Goal, Memory, Meta } from "../types";
+
+const CATEGORY_CLASSIFICATION_LABELS: Record<CategoryClassification, string> = {
+  expense: "Expense (counts as spending)",
+  income: "Income",
+  transfer: "Transfer (between own accounts)",
+  investment: "Investment (not spending)",
+};
 
 const accountSchema = z.object({
   name: z.string().min(1, "Name is required."),
@@ -42,6 +49,7 @@ type AccountFormValues = z.infer<typeof accountSchema>;
 
 const categorySchema = z.object({
   name: z.string().min(1, "Category name is required."),
+  classification: z.enum(["expense", "income", "transfer", "investment"]),
 });
 type CategoryFormValues = z.infer<typeof categorySchema>;
 
@@ -243,10 +251,15 @@ function CategoryRow({ category }: { category: CustomCategory }) {
   const updateMutation = useUpdateCategory();
   const deleteMutation = useDeleteCategory();
   const [name, setName] = useState(category.name);
-  const dirty = name.trim() !== "" && name !== category.name;
+  const [classification, setClassification] = useState<CategoryClassification>(category.classification);
+  const dirty = (name.trim() !== "" && name !== category.name) || classification !== category.classification;
 
   function handleSave() {
-    if (dirty) updateMutation.mutate({ id: category.id, name: name.trim() });
+    if (!dirty) return;
+    const fields: { id: string; name?: string; classification?: CategoryClassification } = { id: category.id };
+    if (name.trim() !== "" && name !== category.name) fields.name = name.trim();
+    if (classification !== category.classification) fields.classification = classification;
+    updateMutation.mutate(fields);
   }
 
   function handleDelete() {
@@ -262,6 +275,17 @@ function CategoryRow({ category }: { category: CustomCategory }) {
   return (
     <div className="flex items-center gap-2 py-1">
       <Input value={name} onChange={(e) => setName(e.target.value)} className="flex-1" />
+      <Select
+        value={classification}
+        onChange={(e) => setClassification(e.target.value as CategoryClassification)}
+        className="w-56"
+      >
+        {Object.entries(CATEGORY_CLASSIFICATION_LABELS).map(([value, label]) => (
+          <option key={value} value={value}>
+            {label}
+          </option>
+        ))}
+      </Select>
       <Button variant="outline" onClick={handleSave} disabled={!dirty || updateMutation.isPending}>
         {updateMutation.isPending ? "Saving…" : "Save"}
       </Button>
@@ -286,7 +310,10 @@ function CategoriesCard() {
     handleSubmit,
     reset,
     formState: { errors, isSubmitting },
-  } = useForm<CategoryFormValues>({ resolver: zodResolver(categorySchema), defaultValues: { name: "" } });
+  } = useForm<CategoryFormValues>({
+    resolver: zodResolver(categorySchema),
+    defaultValues: { name: "", classification: "expense" },
+  });
 
   if (!metaQuery.data) return null;
 
@@ -310,7 +337,7 @@ function CategoriesCard() {
       )}
       <form
         onSubmit={handleSubmit((values) => {
-          mutation.mutate(values.name, { onSuccess: () => reset() });
+          mutation.mutate(values, { onSuccess: () => reset() });
         })}
         className="flex flex-wrap items-end gap-2"
       >
@@ -324,6 +351,18 @@ function CategoriesCard() {
               {errors.name.message}
             </span>
           )}
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            Classification
+          </span>
+          <Select {...register("classification")} className="w-56">
+            {Object.entries(CATEGORY_CLASSIFICATION_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </Select>
         </label>
         <Button type="submit" variant="primary" disabled={isSubmitting || mutation.isPending}>
           {mutation.isPending ? "Adding…" : "＋ Add Category"}
@@ -525,11 +564,13 @@ function BudgetsCard() {
           </span>
           <Select {...register("category")} className="w-full">
             <option value="">Select…</option>
-            {metaQuery.data?.categories.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
+            {metaQuery.data?.categories
+              .filter((c) => (metaQuery.data?.category_classifications[c] ?? "expense") === "expense")
+              .map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
           </Select>
         </label>
         <label className="flex flex-col gap-1 w-32">

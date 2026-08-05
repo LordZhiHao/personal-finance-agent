@@ -7,9 +7,15 @@ export interface Account {
   comments: string | null;
 }
 
+// "expense" is real spending; "income"/"transfer"/"investment" are excluded from
+// spend totals, budgets, and subscription detection — see utils/constants.py's
+// CLASSIFICATIONS on the backend.
+export type CategoryClassification = "expense" | "income" | "transfer" | "investment";
+
 export interface CustomCategory {
   id: string;
   name: string;
+  classification: CategoryClassification;
 }
 
 export interface Memory {
@@ -131,6 +137,7 @@ export interface BalancesSummary {
 export interface ExpenseSummary {
   income: number;
   expenses: number;
+  invested: number;
   net: number;
   savings_rate: number;
   by_category: Record<string, number>;
@@ -138,6 +145,8 @@ export interface ExpenseSummary {
 
 export interface Meta {
   categories: string[];
+  category_classifications: Record<string, CategoryClassification>;
+  classifications: CategoryClassification[];
   currencies: string[];
   account_types: string[];
   portfolio_actions: string[];

@@ -17,6 +17,7 @@ from db.supabase import (
     delete_transactions,
     get_accounts,
     get_categories_for_user,
+    get_category_classifications_for_user,
     get_held_positions,
     get_latest_snapshots,
     get_recent_transactions,
@@ -427,11 +428,13 @@ async def handle_expense_command(update: Update, context: ContextTypes.DEFAULT_T
     arg = context.args[0] if context.args else None
     start, end, label = parse_period(arg)
     txns = get_transactions(start.isoformat(), end.isoformat(), user["id"])
-    summary = summarize_transactions(txns)
+    classifications = get_category_classifications_for_user(user["id"])
+    summary = summarize_transactions(txns, classifications)
 
     lines = [f"📊 *Expense Summary* — {label}", ""]
     lines.append(f"Income:   {format_money(summary['income'], currency)}")
     lines.append(f"Spent:    {format_money(summary['expenses'], currency)}")
+    lines.append(f"Invested: {format_money(summary['invested'], currency)}")
     lines.append(f"Net:      {format_money(summary['net'], currency)}")
     lines.append(f"Savings:  {format_pct(summary['savings_rate'])}")
     lines.append("")
@@ -456,7 +459,7 @@ async def handle_compare_command(update: Update, context: ContextTypes.DEFAULT_T
     currency = user.get("main_currency", DEFAULT_CURRENCY)
     start = date.today() - relativedelta(months=13)
     txns = get_transactions(start.isoformat(), date.today().isoformat(), user["id"])
-    rows = month_comparison(txns)[:8]
+    rows = month_comparison(txns, get_category_classifications_for_user(user["id"]))[:8]
     if not rows:
         await update.message.reply_text("No expenses in the last 13 months to compare.")
         return

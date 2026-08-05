@@ -20,17 +20,25 @@ def _normalize_description(description: str) -> str:
     return _TRAILING_NUMERIC_RE.sub("", normalized).strip()
 
 
-def detect_recurring_charges(txns: list[dict], lookback_months: int = 6) -> list[dict]:
+def detect_recurring_charges(
+    txns: list[dict], classifications: dict[str, str], lookback_months: int = 6
+) -> list[dict]:
     """Heuristic, Python-side pass over already-fetched transactions (same style as
     scheduler/report_builder.py's month_comparison) — groups expense rows by a
     normalized description, and flags a group as recurring if it has enough
     occurrences at a roughly-monthly cadence with consistent amounts. Purely
     computed on demand — no persistence table, so a cancelled subscription just
-    stops appearing rather than needing cleanup."""
+    stops appearing rather than needing cleanup.
+
+    `classifications` (see db.supabase.get_category_classifications_for_user) excludes
+    non-"expense" categories (e.g. a recurring Investment-classified auto-invest debit)
+    from being flagged as a "subscription" — that's a deliberate transfer, not a bill."""
     cutoff = date.today() - timedelta(days=lookback_months * 31)
     groups: dict[str, list[dict]] = defaultdict(list)
     for t in txns:
         if t["amount"] >= 0:
+            continue
+        if classifications.get(t.get("category") or "Other", "expense") != "expense":
             continue
         t_date = date.fromisoformat(t["date"])
         if t_date < cutoff:

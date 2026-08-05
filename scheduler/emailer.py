@@ -32,6 +32,7 @@ def build_html(data: dict, accent: str) -> str:
     <table>
       <tr><td>Income</td><td><b>{currency} {data['income']:,.2f}</b></td></tr>
       <tr><td>Spent</td><td><b>{currency} {data['expenses']:,.2f}</b></td></tr>
+      <tr><td>Invested</td><td><b>{currency} {data['invested']:,.2f}</b></td></tr>
       <tr><td>Net</td><td><b>{currency} {data['net']:+,.2f}</b></td></tr>
       <tr><td>Savings Rate</td><td><b>{data['savings_rate']}%</b></td></tr>
     </table>

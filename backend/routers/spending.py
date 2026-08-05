@@ -6,6 +6,7 @@ from db.supabase import (
     create_signed_receipt_url,
     delete_transactions,
     get_categories_for_user,
+    get_category_classifications_for_user,
     get_transaction_receipt,
     get_transactions,
     insert_transactions,
@@ -31,7 +32,9 @@ def expense_summary(
     end_date: str = Query(...),
     user_id: str = Depends(get_current_user),
 ):
-    return summarize_transactions(get_transactions(start_date, end_date, user_id))
+    return summarize_transactions(
+        get_transactions(start_date, end_date, user_id), get_category_classifications_for_user(user_id)
+    )
 
 
 @router.post("", status_code=201)

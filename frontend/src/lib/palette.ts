@@ -50,18 +50,25 @@ export function colorForKey(key: string, knownKeys: string[]): string {
   return categoricalColor(knownKeys.indexOf(key), knownKeys.length);
 }
 
-// Salary and Investment are income-only (every category-colored chart filters to
-// expenses, amount < 0) and "Other" is the generic catch-all, so those three fold to
-// the neutral fallback rather than displacing one of the 8 validated hues away from
-// a category that actually renders in these charts.
-export const CATEGORY_COLOR_EXCLUDE = ["Salary", "Investment", "Other"];
+// "Other" is the generic catch-all, so it folds to the neutral fallback rather than
+// displacing one of the 8 validated hues away from a category that actually renders
+// in these charts. Every non-"expense"-classified category (Salary/Transfer/Investment
+// and any custom category marked as such) is excluded too — every category-colored
+// chart only ever plots "expense"-classified spend, see db.supabase's
+// get_category_classifications_for_user / CATEGORY_COLOR_EXCLUDE was the old,
+// hardcoded-name version of this same rule.
+const CATEGORY_COLOR_EXCLUDE_CATCHALL = ["Other"];
 
 // Per-user color order for category charts, built from the actual built-in +
 // custom category list (see db.supabase.get_categories_for_user) rather than a
 // hardcoded English name list — otherwise every custom category falls outside
-// a fixed array and always folds to the neutral fallback.
-export function categoryColorOrder(categories: string[]): string[] {
-  return categories.filter((c) => !CATEGORY_COLOR_EXCLUDE.includes(c));
+// a fixed array and always folds to the neutral fallback. `classifications` (from
+// GET /api/meta's category_classifications) excludes any category that isn't
+// "expense" — those never appear in a spend chart to begin with.
+export function categoryColorOrder(categories: string[], classifications: Record<string, string>): string[] {
+  return categories.filter(
+    (c) => !CATEGORY_COLOR_EXCLUDE_CATCHALL.includes(c) && (classifications[c] ?? "expense") === "expense",
+  );
 }
 
 export const CHROME = {

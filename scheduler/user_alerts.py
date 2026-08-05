@@ -2,7 +2,13 @@ from datetime import datetime
 
 import pytz
 
-from db.supabase import get_all_active_alerts, get_latest_equity_prices, get_transactions, mark_alert_triggered
+from db.supabase import (
+    get_all_active_alerts,
+    get_category_classifications_for_user,
+    get_latest_equity_prices,
+    get_transactions,
+    mark_alert_triggered,
+)
 from scheduler.emailer import send_reminder_email
 from scheduler.report_builder import summarize_transactions
 from utils.balances import compute_account_balances
@@ -30,7 +36,9 @@ def _already_fired_today(alert: dict, now: datetime) -> bool:
 def _daily_spend_totals(user_ids: set[str], now: datetime) -> dict[str, float]:
     today = now.date().isoformat()
     return {
-        user_id: summarize_transactions(get_transactions(today, today, user_id))["expenses"]
+        user_id: summarize_transactions(
+            get_transactions(today, today, user_id), get_category_classifications_for_user(user_id)
+        )["expenses"]
         for user_id in user_ids
     }
 
