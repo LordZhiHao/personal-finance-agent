@@ -12,11 +12,11 @@ A Telegram-first personal finance tracker that uses Qwen VLM to extract transact
 
 ## Key components
 
-- `bot/` — Telegram bot entry point, handlers, and extraction logic
-- `db/` — Supabase read/write operations
-- `dashboard/` — Streamlit app for visualisation
-- `scheduler/` — Weekly report scheduler and email sender
-- `utils/` — Shared constants, PDF conversion, and formatting helpers
+- `bot/` ï¿½ Telegram bot entry point, handlers, and extraction logic
+- `db/` ï¿½ Supabase read/write operations
+- `dashboard/` ï¿½ Streamlit app for visualisation
+- `scheduler/` ï¿½ Weekly report scheduler and email sender
+- `utils/` ï¿½ Shared constants, PDF conversion, and formatting helpers
 
 ## Why it matters
 
@@ -52,11 +52,11 @@ A Telegram-first personal finance tracker that uses Qwen VLM to extract transact
 
 ## Key components
 
-- `bot/` — Telegram bot entry point, handlers, and extraction logic
-- `db/` — Supabase read/write operations
-- `dashboard/` — Streamlit app for visualisation
-- `scheduler/` — Weekly report scheduler and email sender
-- `utils/` — Shared constants, PDF conversion, and formatting helpers
+- `bot/` ï¿½ Telegram bot entry point, handlers, and extraction logic
+- `db/` ï¿½ Supabase read/write operations
+- `dashboard/` ï¿½ Streamlit app for visualisation
+- `scheduler/` ï¿½ Weekly report scheduler and email sender
+- `utils/` ï¿½ Shared constants, PDF conversion, and formatting helpers
 
 ## Why it matters
 
@@ -76,3 +76,4 @@ A Telegram-first personal finance tracker that uses Qwen VLM to extract transact
 
 - The full build and deployment guide is documented in `CLAUDE.md` and `INSTRUCTIONS.md`
 - Do not commit `.env` or secret keys
+
