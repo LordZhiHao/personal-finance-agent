@@ -76,4 +76,3 @@ A Telegram-first personal finance tracker that uses Qwen VLM to extract transact
 
 - The full build and deployment guide is documented in `CLAUDE.md` and `INSTRUCTIONS.md`
 - Do not commit `.env` or secret keys
-

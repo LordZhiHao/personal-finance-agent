@@ -62,19 +62,16 @@ const budgetSchema = z.object({
   category: z.string().min(1, "Category is required."),
   monthly_limit: z.coerce.number().positive("Must be greater than 0."),
 });
-type BudgetFormValues = z.infer<typeof budgetSchema>;
 
 const goalSchema = z.object({
   name: z.string().min(1, "Name is required."),
   target_amount: z.coerce.number().positive("Must be greater than 0."),
   target_date: z.string().optional(),
 });
-type GoalFormValues = z.infer<typeof goalSchema>;
 
 const contributeSchema = z.object({
   amount: z.coerce.number().positive("Must be greater than 0."),
 });
-type ContributeFormValues = z.infer<typeof contributeSchema>;
 
 function AccountDialog({
   account,
@@ -527,7 +524,7 @@ function BudgetsCard() {
     handleSubmit,
     reset,
     formState: { errors, isSubmitting },
-  } = useForm<BudgetFormValues>({ resolver: zodResolver(budgetSchema), defaultValues: { category: "", monthly_limit: 0 } });
+  } = useForm({ resolver: zodResolver(budgetSchema), defaultValues: { category: "", monthly_limit: 0 } });
 
   return (
     <Card>
@@ -600,7 +597,7 @@ function GoalRow({ goal }: { goal: Goal }) {
     handleSubmit,
     reset,
     formState: { isSubmitting },
-  } = useForm<ContributeFormValues>({ resolver: zodResolver(contributeSchema), defaultValues: { amount: 0 } });
+  } = useForm({ resolver: zodResolver(contributeSchema), defaultValues: { amount: 0 } });
   const fraction = goal.target_amount > 0 ? goal.current_amount / goal.target_amount : 0;
 
   function handleDelete() {
@@ -654,7 +651,7 @@ function GoalsCard() {
     handleSubmit,
     reset,
     formState: { errors, isSubmitting },
-  } = useForm<GoalFormValues>({ resolver: zodResolver(goalSchema), defaultValues: { name: "", target_amount: 0, target_date: "" } });
+  } = useForm({ resolver: zodResolver(goalSchema), defaultValues: { name: "", target_amount: 0, target_date: "" } });
 
   return (
     <Card>

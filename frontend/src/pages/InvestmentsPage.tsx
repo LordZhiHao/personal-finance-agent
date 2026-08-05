@@ -10,6 +10,7 @@ import {
   useRefreshPrices,
   useSnapshotHistory,
   useSnapshots,
+  useTransactions,
 } from "../hooks/api";
 import { useAuth } from "../auth/AuthContext";
 import { FilterBar, type FilterValue } from "../components/FilterBar";
@@ -25,6 +26,7 @@ import { DividendCalendar } from "../components/charts/DividendCalendar";
 import { UpcomingDividends, type TickerCostBasis } from "../components/charts/UpcomingDividends";
 import { TradeHistoryTable } from "../components/charts/TradeHistoryTable";
 import { HoldingsTable } from "../components/charts/HoldingsTable";
+import { monthKey } from "../lib/dates";
 import { formatMoney } from "../lib/format";
 import { Button, Select, TabToggle } from "../components/ui";
 
@@ -90,6 +92,24 @@ export function InvestmentsPage() {
     hasCustomFilters ? filters.startDate : undefined,
     hasCustomFilters ? filters.endDate : undefined,
   );
+  // "Invested" mirrors SpendingPage's card of the same name — total of Investment-
+  // classified transactions (e.g. a brokerage top-up from a bank account) in the
+  // latest month with any transaction data, not scoped to brokerage accounts only
+  // since the cash movement itself is usually logged against the source (bank) account.
+  const txQuery = useTransactions(filters.startDate, filters.endDate);
+  const classifications = metaQuery.data?.category_classifications ?? {};
+
+  const monthlyInvested = useMemo(() => {
+    const txns = txQuery.data ?? [];
+    if (txns.length === 0) return 0;
+    const latestMonth = txns.reduce((max, t) => (monthKey(t.date) > max ? monthKey(t.date) : max), "");
+    return txns
+      .filter(
+        (t) =>
+          t.amount < 0 && monthKey(t.date) === latestMonth && classifications[t.category || "Other"] === "investment",
+      )
+      .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+  }, [txQuery.data, classifications]);
 
   const snapshots = useMemo(() => {
     const rows = snapshotsQuery.data ?? [];
@@ -205,6 +225,19 @@ export function InvestmentsPage() {
         </Button>
       }
     />
+  );
+
+  // Beside Net Worth on desktop, stacked below it on mobile (grid-cols-1 default).
+  const summaryPanel = (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {netWorthCard}
+      <StatCard
+        label="Invested"
+        value={formatMoney(monthlyInvested, displayCurrency)}
+        icon={<TrendingUp size={20} />}
+        tint="amber"
+      />
+    </div>
   );
 
   // Sized so the whole card (title + chart) fits in the space actually left over
@@ -347,7 +380,7 @@ export function InvestmentsPage() {
         active={mobileTab}
         onChange={setMobileTab}
         panels={{
-          netWorth: netWorthCard,
+          netWorth: summaryPanel,
           netWorthOverTime: netWorthOverTimeChart,
           assetAllocation: assetAllocationChart,
           topHoldings: topHoldingsChart,
@@ -358,7 +391,7 @@ export function InvestmentsPage() {
         }}
         desktopContent={
           <>
-            {netWorthCard}
+            {summaryPanel}
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
               <div className="lg:col-span-8">{netWorthOverTimeChart}</div>
