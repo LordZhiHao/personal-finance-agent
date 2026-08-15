@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   addDays,
   differenceInCalendarDays,
@@ -20,6 +20,7 @@ import { TransactionsList } from "../components/TransactionsList";
 import { AddTransactionDialog } from "../components/AddTransactionDialog";
 import { SwipeableSections } from "../components/SwipeableSections";
 import { MobileSectionTabs } from "../components/MobileSectionTabs";
+import { SectionPairRow } from "../components/SectionPairRow";
 import { MonthlySpendBarChart } from "../components/charts/MonthlySpendBarChart";
 import { SpendByCategoryDonut } from "../components/charts/SpendByCategoryDonut";
 import { IncomeVsSpendLineChart } from "../components/charts/IncomeVsSpendLineChart";
@@ -27,6 +28,7 @@ import { SavingsRateLineChart } from "../components/charts/SavingsRateLineChart"
 import { SpendingHeatmap } from "../components/charts/SpendingHeatmap";
 import { MonthComparisonBarChart } from "../components/charts/MonthComparisonBarChart";
 import { monthKey } from "../lib/dates";
+import { sectionKey } from "../lib/dashboardSections";
 import { categoryColorOrder } from "../lib/palette";
 import { formatMoney, formatPct } from "../lib/format";
 import { Button } from "../components/ui";
@@ -62,7 +64,7 @@ const SPENDING_TABS: { value: SpendingTab; label: string }[] = [
 ];
 
 export function SpendingPage() {
-  const { mainCurrency } = useAuth();
+  const { mainCurrency, hiddenDashboardSections } = useAuth();
   const [filters, setFilters] = useState<FilterValue>(defaultFilters);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [mobileTab, setMobileTab] = useState<SpendingTab>("summary");
@@ -70,6 +72,17 @@ export function SpendingPage() {
   const metaQuery = useMeta();
   const txQuery = useTransactions(filters.startDate, filters.endDate);
   const classifications = metaQuery.data?.category_classifications ?? {};
+
+  const visible = (id: SpendingTab) => !hiddenDashboardSections.includes(sectionKey("spending", id));
+  const visibleTabs = useMemo(
+    () => SPENDING_TABS.filter((t) => t.value === "summary" || visible(t.value)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [hiddenDashboardSections],
+  );
+
+  useEffect(() => {
+    if (!visibleTabs.some((t) => t.value === mobileTab)) setMobileTab("summary");
+  }, [visibleTabs, mobileTab]);
 
   const filtered = useMemo(() => {
     const txns = txQuery.data ?? [];
@@ -245,7 +258,7 @@ export function SpendingPage() {
   return (
     <div className="space-y-3">
       <div className="md:hidden -mt-3 mb-4">
-        <MobileSectionTabs tabs={SPENDING_TABS} active={mobileTab} onChange={setMobileTab} />
+        <MobileSectionTabs tabs={visibleTabs} active={mobileTab} onChange={setMobileTab} />
       </div>
       <div className="flex items-center justify-between">
         <h1
@@ -267,7 +280,7 @@ export function SpendingPage() {
         </p>
       ) : (
         <SwipeableSections
-          tabs={SPENDING_TABS}
+          tabs={visibleTabs}
           active={mobileTab}
           onChange={setMobileTab}
           panels={{
@@ -284,22 +297,29 @@ export function SpendingPage() {
             <>
               {summaryPanel}
 
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                <div className="lg:col-span-8">{monthlySpendChart}</div>
-                <div className="lg:col-span-4">{spendByCategoryChart}</div>
-              </div>
+              <SectionPairRow
+                leftVisible={visible("monthlyTrend")}
+                left={monthlySpendChart}
+                rightVisible={visible("byCategory")}
+                right={spendByCategoryChart}
+              />
 
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                <div className="lg:col-span-8">{incomeVsSpendChart}</div>
-                <div className="lg:col-span-4">{savingsRateChart}</div>
-              </div>
+              <SectionPairRow
+                leftVisible={visible("incomeVsSpend")}
+                left={incomeVsSpendChart}
+                rightVisible={visible("savingsRate")}
+                right={savingsRateChart}
+              />
 
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-                <div className="lg:col-span-8">{spendingCalendarChart}</div>
-                <div className="lg:col-span-4">{momComparisonChart}</div>
-              </div>
+              <SectionPairRow
+                leftVisible={visible("calendar")}
+                left={spendingCalendarChart}
+                rightVisible={visible("momComparison")}
+                right={momComparisonChart}
+                className="items-stretch"
+              />
 
-              {transactionsPanel}
+              {visible("transactions") && transactionsPanel}
             </>
           }
         />

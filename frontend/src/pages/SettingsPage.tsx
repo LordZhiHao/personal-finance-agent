@@ -27,9 +27,11 @@ import {
   useMeta,
   useUpdateAccount,
   useUpdateCategory,
+  useUpdateHiddenDashboardSections,
   useUpdateMainCurrency,
   useUpdateTheme,
 } from "../hooks/api";
+import { DASHBOARD_SECTIONS, sectionKey, type DashboardView } from "../lib/dashboardSections";
 import type { Account, BudgetStatus, CategoryClassification, CustomCategory, Goal, Memory, Meta } from "../types";
 
 const CATEGORY_CLASSIFICATION_LABELS: Record<CategoryClassification, string> = {
@@ -818,6 +820,71 @@ function ThemeCard() {
   );
 }
 
+const DASHBOARD_VIEW_LABELS: Record<DashboardView, string> = {
+  spending: "Spending",
+  investments: "Investments",
+};
+
+function CustomizeDashboardCard() {
+  const { hiddenDashboardSections, refreshMe } = useAuth();
+  const mutation = useUpdateHiddenDashboardSections();
+  const [draft, setDraft] = useState(hiddenDashboardSections);
+  const dirty = JSON.stringify([...draft].sort()) !== JSON.stringify([...hiddenDashboardSections].sort());
+
+  useEffect(() => {
+    if (!dirty) setDraft(hiddenDashboardSections);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hiddenDashboardSections]);
+
+  function toggle(key: string) {
+    setDraft((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  }
+
+  return (
+    <Card>
+      <h2 className="text-sm font-semibold mb-1" style={{ color: "var(--text-heading)" }}>
+        Customize Dashboard
+      </h2>
+      <p className="text-sm mb-3" style={{ color: "var(--text-secondary)" }}>
+        Choose which charts show up on your Spending and Investments pages.
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {(["spending", "investments"] as DashboardView[]).map((view) => (
+          <div key={view}>
+            <h3 className="text-xs font-semibold mb-2" style={{ color: "var(--text-muted)" }}>
+              {DASHBOARD_VIEW_LABELS[view]}
+            </h3>
+            <div className="flex flex-col gap-1.5">
+              {DASHBOARD_SECTIONS.filter((s) => s.view === view && !s.pinned).map((s) => {
+                const key = sectionKey(view, s.id);
+                return (
+                  <label key={key} className="flex items-center gap-2 text-sm" style={{ color: "var(--text-primary)" }}>
+                    <input
+                      type="checkbox"
+                      checked={!draft.includes(key)}
+                      onChange={() => toggle(key)}
+                    />
+                    {s.label}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3">
+        <Button
+          variant="outline"
+          disabled={!dirty || mutation.isPending}
+          onClick={() => mutation.mutate(draft, { onSuccess: () => refreshMe() })}
+        >
+          {mutation.isPending ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 export function SettingsPage() {
   const { email, telegramLinked, refreshMe } = useAuth();
   const mutation = useGenerateTelegramLinkCode();
@@ -899,6 +966,8 @@ export function SettingsPage() {
           <MemoriesCard />
         </div>
       </div>
+
+      <CustomizeDashboardCard />
     </div>
   );
 }

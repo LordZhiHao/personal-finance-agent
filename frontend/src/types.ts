@@ -158,6 +158,7 @@ export interface Me {
   telegram_linked: boolean;
   main_currency: string;
   theme: string;
+  hidden_dashboard_sections: string[];
   onboarding_completed: boolean;
 }
 

@@ -40,6 +40,7 @@ def _me_response(user: dict) -> dict:
         "telegram_linked": user["telegram_chat_id"] is not None,
         "main_currency": user["main_currency"],
         "theme": user["theme"],
+        "hidden_dashboard_sections": user["hidden_dashboard_sections"],
         "onboarding_completed": user["onboarding_completed_at"] is not None,
     }
 

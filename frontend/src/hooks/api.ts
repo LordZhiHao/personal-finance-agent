@@ -148,6 +148,13 @@ export function useUpdateTheme() {
   });
 }
 
+export function useUpdateHiddenDashboardSections() {
+  return useMutation({
+    mutationFn: (hidden_dashboard_sections: string[]) =>
+      api.patch<{ hidden_dashboard_sections: string[] }>("/api/auth/me", { hidden_dashboard_sections }),
+  });
+}
+
 export function useCreateAccount() {
   const queryClient = useQueryClient();
   return useMutation({

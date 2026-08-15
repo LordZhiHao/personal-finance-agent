@@ -87,6 +87,7 @@ class MeUpdate(BaseModel):
     """Partial update for the current user's own profile fields (Settings page)."""
     main_currency: str | None = None
     theme: str | None = None
+    hidden_dashboard_sections: list[str] | None = None
 
     @field_validator("main_currency")
     @classmethod
@@ -101,6 +102,20 @@ class MeUpdate(BaseModel):
         if v is not None and v not in ("orange", "green"):
             raise ValueError("theme must be one of ('orange', 'green')")
         return v
+
+    @field_validator("hidden_dashboard_sections")
+    @classmethod
+    def hidden_dashboard_sections_valid(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return v
+        if len(v) > 50:
+            raise ValueError("hidden_dashboard_sections must have at most 50 entries.")
+        cleaned: list[str] = []
+        for item in v:
+            item = item.strip()
+            if item and item not in cleaned:
+                cleaned.append(item)
+        return cleaned
 
 
 class CustomCategoryUpdate(BaseModel):

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { format, getMonth, parseISO, subDays, subMonths, subYears } from "date-fns";
 import { TrendingUp, Wallet } from "lucide-react";
 import {
@@ -19,6 +19,7 @@ import { ChartCard } from "../components/ChartCard";
 import { AddTradeDialog } from "../components/AddTradeDialog";
 import { SwipeableSections } from "../components/SwipeableSections";
 import { MobileSectionTabs } from "../components/MobileSectionTabs";
+import { SectionPairRow } from "../components/SectionPairRow";
 import { NetWorthLineChart } from "../components/charts/NetWorthLineChart";
 import { AssetAllocationDonut } from "../components/charts/AssetAllocationDonut";
 import { AllocationBarChart } from "../components/charts/AllocationBarChart";
@@ -27,6 +28,7 @@ import { UpcomingDividends, type TickerCostBasis } from "../components/charts/Up
 import { TradeHistoryTable } from "../components/charts/TradeHistoryTable";
 import { HoldingsTable } from "../components/charts/HoldingsTable";
 import { monthKey } from "../lib/dates";
+import { sectionKey } from "../lib/dashboardSections";
 import { formatMoney } from "../lib/format";
 import { Button, Select, TabToggle } from "../components/ui";
 
@@ -80,7 +82,7 @@ export function InvestmentsPage() {
   const [selectedBrokerAccountId, setSelectedBrokerAccountId] = useState<string>("");
   const [allocationView, setAllocationView] = useState<AllocationView>("broker");
 
-  const { mainCurrency: displayCurrency } = useAuth();
+  const { mainCurrency: displayCurrency, hiddenDashboardSections } = useAuth();
   const accountsQuery = useAccounts(["brokerage"]);
   const metaQuery = useMeta();
   const snapshotsQuery = useSnapshots(displayCurrency);
@@ -98,6 +100,17 @@ export function InvestmentsPage() {
   // since the cash movement itself is usually logged against the source (bank) account.
   const txQuery = useTransactions(filters.startDate, filters.endDate);
   const classifications = metaQuery.data?.category_classifications ?? {};
+
+  const visible = (id: InvestmentsTab) => !hiddenDashboardSections.includes(sectionKey("investments", id));
+  const visibleTabs = useMemo(
+    () => INVESTMENTS_TABS.filter((t) => t.value === "netWorth" || visible(t.value)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [hiddenDashboardSections],
+  );
+
+  useEffect(() => {
+    if (!visibleTabs.some((t) => t.value === mobileTab)) setMobileTab("netWorth");
+  }, [visibleTabs, mobileTab]);
 
   const monthlyInvested = useMemo(() => {
     const txns = txQuery.data ?? [];
@@ -360,7 +373,7 @@ export function InvestmentsPage() {
   return (
     <div className="space-y-3">
       <div className="md:hidden -mt-3 mb-4">
-        <MobileSectionTabs tabs={INVESTMENTS_TABS} active={mobileTab} onChange={setMobileTab} />
+        <MobileSectionTabs tabs={visibleTabs} active={mobileTab} onChange={setMobileTab} />
       </div>
       <h1 className="flex items-center gap-2 text-xl font-semibold" style={{ color: "var(--text-heading)" }}>
         <TrendingUp size={22} />
@@ -376,7 +389,7 @@ export function InvestmentsPage() {
       />
 
       <SwipeableSections
-        tabs={INVESTMENTS_TABS}
+        tabs={visibleTabs}
         active={mobileTab}
         onChange={setMobileTab}
         panels={{
@@ -393,19 +406,25 @@ export function InvestmentsPage() {
           <>
             {summaryPanel}
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-              <div className="lg:col-span-8">{netWorthOverTimeChart}</div>
-              <div className="lg:col-span-4">{assetAllocationChart}</div>
-            </div>
+            <SectionPairRow
+              leftVisible={visible("netWorthOverTime")}
+              left={netWorthOverTimeChart}
+              rightVisible={visible("assetAllocation")}
+              right={assetAllocationChart}
+              className="items-stretch"
+            />
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-              <div className="lg:col-span-8">{topHoldingsChart}</div>
-              <div className="lg:col-span-4">{dividendCalendarChart}</div>
-            </div>
+            <SectionPairRow
+              leftVisible={visible("topHoldings")}
+              left={topHoldingsChart}
+              rightVisible={visible("dividendCalendar")}
+              right={dividendCalendarChart}
+              className="items-stretch"
+            />
 
-            {upcomingDividendsPanel}
-            {positionsPanel}
-            {tradesPanel}
+            {visible("upcomingDividends") && upcomingDividendsPanel}
+            {visible("positions") && positionsPanel}
+            {visible("trades") && tradesPanel}
           </>
         }
       />

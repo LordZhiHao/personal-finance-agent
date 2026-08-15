@@ -18,6 +18,7 @@ interface AuthContextValue {
   telegramLinked: boolean;
   mainCurrency: string;
   theme: string;
+  hiddenDashboardSections: string[];
   onboardingCompleted: boolean;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
@@ -47,6 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [telegramLinked, setTelegramLinked] = useState(false);
   const [mainCurrency, setMainCurrency] = useState("SGD");
   const [theme, setTheme] = useState(() => getStoredTheme() ?? "green");
+  const [hiddenDashboardSections, setHiddenDashboardSections] = useState<string[]>([]);
   const [onboardingCompleted, setOnboardingCompleted] = useState(false);
   const [loading, setLoading] = useState(() => Boolean(getToken()));
 
@@ -65,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setMainCurrency(me.main_currency);
       setTheme(me.theme);
       applyTheme(me.theme);
+      setHiddenDashboardSections(me.hidden_dashboard_sections);
       setOnboardingCompleted(me.onboarding_completed);
       setIsAuthenticated(true);
     } catch {
@@ -73,6 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setEmail(null);
       setTelegramLinked(false);
       setMainCurrency("SGD");
+      setHiddenDashboardSections([]);
       setOnboardingCompleted(false);
     } finally {
       setLoading(false);
@@ -155,6 +159,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setTelegramLinked(false);
     setMainCurrency("SGD");
     setTheme("green");
+    setHiddenDashboardSections([]);
     setOnboardingCompleted(false);
   }, []);
 
@@ -167,6 +172,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         telegramLinked,
         mainCurrency,
         theme,
+        hiddenDashboardSections,
         onboardingCompleted,
         loading,
         login,
