@@ -848,21 +848,26 @@ function CustomizeDashboardCard() {
       <p className="text-sm mb-3" style={{ color: "var(--text-secondary)" }}>
         Choose which charts show up on your Spending and Investments pages.
       </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
         {(["spending", "investments"] as DashboardView[]).map((view) => (
           <div key={view}>
             <h3 className="text-xs font-semibold mb-2" style={{ color: "var(--text-muted)" }}>
               {DASHBOARD_VIEW_LABELS[view]}
             </h3>
-            <div className="flex flex-col gap-1.5">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-1">
               {DASHBOARD_SECTIONS.filter((s) => s.view === view && !s.pinned).map((s) => {
                 const key = sectionKey(view, s.id);
                 return (
-                  <label key={key} className="flex items-center gap-2 text-sm" style={{ color: "var(--text-primary)" }}>
+                  <label
+                    key={key}
+                    className="flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer hover:bg-black/[0.03]"
+                    style={{ color: "var(--text-primary)", borderRadius: "var(--radius-control)" }}
+                  >
                     <input
                       type="checkbox"
                       checked={!draft.includes(key)}
                       onChange={() => toggle(key)}
+                      className="accent-[var(--brand)]"
                     />
                     {s.label}
                   </label>
