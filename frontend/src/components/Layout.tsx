@@ -1,14 +1,6 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import clsx from "clsx";
-import {
-  Bot,
-  PieChart,
-  Receipt,
-  Settings as SettingsIcon,
-  TrendingUp,
-  Wallet,
-  type LucideIcon,
-} from "lucide-react";
+import { Bot, PieChart, Receipt, type LucideIcon } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { useScrollDirection } from "../hooks/useScrollDirection";
 import { Button } from "./ui/Button";
@@ -17,41 +9,46 @@ interface NavItem {
   to: string;
   label: string;
   icon: LucideIcon;
+  /** "chat" gets permanent brand-colored, larger styling so Finn stands out from the rest. */
+  variant?: "chat";
 }
 
-const MAIN_NAV_ITEMS: NavItem[] = [
-  { to: "/portfolio", label: "Portfolio", icon: PieChart },
-  { to: "/balances", label: "Balances", icon: Wallet },
+const NAV_ITEMS: NavItem[] = [
   { to: "/spending", label: "Spending", icon: Receipt },
-  { to: "/investments", label: "Investments", icon: TrendingUp },
-  { to: "/settings", label: "Settings", icon: SettingsIcon },
+  { to: "/chat", label: "Finn", icon: Bot, variant: "chat" },
+  { to: "/investments", label: "Investments", icon: PieChart },
 ];
-
-const CHAT_NAV_ITEM: NavItem = { to: "/chat", label: "Chat", icon: Bot };
 
 function NavIconLink({ item }: { item: NavItem }) {
   const Icon = item.icon;
+  const isChat = item.variant === "chat";
   return (
     <NavLink
       to={item.to}
       aria-label={item.label}
       title={item.label}
       className="relative flex items-center justify-center shrink-0 transition-colors"
-      style={({ isActive }) => ({
-        width: 48,
-        height: 48,
-        borderRadius: "var(--radius-control)",
-        background: isActive ? "var(--brand-tint)" : "transparent",
-        color: isActive ? "var(--brand)" : "var(--text-secondary)",
-      })}
+      style={({ isActive }) =>
+        isChat
+          ? {
+              width: 56,
+              height: 56,
+              borderRadius: "var(--radius-control)",
+              background: isActive ? "var(--brand-hover)" : "var(--brand)",
+              color: "#fff",
+            }
+          : {
+              width: 48,
+              height: 48,
+              borderRadius: "var(--radius-control)",
+              background: isActive ? "var(--brand-tint)" : "transparent",
+              color: isActive ? "var(--brand)" : "var(--text-secondary)",
+            }
+      }
     >
-      {({ isActive }) => <Icon size={24} strokeWidth={isActive ? 2.25 : 2} />}
+      {({ isActive }) => <Icon size={isChat ? 28 : 24} strokeWidth={isActive ? 2.25 : 2} />}
     </NavLink>
   );
-}
-
-function NavDivider() {
-  return <div aria-hidden="true" style={{ width: 1, height: 24, background: "var(--border)" }} />;
 }
 
 /** Swaps the FinanceKu wordmark for the Finn chat-buddy branding while on /chat. */
@@ -105,26 +102,26 @@ export function Layout() {
           className="flex items-center gap-1 px-2 py-2 rounded-full justify-self-center"
           style={{ background: "var(--surface-1)", boxShadow: "var(--shadow-card)" }}
         >
-          {MAIN_NAV_ITEMS.map((item) => (
+          {NAV_ITEMS.map((item) => (
             <NavIconLink key={item.to} item={item} />
           ))}
-          <NavDivider />
-          <NavIconLink item={CHAT_NAV_ITEM} />
         </nav>
 
         <div
           className="flex items-center gap-2 px-3 py-2 rounded-full justify-self-end"
           style={{ background: "var(--surface-1)", boxShadow: "var(--shadow-card)" }}
         >
-          <div
-            className="flex items-center justify-center rounded-full text-xs font-semibold"
-            style={{ width: 32, height: 32, background: "var(--brand-tint)", color: "var(--brand-hover)" }}
-          >
-            {initial}
-          </div>
-          <span className="text-sm hidden lg:inline" style={{ color: "var(--text-primary)" }}>
-            {email ?? "Account"}
-          </span>
+          <NavLink to="/settings" aria-label="Settings" title="Settings" className="flex items-center gap-2">
+            <div
+              className="flex items-center justify-center rounded-full text-xs font-semibold"
+              style={{ width: 32, height: 32, background: "var(--brand-tint)", color: "var(--brand-hover)" }}
+            >
+              {initial}
+            </div>
+            <span className="text-sm hidden lg:inline" style={{ color: "var(--text-primary)" }}>
+              {email ?? "Account"}
+            </span>
+          </NavLink>
           <Button variant="outline" onClick={logout}>
             Logout
           </Button>
@@ -148,12 +145,14 @@ export function Layout() {
           <BrandMark isChatPage={isChatPage} imgClassName="h-8 w-8" />
         </h1>
         <div className="flex items-center gap-2">
-          <div
-            className="flex items-center justify-center rounded-full text-sm font-semibold"
-            style={{ width: 40, height: 40, background: "var(--brand-tint)", color: "var(--brand-hover)" }}
-          >
-            {initial}
-          </div>
+          <NavLink to="/settings" aria-label="Settings" title="Settings">
+            <div
+              className="flex items-center justify-center rounded-full text-sm font-semibold"
+              style={{ width: 40, height: 40, background: "var(--brand-tint)", color: "var(--brand-hover)" }}
+            >
+              {initial}
+            </div>
+          </NavLink>
           <Button variant="outline" onClick={logout} style={{ paddingTop: "0.7rem", paddingBottom: "0.7rem" }}>
             Logout
           </Button>
@@ -176,11 +175,9 @@ export function Layout() {
           paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))",
         }}
       >
-        {MAIN_NAV_ITEMS.map((item) => (
+        {NAV_ITEMS.map((item) => (
           <NavIconLink key={item.to} item={item} />
         ))}
-        <NavDivider />
-        <NavIconLink item={CHAT_NAV_ITEM} />
       </nav>
     </div>
   );

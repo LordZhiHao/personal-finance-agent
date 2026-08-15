@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { format, getMonth, parseISO, subDays, subMonths, subYears } from "date-fns";
-import { TrendingUp, Wallet } from "lucide-react";
+import { Briefcase, PieChart, Receipt, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import type { Holding } from "../types";
 import {
   useAccounts,
+  useBalances,
   useDividendForecast,
   useHoldings,
   useMeta,
@@ -10,7 +12,6 @@ import {
   useRefreshPrices,
   useSnapshotHistory,
   useSnapshots,
-  useTransactions,
 } from "../hooks/api";
 import { useAuth } from "../auth/AuthContext";
 import { FilterBar, type FilterValue } from "../components/FilterBar";
@@ -27,10 +28,12 @@ import { DividendCalendar } from "../components/charts/DividendCalendar";
 import { UpcomingDividends, type TickerCostBasis } from "../components/charts/UpcomingDividends";
 import { TradeHistoryTable } from "../components/charts/TradeHistoryTable";
 import { HoldingsTable } from "../components/charts/HoldingsTable";
-import { monthKey } from "../lib/dates";
+import { MarketHoldingsTable } from "../components/charts/MarketHoldingsTable";
+import { BalancesTable } from "../components/charts/BalancesTable";
 import { sectionKey } from "../lib/dashboardSections";
-import { formatMoney } from "../lib/format";
-import { Button, Select, TabToggle } from "../components/ui";
+import { formatMoney, formatPct } from "../lib/format";
+import { CURRENCY_MARKET } from "../lib/markets";
+import { Button, Input, Select, TabToggle, Card } from "../components/ui";
 
 const today = format(new Date(), "yyyy-MM-dd");
 const defaultFilters: FilterValue = {
@@ -52,24 +55,27 @@ function periodCutoff(period: Period): string | null {
 }
 
 type AllocationView = "broker" | "currency";
+type HoldingFilter = "all" | "gainers" | "losers";
 
 type InvestmentsTab =
   | "netWorth"
   | "netWorthOverTime"
   | "assetAllocation"
+  | "accountBalances"
+  | "positions"
   | "topHoldings"
   | "dividendCalendar"
   | "upcomingDividends"
-  | "positions"
   | "trades";
 const INVESTMENTS_TABS: { value: InvestmentsTab; label: string }[] = [
-  { value: "netWorth", label: "Net Worth" },
+  { value: "netWorth", label: "Summary" },
   { value: "netWorthOverTime", label: "Net Worth Over Time" },
   { value: "assetAllocation", label: "Asset Allocation" },
+  { value: "accountBalances", label: "Account Balances" },
+  { value: "positions", label: "Positions" },
   { value: "topHoldings", label: "Top Holdings" },
   { value: "dividendCalendar", label: "Dividend Calendar" },
   { value: "upcomingDividends", label: "Upcoming Dividends" },
-  { value: "positions", label: "Positions" },
   { value: "trades", label: "Trade History" },
 ];
 
@@ -81,6 +87,8 @@ export function InvestmentsPage() {
   const [period, setPeriod] = useState<Period>("All");
   const [selectedBrokerAccountId, setSelectedBrokerAccountId] = useState<string>("");
   const [allocationView, setAllocationView] = useState<AllocationView>("broker");
+  const [holdingFilter, setHoldingFilter] = useState<HoldingFilter>("all");
+  const [holdingSearch, setHoldingSearch] = useState("");
 
   const { mainCurrency: displayCurrency, hiddenDashboardSections } = useAuth();
   const accountsQuery = useAccounts(["brokerage"]);
@@ -88,18 +96,13 @@ export function InvestmentsPage() {
   const snapshotsQuery = useSnapshots(displayCurrency);
   const historyQuery = useSnapshotHistory(displayCurrency, selectedBrokerAccountId || undefined);
   const holdingsQuery = useHoldings(displayCurrency);
+  const balancesQuery = useBalances(displayCurrency);
   const refreshPricesMutation = useRefreshPrices();
   const dividendForecastQuery = useDividendForecast();
   const eventsQuery = usePortfolioEvents(
     hasCustomFilters ? filters.startDate : undefined,
     hasCustomFilters ? filters.endDate : undefined,
   );
-  // "Invested" mirrors SpendingPage's card of the same name — total of Investment-
-  // classified transactions (e.g. a brokerage top-up from a bank account) in the
-  // latest month with any transaction data, not scoped to brokerage accounts only
-  // since the cash movement itself is usually logged against the source (bank) account.
-  const txQuery = useTransactions(filters.startDate, filters.endDate);
-  const classifications = metaQuery.data?.category_classifications ?? {};
 
   const visible = (id: InvestmentsTab) => !hiddenDashboardSections.includes(sectionKey("investments", id));
   const visibleTabs = useMemo(
@@ -111,18 +114,6 @@ export function InvestmentsPage() {
   useEffect(() => {
     if (!visibleTabs.some((t) => t.value === mobileTab)) setMobileTab("netWorth");
   }, [visibleTabs, mobileTab]);
-
-  const monthlyInvested = useMemo(() => {
-    const txns = txQuery.data ?? [];
-    if (txns.length === 0) return 0;
-    const latestMonth = txns.reduce((max, t) => (monthKey(t.date) > max ? monthKey(t.date) : max), "");
-    return txns
-      .filter(
-        (t) =>
-          t.amount < 0 && monthKey(t.date) === latestMonth && classifications[t.category || "Other"] === "investment",
-      )
-      .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-  }, [txQuery.data, classifications]);
 
   const snapshots = useMemo(() => {
     const rows = snapshotsQuery.data ?? [];
@@ -141,8 +132,6 @@ export function InvestmentsPage() {
       return true;
     });
   }, [eventsQuery.data, filters.accounts, filters.months]);
-
-  const netWorth = snapshots.reduce((sum, s) => sum + s.converted_value, 0);
 
   const netWorthPoints = useMemo(() => {
     const totals = new Map<string, number>();
@@ -222,34 +211,44 @@ export function InvestmentsPage() {
 
   const eventsSorted = useMemo(() => [...events].sort((a, b) => b.date.localeCompare(a.date)), [events]);
 
-  const netWorthCard = (
-    <StatCard
-      label="Net Worth"
-      value={formatMoney(netWorth, displayCurrency)}
-      icon={<Wallet size={20} />}
-      hero
-      headerRight={
-        <Button
-          variant="ghost"
-          onClick={() => refreshPricesMutation.mutate()}
-          disabled={refreshPricesMutation.isPending}
-        >
-          {refreshPricesMutation.isPending ? "Refreshing…" : "🔄 Refresh Prices"}
-        </Button>
-      }
-    />
-  );
+  // Summary KPI figures — Market Value/Cost Basis/Unrealized Gain from holdings,
+  // Total Net Worth from accounts balances (cash + brokerage, unlike holdings which
+  // is brokerage-only).
+  const totalMarketValue = holdingsQuery.data?.total_market_value ?? 0;
+  const costBasis = holdingsQuery.data?.total_cost_basis ?? 0;
+  const gain = holdingsQuery.data?.total_unrealized_gain ?? 0;
+  const gainPct = costBasis !== 0 ? (gain / costBasis) * 100 : 0;
+  const totalNetWorth = balancesQuery.data?.total ?? 0;
 
-  // Beside Net Worth on desktop, stacked below it on mobile (grid-cols-1 default).
   const summaryPanel = (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      {netWorthCard}
+    <div className="space-y-3">
       <StatCard
-        label="Invested"
-        value={formatMoney(monthlyInvested, displayCurrency)}
-        icon={<TrendingUp size={20} />}
-        tint="amber"
+        label="Total Market Value"
+        value={formatMoney(totalMarketValue, displayCurrency)}
+        icon={<Briefcase size={20} />}
+        hero
       />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <StatCard
+          label="Total Cost Basis"
+          value={formatMoney(costBasis, displayCurrency)}
+          icon={<Receipt size={20} />}
+          tint="amber"
+        />
+        <StatCard
+          label="Unrealized Gain"
+          value={formatMoney(gain, displayCurrency)}
+          icon={gain >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
+          tint={gain >= 0 ? "green" : "red"}
+          delta={{ value: formatPct(gainPct), direction: gain >= 0 ? "up" : "down" }}
+        />
+        <StatCard
+          label="Total Net Worth"
+          value={formatMoney(totalNetWorth, displayCurrency)}
+          icon={<Wallet size={20} />}
+          tint="brand"
+        />
+      </div>
     </div>
   );
 
@@ -310,6 +309,104 @@ export function InvestmentsPage() {
     </ChartCard>
   );
 
+  const accountBalancesPanel = (
+    <ChartCard title="Accounts">
+      {balancesQuery.data ? (
+        <BalancesTable summary={balancesQuery.data} />
+      ) : (
+        <p style={{ color: "var(--text-secondary)" }}>No accounts yet.</p>
+      )}
+    </ChartCard>
+  );
+
+  const holdings = holdingsQuery.data?.holdings ?? [];
+  const filteredHoldings = useMemo(() => {
+    return holdings.filter((h) => {
+      if (holdingFilter === "gainers" && !(h.unrealized_gain !== null && h.unrealized_gain > 0)) return false;
+      if (holdingFilter === "losers" && !(h.unrealized_gain !== null && h.unrealized_gain < 0)) return false;
+      if (holdingSearch && !h.ticker.toLowerCase().includes(holdingSearch.trim().toLowerCase())) return false;
+      return true;
+    });
+  }, [holdings, holdingFilter, holdingSearch]);
+
+  const holdingsByMarket = useMemo(() => {
+    const groups = new Map<string, { currency: string; holdings: Holding[] }>();
+    for (const h of filteredHoldings) {
+      const nativeCurrency = h.price_currency ?? h.cost_currency;
+      const market = CURRENCY_MARKET[nativeCurrency] ?? nativeCurrency;
+      if (!groups.has(market)) groups.set(market, { currency: nativeCurrency, holdings: [] });
+      groups.get(market)!.holdings.push(h);
+    }
+    return groups;
+  }, [filteredHoldings]);
+
+  const marketCards = [...holdingsByMarket.entries()].map(([market, group]) => {
+    const marketCostBasis = group.holdings.reduce((sum, h) => sum + h.native_cost_basis, 0);
+    const marketMarketValue = group.holdings.reduce((sum, h) => sum + (h.native_market_value ?? 0), 0);
+    const marketGain = group.holdings.reduce((sum, h) => sum + (h.native_unrealized_gain ?? 0), 0);
+    const marketGainPct = marketCostBasis !== 0 ? (marketGain / marketCostBasis) * 100 : 0;
+    return (
+      <ChartCard key={market} title={`${market} Market (${group.currency})`}>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+          <StatCard
+            label="Amount Invested"
+            value={formatMoney(marketCostBasis, group.currency)}
+            icon={<Receipt size={20} />}
+            tint="amber"
+          />
+          <StatCard
+            label="Market Value"
+            value={formatMoney(marketMarketValue, group.currency)}
+            icon={<Briefcase size={20} />}
+            tint="brand"
+          />
+          <StatCard
+            label="Return"
+            value={formatMoney(marketGain, group.currency)}
+            icon={marketGain >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
+            tint={marketGain >= 0 ? "green" : "red"}
+            delta={{ value: formatPct(marketGainPct), direction: marketGain >= 0 ? "up" : "down" }}
+          />
+        </div>
+        <MarketHoldingsTable holdings={group.holdings} currency={group.currency} />
+      </ChartCard>
+    );
+  });
+
+  const positionsPanel = (
+    <div className="space-y-3">
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <TabToggle
+            options={[
+              { value: "all", label: "All" },
+              { value: "gainers", label: "Gainers" },
+              { value: "losers", label: "Losers" },
+            ]}
+            value={holdingFilter}
+            onChange={setHoldingFilter}
+          />
+          <Input
+            placeholder="Search ticker…"
+            value={holdingSearch}
+            onChange={(e) => setHoldingSearch(e.target.value)}
+            className="w-full sm:w-48"
+          />
+        </div>
+      </Card>
+      <ChartCard title="Holdings">
+        <div className="max-h-[420px] overflow-y-auto">
+          <HoldingsTable
+            holdings={filteredHoldings}
+            currency={displayCurrency}
+            totalMarketValue={holdingsQuery.data?.total_market_value}
+          />
+        </div>
+      </ChartCard>
+      {marketCards}
+    </div>
+  );
+
   const topHoldingsChart = (
     <ChartCard title="Top Holdings">
       {topHoldings.length > 0 ? (
@@ -338,18 +435,6 @@ export function InvestmentsPage() {
     </ChartCard>
   );
 
-  const positionsPanel = (
-    <ChartCard title="Positions">
-      <div className="max-h-[420px] overflow-y-auto">
-        <HoldingsTable
-          holdings={holdingsQuery.data?.holdings ?? []}
-          currency={displayCurrency}
-          totalMarketValue={holdingsQuery.data?.total_market_value}
-        />
-      </div>
-    </ChartCard>
-  );
-
   const tradesPanel = (
     <ChartCard
       title="Trade History"
@@ -370,15 +455,36 @@ export function InvestmentsPage() {
     </ChartCard>
   );
 
+  const panels: Record<InvestmentsTab, ReactNode> = {
+    netWorth: summaryPanel,
+    netWorthOverTime: netWorthOverTimeChart,
+    assetAllocation: assetAllocationChart,
+    accountBalances: accountBalancesPanel,
+    positions: positionsPanel,
+    topHoldings: topHoldingsChart,
+    dividendCalendar: dividendCalendarChart,
+    upcomingDividends: upcomingDividendsPanel,
+    trades: tradesPanel,
+  };
+
   return (
     <div className="space-y-3">
       <div className="md:hidden -mt-3 mb-4">
         <MobileSectionTabs tabs={visibleTabs} active={mobileTab} onChange={setMobileTab} />
       </div>
-      <h1 className="flex items-center gap-2 text-xl font-semibold" style={{ color: "var(--text-heading)" }}>
-        <TrendingUp size={22} />
-        Investments
-      </h1>
+      <div className="flex items-center justify-between">
+        <h1 className="flex items-center gap-2 text-xl font-semibold" style={{ color: "var(--text-heading)" }}>
+          <PieChart size={22} />
+          Investments
+        </h1>
+        <Button
+          variant="ghost"
+          onClick={() => refreshPricesMutation.mutate()}
+          disabled={refreshPricesMutation.isPending}
+        >
+          {refreshPricesMutation.isPending ? "Refreshing…" : "🔄 Refresh Prices"}
+        </Button>
+      </div>
       <FilterBar
         accounts={accountsQuery.data ?? []}
         value={filters}
@@ -392,16 +498,7 @@ export function InvestmentsPage() {
         tabs={visibleTabs}
         active={mobileTab}
         onChange={setMobileTab}
-        panels={{
-          netWorth: summaryPanel,
-          netWorthOverTime: netWorthOverTimeChart,
-          assetAllocation: assetAllocationChart,
-          topHoldings: topHoldingsChart,
-          dividendCalendar: dividendCalendarChart,
-          upcomingDividends: upcomingDividendsPanel,
-          positions: positionsPanel,
-          trades: tradesPanel,
-        }}
+        panels={panels}
         desktopContent={
           <>
             {summaryPanel}
@@ -414,6 +511,9 @@ export function InvestmentsPage() {
               className="items-stretch"
             />
 
+            {visible("accountBalances") && accountBalancesPanel}
+            {visible("positions") && positionsPanel}
+
             <SectionPairRow
               leftVisible={visible("topHoldings")}
               left={topHoldingsChart}
@@ -423,7 +523,6 @@ export function InvestmentsPage() {
             />
 
             {visible("upcomingDividends") && upcomingDividendsPanel}
-            {visible("positions") && positionsPanel}
             {visible("trades") && tradesPanel}
           </>
         }

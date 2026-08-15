@@ -20,6 +20,7 @@ export const DASHBOARD_SECTIONS: DashboardSectionMeta[] = [
   { id: "netWorth", view: "investments", label: "Summary KPIs", pinned: true },
   { id: "netWorthOverTime", view: "investments", label: "Net Worth Over Time" },
   { id: "assetAllocation", view: "investments", label: "Asset Allocation" },
+  { id: "accountBalances", view: "investments", label: "Account Balances" },
   { id: "topHoldings", view: "investments", label: "Top Holdings" },
   { id: "dividendCalendar", view: "investments", label: "Dividend Calendar" },
   { id: "upcomingDividends", view: "investments", label: "Upcoming Dividends" },

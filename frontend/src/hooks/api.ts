@@ -125,6 +125,7 @@ export function useRefreshPrices() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["snapshots"] });
       queryClient.invalidateQueries({ queryKey: ["holdings"] });
+      queryClient.invalidateQueries({ queryKey: ["balances"] });
     },
   });
 }
