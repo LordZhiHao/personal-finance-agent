@@ -6,6 +6,10 @@ export function formatMoney(amount: number, currency: string): string {
   })}`;
 }
 
+export function formatCompact(amount: number): string {
+  return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(amount);
+}
+
 export function formatPct(value: number): string {
   const sign = value > 0 ? "+" : "";
   return `${sign}${value.toFixed(1)}%`;

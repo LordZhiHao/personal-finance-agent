@@ -202,7 +202,13 @@ export function SpendingPage() {
   );
   const spendByCategoryChart = (
     <ChartCard title="Spend by Category" fill className={mobileChartHeight}>
-      <SpendByCategoryDonut transactions={spendTxns} categoryColors={categoryColors} fill />
+      <SpendByCategoryDonut
+        transactions={spendTxns}
+        categoryColors={categoryColors}
+        currency={mainCurrency}
+        accounts={filters.accounts}
+        fill
+      />
     </ChartCard>
   );
   const incomeVsSpendChart = (

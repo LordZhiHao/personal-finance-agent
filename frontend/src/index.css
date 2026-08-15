@@ -79,6 +79,20 @@
   --series-7: #0f442a;
   --series-8: #07311d;
 
+  /* Second categorical ramp — a blue hue, alternated with --series-1..8 above
+     (see colorForKey() in lib/palette.ts) so adjacent categories differ in
+     hue as well as lightness, not just lightness. Same ordinal-ramp
+     validation as --series-1..8 (dataviz skill, `--ordinal`): monotone L,
+     adjacent ΔL >= 0.06, light-end contrast >= 2:1, single hue (spread 9°). */
+  --series-b-1: #73b0ff;
+  --series-b-2: #5a95f9;
+  --series-b-3: #417bdc;
+  --series-b-4: #2962c0;
+  --series-b-5: #0e49a5;
+  --series-b-6: #002f8a;
+  --series-b-7: #001370;
+  --series-b-8: #000056;
+
   --status-good: #059669;
   --status-warning: #d97706;
   --status-serious: #ea580c;
@@ -127,6 +141,21 @@
   --series-6: #73361e;
   --series-7: #5b2815;
   --series-8: #431c0c;
+
+  /* Second categorical ramp — a maroon/red hue, alternated with --series-1..8
+     above (see colorForKey() in lib/palette.ts). Deliberately a deeper,
+     more muted red (hue 15°, lower chroma at the dark end) than
+     --status-critical/--status-serious/--tint-red-* above, so it doesn't
+     read as a warning/error color when it's really just "series 2". Same
+     ordinal-ramp validation as the rest of this file. */
+  --series-b-1: #fa7f8c;
+  --series-b-2: #dd6573;
+  --series-b-3: #bf4b5b;
+  --series-b-4: #a33043;
+  --series-b-5: #86102d;
+  --series-b-6: #6a0018;
+  --series-b-7: #4f0004;
+  --series-b-8: #330000;
 
   --sequential-1: #ffedd5;
   --sequential-2: #fdba74;

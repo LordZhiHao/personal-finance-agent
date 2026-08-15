@@ -14,7 +14,7 @@ import {
 import { useMeta, useTransactions } from "../../hooks/api";
 import { dailySpendTotals, type DailyTotal } from "../../lib/dates";
 import { SEQUENTIAL } from "../../lib/palette";
-import { formatMoney } from "../../lib/format";
+import { formatCompact, formatMoney } from "../../lib/format";
 import { Overlay, Table, Thead, Tbody, Tr, Th, Td } from "../ui";
 
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -125,10 +125,10 @@ export function SpendingHeatmap({
               <div
                 title={inMonth ? `${iso}: ${formatMoney(total, currency)}` : undefined}
                 onClick={() => clickable && setSelected({ date: iso, total })}
-                className="flex items-center justify-center"
+                className="flex flex-col items-center justify-center leading-none"
                 style={{
-                  width: 36,
-                  height: 36,
+                  width: 44,
+                  height: 44,
                   borderRadius: 8,
                   background: inMonth ? levelColor(level) : "transparent",
                   color: inMonth ? textColor(level) : "var(--text-muted)",
@@ -136,7 +136,10 @@ export function SpendingHeatmap({
                   cursor: clickable ? "pointer" : "default",
                 }}
               >
-                {format(day, "d")}
+                <span>{format(day, "d")}</span>
+                {inMonth && total > 0 && (
+                  <span style={{ fontSize: 9, opacity: 0.85, marginTop: 2 }}>{formatCompact(total)}</span>
+                )}
               </div>
             </div>
           );
