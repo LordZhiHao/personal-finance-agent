@@ -67,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setMainCurrency(me.main_currency);
       setTheme(me.theme);
       applyTheme(me.theme);
-      setHiddenDashboardSections(me.hidden_dashboard_sections);
+      setHiddenDashboardSections(me.hidden_dashboard_sections ?? []);
       setOnboardingCompleted(me.onboarding_completed);
       setIsAuthenticated(true);
     } catch {
