@@ -272,12 +272,12 @@ function CategoryRow({ category }: { category: CustomCategory }) {
   }
 
   return (
-    <div className="flex items-center gap-2 py-1">
-      <Input value={name} onChange={(e) => setName(e.target.value)} className="flex-1" />
+    <div className="flex flex-wrap items-center gap-2 py-1">
+      <Input value={name} onChange={(e) => setName(e.target.value)} className="flex-1 min-w-[140px]" />
       <Select
         value={classification}
         onChange={(e) => setClassification(e.target.value as CategoryClassification)}
-        className="w-56"
+        className="w-full sm:w-56"
       >
         {Object.entries(CATEGORY_CLASSIFICATION_LABELS).map(([value, label]) => (
           <option key={value} value={value}>
@@ -285,17 +285,19 @@ function CategoryRow({ category }: { category: CustomCategory }) {
           </option>
         ))}
       </Select>
-      <Button variant="outline" onClick={handleSave} disabled={!dirty || updateMutation.isPending}>
-        {updateMutation.isPending ? "Saving…" : "Save"}
-      </Button>
-      <Button
-        variant="ghost"
-        onClick={handleDelete}
-        disabled={deleteMutation.isPending}
-        style={{ color: "var(--tint-red-text)" }}
-      >
-        Delete
-      </Button>
+      <div className="flex gap-2">
+        <Button variant="outline" onClick={handleSave} disabled={!dirty || updateMutation.isPending}>
+          {updateMutation.isPending ? "Saving…" : "Save"}
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={handleDelete}
+          disabled={deleteMutation.isPending}
+          style={{ color: "var(--tint-red-text)" }}
+        >
+          Delete
+        </Button>
+      </div>
     </div>
   );
 }
@@ -848,13 +850,13 @@ function CustomizeDashboardCard() {
       <p className="text-sm mb-3" style={{ color: "var(--text-secondary)" }}>
         Choose which charts show up on your Spending and Investments pages.
       </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+      <div className="flex flex-col gap-4">
         {(["spending", "investments"] as DashboardView[]).map((view) => (
           <div key={view}>
             <h3 className="text-xs font-semibold mb-2" style={{ color: "var(--text-muted)" }}>
               {DASHBOARD_VIEW_LABELS[view]}
             </h3>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-1">
+            <div className="flex flex-col gap-1">
               {DASHBOARD_SECTIONS.filter((s) => s.view === view && !s.pinned).map((s) => {
                 const key = sectionKey(view, s.id);
                 return (
@@ -961,6 +963,8 @@ export function SettingsPage() {
               )}
             </div>
           </Card>
+
+          <CustomizeDashboardCard />
         </div>
 
         <div className="lg:col-span-8 flex flex-col gap-4">
@@ -971,8 +975,6 @@ export function SettingsPage() {
           <MemoriesCard />
         </div>
       </div>
-
-      <CustomizeDashboardCard />
     </div>
   );
 }
