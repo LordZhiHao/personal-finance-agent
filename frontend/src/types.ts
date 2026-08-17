@@ -58,6 +58,10 @@ export interface Transaction {
   date: string;
   description: string;
   amount: number;
+  /** amount FX-converted to the requested display currency — see GET /api/transactions's
+   * `currency` param. Only present when the fetch passed one; native `amount`/`currency`
+   * above are always the transaction's real, unconverted values. */
+  converted_amount?: number;
   category: string;
   currency: string;
   source: string;

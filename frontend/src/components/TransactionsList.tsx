@@ -36,11 +36,13 @@ export function TransactionsList({
   transactions,
   categories,
   accounts,
+  currency,
   refetchKey,
 }: {
   transactions: Transaction[];
   categories: string[];
   accounts: Account[];
+  currency: string;
   refetchKey: unknown[];
 }) {
   const [editing, setEditing] = useState<Transaction | null>(null);
@@ -54,7 +56,6 @@ export function TransactionsList({
     <div>
       <div className="max-h-[520px] overflow-y-auto -mx-2 px-2">
         {days.map((day) => {
-          const dayCurrency = day.transactions[0].currency;
           return (
             <div key={day.date} className="mb-4 last:mb-0">
               <div className="flex items-center justify-between mb-1.5 px-1">
@@ -71,10 +72,10 @@ export function TransactionsList({
                 </div>
                 <div className="flex items-center gap-3 text-xs font-medium">
                   {day.income > 0 && (
-                    <span style={{ color: "var(--tint-green-text)" }}>+{formatMoney(day.income, dayCurrency)}</span>
+                    <span style={{ color: "var(--tint-green-text)" }}>+{formatMoney(day.income, currency)}</span>
                   )}
                   {day.expense > 0 && (
-                    <span style={{ color: "var(--tint-red-text)" }}>-{formatMoney(day.expense, dayCurrency)}</span>
+                    <span style={{ color: "var(--tint-red-text)" }}>-{formatMoney(day.expense, currency)}</span>
                   )}
                 </div>
               </div>

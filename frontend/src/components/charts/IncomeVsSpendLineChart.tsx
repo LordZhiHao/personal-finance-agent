@@ -14,12 +14,12 @@ export function IncomeVsSpendLineChart({
   const income = sumByMonth(
     transactions.filter((t) => t.amount > 0),
     (t) => t.date,
-    (t) => t.amount,
+    (t) => t.converted_amount ?? t.amount,
   );
   const expense = sumByMonth(
     transactions.filter((t) => t.amount < 0),
     (t) => t.date,
-    (t) => Math.abs(t.amount),
+    (t) => Math.abs(t.converted_amount ?? t.amount),
   );
   const months = [...new Set([...income, ...expense].map((p) => p.month))].sort();
   const incomeByMonth = new Map(income.map((p) => [p.month, p.value]));

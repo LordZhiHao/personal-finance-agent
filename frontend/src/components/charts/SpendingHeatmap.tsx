@@ -57,7 +57,7 @@ export function SpendingHeatmap({
 
   const monthStart = format(startOfMonth(month), "yyyy-MM-dd");
   const monthEnd = format(endOfMonth(month), "yyyy-MM-dd");
-  const txQuery = useTransactions(monthStart, monthEnd);
+  const txQuery = useTransactions(monthStart, monthEnd, currency);
   const metaQuery = useMeta();
   const classifications = metaQuery.data?.category_classifications ?? {};
 

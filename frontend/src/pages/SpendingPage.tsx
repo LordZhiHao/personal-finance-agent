@@ -70,7 +70,7 @@ export function SpendingPage() {
   const [mobileTab, setMobileTab] = useState<SpendingTab>("summary");
   const accountsQuery = useAccounts(["bank", "ewallet"]);
   const metaQuery = useMeta();
-  const txQuery = useTransactions(filters.startDate, filters.endDate);
+  const txQuery = useTransactions(filters.startDate, filters.endDate, mainCurrency);
   const classifications = metaQuery.data?.category_classifications ?? {};
 
   const visible = (id: SpendingTab) => !hiddenDashboardSections.includes(sectionKey("spending", id));
@@ -112,16 +112,16 @@ export function SpendingPage() {
     const latestMonth = filtered.reduce((max, t) => (monthKey(t.date) > max ? monthKey(t.date) : max), "");
     const income = filtered
       .filter((t) => t.amount > 0 && monthKey(t.date) === latestMonth)
-      .reduce((sum, t) => sum + t.amount, 0);
+      .reduce((sum, t) => sum + (t.converted_amount ?? t.amount), 0);
     const spend = spendTxns
       .filter((t) => t.amount < 0 && monthKey(t.date) === latestMonth)
-      .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+      .reduce((sum, t) => sum + Math.abs(t.converted_amount ?? t.amount), 0);
     const invested = filtered
       .filter(
         (t) =>
           t.amount < 0 && monthKey(t.date) === latestMonth && classifications[t.category || "Other"] === "investment",
       )
-      .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+      .reduce((sum, t) => sum + Math.abs(t.converted_amount ?? t.amount), 0);
     const rate = income ? Math.round(((income - spend) / income) * 10000) / 100 : 0;
     return { monthlyIncome: income, monthlySpend: spend, monthlyInvested: invested, savingsRate: rate };
   }, [filtered, spendTxns, classifications]);
@@ -143,7 +143,7 @@ export function SpendingPage() {
     const sumExpenses = (start: Date, end: Date) =>
       spendTxns
         .filter((t) => t.amount < 0 && parseISO(t.date) >= start && parseISO(t.date) <= end)
-        .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+        .reduce((sum, t) => sum + Math.abs(t.converted_amount ?? t.amount), 0);
 
     const mtdSpend = sumExpenses(mtdStart, now);
     const prevMtdSpend = sumExpenses(prevMtdStart, prevMtdEnd);
@@ -250,6 +250,7 @@ export function SpendingPage() {
         transactions={filtered}
         categories={categories}
         accounts={accountsQuery.data ?? []}
+        currency={mainCurrency}
         refetchKey={["transactions", filters.startDate, filters.endDate]}
       />
     </ChartCard>

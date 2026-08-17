@@ -40,10 +40,11 @@ export function useAccounts(types?: string[]) {
   });
 }
 
-export function useTransactions(startDate: string, endDate: string, enabled: boolean = true) {
+export function useTransactions(startDate: string, endDate: string, currency: string, enabled: boolean = true) {
   return useQuery({
-    queryKey: ["transactions", startDate, endDate],
-    queryFn: () => api.get<Transaction[]>(`/api/transactions${qs({ start_date: startDate, end_date: endDate })}`),
+    queryKey: ["transactions", startDate, endDate, currency],
+    queryFn: () =>
+      api.get<Transaction[]>(`/api/transactions${qs({ start_date: startDate, end_date: endDate, currency })}`),
     enabled,
   });
 }

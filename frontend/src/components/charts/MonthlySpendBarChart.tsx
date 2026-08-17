@@ -20,7 +20,7 @@ export function MonthlySpendBarChart({
     expenses,
     (t) => t.date,
     (t) => t.category || "Other",
-    (t) => Math.abs(t.amount),
+    (t) => Math.abs(t.converted_amount ?? t.amount),
   );
   const presentCategories = categories.filter((c) => data.some((row) => typeof row[c] === "number"));
 

@@ -13,7 +13,7 @@ function categoryTotals(transactions: Transaction[]) {
   for (const t of transactions) {
     if (t.amount >= 0) continue;
     const cat = t.category || "Other";
-    totals.set(cat, (totals.get(cat) ?? 0) + Math.abs(t.amount));
+    totals.set(cat, (totals.get(cat) ?? 0) + Math.abs(t.converted_amount ?? t.amount));
   }
   return [...totals.entries()].map(([name, value]) => ({ name, value }));
 }
@@ -41,7 +41,7 @@ export function SpendByCategoryDonut({
   // preserving today's default total-value behavior exactly.
   const monthStart = monthFilter ? format(startOfMonth(monthFilter), "yyyy-MM-dd") : "";
   const monthEnd = monthFilter ? format(endOfMonth(monthFilter), "yyyy-MM-dd") : "";
-  const monthTxQuery = useTransactions(monthStart, monthEnd, monthFilter != null);
+  const monthTxQuery = useTransactions(monthStart, monthEnd, currency, monthFilter != null);
   const metaQuery = useMeta();
   const classifications = metaQuery.data?.category_classifications ?? {};
 

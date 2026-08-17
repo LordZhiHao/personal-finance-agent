@@ -14,12 +14,12 @@ export function SavingsRateLineChart({
   const income = sumByMonth(
     transactions.filter((t) => t.amount > 0),
     (t) => t.date,
-    (t) => t.amount,
+    (t) => t.converted_amount ?? t.amount,
   );
   const expense = sumByMonth(
     transactions.filter((t) => t.amount < 0),
     (t) => t.date,
-    (t) => Math.abs(t.amount),
+    (t) => Math.abs(t.converted_amount ?? t.amount),
   );
   const expenseByMonth = new Map(expense.map((p) => [p.month, p.value]));
   const data = income.map((p) => {

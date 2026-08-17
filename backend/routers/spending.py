@@ -13,6 +13,7 @@ from db.supabase import (
     update_transaction,
 )
 from scheduler.report_builder import summarize_transactions
+from utils.fx import convert
 
 router = APIRouter(prefix="/api/transactions", tags=["spending"])
 
@@ -21,9 +22,18 @@ router = APIRouter(prefix="/api/transactions", tags=["spending"])
 def list_transactions(
     start_date: str = Query(...),
     end_date: str = Query(...),
+    currency: str = "SGD",
     user_id: str = Depends(get_current_user),
 ):
-    return get_transactions(start_date, end_date, user_id)
+    """Each row keeps its native amount/currency (for editing, receipts, and the
+    itemized transaction list) and additionally gets converted_amount — the amount
+    FX-converted to `currency` — so pages that sum across transactions (which can
+    genuinely span multiple currencies, see AddTransactionDialog) aggregate
+    correctly instead of mixing raw amounts of different currencies together."""
+    rows = get_transactions(start_date, end_date, user_id)
+    for r in rows:
+        r["converted_amount"] = convert(r["amount"], r["currency"], currency)
+    return rows
 
 
 @router.get("/summary")

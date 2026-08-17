@@ -63,7 +63,7 @@ export function dailySpendTotals(transactions: Transaction[]): DailyTotal[] {
   for (const t of transactions) {
     if (t.amount >= 0) continue;
     const day = t.date.slice(0, 10);
-    totals.set(day, (totals.get(day) ?? 0) + Math.abs(t.amount));
+    totals.set(day, (totals.get(day) ?? 0) + Math.abs(t.converted_amount ?? t.amount));
   }
   return [...totals.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
@@ -84,8 +84,9 @@ export function groupTransactionsByDay(transactions: Transaction[]): DayGroup[] 
   for (const t of transactions) {
     const day = t.date.slice(0, 10);
     const group = groups.get(day) ?? { date: day, income: 0, expense: 0, transactions: [] };
-    if (t.amount >= 0) group.income += t.amount;
-    else group.expense += Math.abs(t.amount);
+    const value = t.converted_amount ?? t.amount;
+    if (t.amount >= 0) group.income += value;
+    else group.expense += Math.abs(value);
     group.transactions.push(t);
     groups.set(day, group);
   }
@@ -118,7 +119,7 @@ export function monthComparison(transactions: Transaction[], referenceDate = new
 
     const cat = t.category || "Other";
     const row = totals.get(cat) ?? { current: 0, previous: 0, yearAgo: 0 };
-    row[bucket] += Math.abs(t.amount);
+    row[bucket] += Math.abs(t.converted_amount ?? t.amount);
     totals.set(cat, row);
   }
 
