@@ -10,6 +10,7 @@ import type {
   ChatResult,
   CustomCategory,
   DividendForecast,
+  DividendSummary,
   ExpenseSummary,
   Goal,
   HoldingsSummary,
@@ -111,6 +112,14 @@ export function useDividendForecast() {
   return useQuery({
     queryKey: ["dividend-forecast"],
     queryFn: () => api.get<DividendForecast[]>("/api/dividend-forecast"),
+  });
+}
+
+export function useDividendSummary(currency: string, startDate?: string, endDate?: string) {
+  return useQuery({
+    queryKey: ["dividend-summary", currency, startDate, endDate],
+    queryFn: () =>
+      api.get<DividendSummary>(`/api/dividends/summary${qs({ currency, start_date: startDate, end_date: endDate })}`),
   });
 }
 

@@ -203,3 +203,8 @@ export interface DividendForecast {
   dividend_yield: number | null;
   currency?: string;
 }
+
+export interface DividendSummary {
+  total: number;
+  currency: string;
+}

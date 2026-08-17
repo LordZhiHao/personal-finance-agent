@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { format, getMonth, parseISO, subDays, subMonths, subYears } from "date-fns";
-import { Briefcase, PieChart, Receipt, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import { format, getMonth, parseISO, startOfYear, subDays, subMonths, subYears } from "date-fns";
+import { Briefcase, Coins, PieChart, Receipt, TrendingDown, TrendingUp, Wallet } from "lucide-react";
 import type { Holding } from "../types";
 import {
   useAccounts,
   useBalances,
   useDividendForecast,
+  useDividendSummary,
   useHoldings,
   useMeta,
   usePortfolioEvents,
@@ -25,6 +26,7 @@ import { NetWorthLineChart } from "../components/charts/NetWorthLineChart";
 import { AssetAllocationDonut } from "../components/charts/AssetAllocationDonut";
 import { AllocationBarChart } from "../components/charts/AllocationBarChart";
 import { DividendCalendar } from "../components/charts/DividendCalendar";
+import { DividendsByCurrencyDonut } from "../components/charts/DividendsByCurrencyDonut";
 import { UpcomingDividends, type TickerCostBasis } from "../components/charts/UpcomingDividends";
 import { TradeHistoryTable } from "../components/charts/TradeHistoryTable";
 import { HoldingsTable } from "../components/charts/HoldingsTable";
@@ -65,6 +67,7 @@ type InvestmentsTab =
   | "positions"
   | "topHoldings"
   | "dividendCalendar"
+  | "dividendsByCurrency"
   | "upcomingDividends"
   | "trades";
 const INVESTMENTS_TABS: { value: InvestmentsTab; label: string }[] = [
@@ -75,6 +78,7 @@ const INVESTMENTS_TABS: { value: InvestmentsTab; label: string }[] = [
   { value: "positions", label: "Positions" },
   { value: "topHoldings", label: "Top Holdings" },
   { value: "dividendCalendar", label: "Dividend Calendar" },
+  { value: "dividendsByCurrency", label: "Dividends by Currency" },
   { value: "upcomingDividends", label: "Upcoming Dividends" },
   { value: "trades", label: "Trade History" },
 ];
@@ -103,6 +107,16 @@ export function InvestmentsPage() {
     hasCustomFilters ? filters.startDate : undefined,
     hasCustomFilters ? filters.endDate : undefined,
   );
+  const dividendSummaryQuery = useDividendSummary(
+    displayCurrency,
+    format(startOfYear(new Date()), "yyyy-MM-dd"),
+    today,
+  );
+  // Always unbounded (independent of the page's FilterBar date range) so the
+  // Dividends by Currency chart's own year/month picker can browse any year in
+  // history, not just whatever range the filter bar happens to cover. Dedupes
+  // against eventsQuery in the common case (no custom filters applied).
+  const allDividendEventsQuery = usePortfolioEvents(undefined, undefined);
 
   const visible = (id: InvestmentsTab) => !hiddenDashboardSections.includes(sectionKey("investments", id));
   const visibleTabs = useMemo(
@@ -211,23 +225,38 @@ export function InvestmentsPage() {
 
   const eventsSorted = useMemo(() => [...events].sort((a, b) => b.date.localeCompare(a.date)), [events]);
 
+  const dividendEvents = useMemo(
+    () => (allDividendEventsQuery.data ?? []).filter((e) => e.action === "DIVIDEND"),
+    [allDividendEventsQuery.data],
+  );
+
   // Summary KPI figures — Market Value/Cost Basis/Unrealized Gain from holdings,
   // Total Net Worth from accounts balances (cash + brokerage, unlike holdings which
-  // is brokerage-only).
+  // is brokerage-only), Year to Date Dividends FX-converted server-side (see
+  // utils/dividends.py::compute_dividend_total).
   const totalMarketValue = holdingsQuery.data?.total_market_value ?? 0;
   const costBasis = holdingsQuery.data?.total_cost_basis ?? 0;
   const gain = holdingsQuery.data?.total_unrealized_gain ?? 0;
   const gainPct = costBasis !== 0 ? (gain / costBasis) * 100 : 0;
   const totalNetWorth = balancesQuery.data?.total ?? 0;
+  const ytdDividends = dividendSummaryQuery.data?.total ?? 0;
 
   const summaryPanel = (
     <div className="space-y-3">
-      <StatCard
-        label="Total Market Value"
-        value={formatMoney(totalMarketValue, displayCurrency)}
-        icon={<Briefcase size={20} />}
-        hero
-      />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <StatCard
+          label="Total Market Value"
+          value={formatMoney(totalMarketValue, displayCurrency)}
+          icon={<Briefcase size={20} />}
+          hero
+        />
+        <StatCard
+          label="Total Net Worth"
+          value={formatMoney(totalNetWorth, displayCurrency)}
+          icon={<Wallet size={20} />}
+          hero
+        />
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
           label="Total Cost Basis"
@@ -243,10 +272,10 @@ export function InvestmentsPage() {
           delta={{ value: formatPct(gainPct), direction: gain >= 0 ? "up" : "down" }}
         />
         <StatCard
-          label="Total Net Worth"
-          value={formatMoney(totalNetWorth, displayCurrency)}
-          icon={<Wallet size={20} />}
-          tint="brand"
+          label="Year to Date Dividends"
+          value={formatMoney(ytdDividends, displayCurrency)}
+          icon={<Coins size={20} />}
+          tint="peach"
         />
       </div>
     </div>
@@ -425,6 +454,12 @@ export function InvestmentsPage() {
     </ChartCard>
   );
 
+  const dividendsByCurrencyChart = (
+    <ChartCard title="Dividends by Currency" fill className={mobileChartHeight}>
+      <DividendsByCurrencyDonut events={dividendEvents} fill />
+    </ChartCard>
+  );
+
   const upcomingDividendsPanel = (
     <ChartCard title="Upcoming Dividends">
       <UpcomingDividends
@@ -463,6 +498,7 @@ export function InvestmentsPage() {
     positions: positionsPanel,
     topHoldings: topHoldingsChart,
     dividendCalendar: dividendCalendarChart,
+    dividendsByCurrency: dividendsByCurrencyChart,
     upcomingDividends: upcomingDividendsPanel,
     trades: tradesPanel,
   };
@@ -522,7 +558,14 @@ export function InvestmentsPage() {
               className="items-stretch"
             />
 
-            {visible("upcomingDividends") && upcomingDividendsPanel}
+            <SectionPairRow
+              leftVisible={visible("dividendsByCurrency")}
+              left={dividendsByCurrencyChart}
+              rightVisible={visible("upcomingDividends")}
+              right={upcomingDividendsPanel}
+              className="items-stretch"
+            />
+
             {visible("trades") && tradesPanel}
           </>
         }

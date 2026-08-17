@@ -14,6 +14,7 @@ from db.supabase import (
 )
 from scheduler.equity_price_updater import update_equity_prices
 from utils.constants import TICKER_YFINANCE_MAP
+from utils.dividends import compute_dividend_total
 from utils.equity_pricing import fetch_dividend_forecast
 from utils.fx import convert
 from utils.portfolio import compute_holdings_summary
@@ -99,6 +100,18 @@ def holdings(currency: str = "SGD", user_id: str = Depends(get_current_user)):
     """Per-ticker avg-cost basis, market value, unrealized P&L — the /portfolio
     bot command's math, not currently surfaced in any dashboard."""
     return compute_holdings_summary(user_id, currency)
+
+
+@router.get("/dividends/summary")
+def dividends_summary(
+    currency: str = "SGD",
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    user_id: str = Depends(get_current_user),
+):
+    """Total of DIVIDEND-action portfolio_events over the given date range, converted
+    to `currency` — powers the Investments page's Year to Date Dividends KPI card."""
+    return compute_dividend_total(user_id, currency, start_date, end_date)
 
 
 @router.get("/dividend-forecast")

@@ -23,6 +23,7 @@ export const DASHBOARD_SECTIONS: DashboardSectionMeta[] = [
   { id: "accountBalances", view: "investments", label: "Account Balances" },
   { id: "topHoldings", view: "investments", label: "Top Holdings" },
   { id: "dividendCalendar", view: "investments", label: "Dividend Calendar" },
+  { id: "dividendsByCurrency", view: "investments", label: "Dividends by Currency" },
   { id: "upcomingDividends", view: "investments", label: "Upcoming Dividends" },
   { id: "positions", view: "investments", label: "Positions" },
   { id: "trades", view: "investments", label: "Trade History" },
