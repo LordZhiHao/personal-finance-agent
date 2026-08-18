@@ -73,12 +73,22 @@ def fetch_dividends(symbols: list[str]) -> dict[str, list[dict]]:
 
 
 def fetch_dividend_forecast(symbols: list[str]) -> dict[str, dict]:
-    """Fetches each symbol's next-known ex-dividend date and rate/yield, where
-    Yahoo Finance has that data — many tickers (especially non-US listings) don't,
-    so a missing key means "no forecast available", not an error.
+    """Fetches each symbol's next-known ex-dividend date plus two distinct dividend
+    figures, where Yahoo Finance has that data — many tickers (especially non-US
+    listings) don't, so a missing key means "no forecast available", not an error.
+
+    `dividend_rate` is Yahoo's "Forward Annual Dividend Rate" (`info["dividendRate"]`)
+    — for many non-US-listed tickers (e.g. KLSE) this is a trailing-twelve-month/
+    annualized total, NOT the amount of the next single payment, so it must never be
+    labeled as a per-payment figure in the UI. `last_dividend_amount`/
+    `last_dividend_date` come from the ticker's actual payment history
+    (`ticker.dividends`) instead, and reflect the real amount/date of the most recent
+    single distribution — use these when a "how much will I actually get" figure is
+    needed.
 
     Returns {symbol: {"ex_dividend_date": "YYYY-MM-DD" | None, "dividend_rate":
-    float | None, "dividend_yield": float | None, "currency": str}}.
+    float | None, "dividend_yield": float | None, "last_dividend_amount": float | None,
+    "last_dividend_date": "YYYY-MM-DD" | None, "currency": str}}.
     """
     forecast: dict[str, dict] = {}
     for symbol in symbols:
@@ -95,10 +105,24 @@ def fetch_dividend_forecast(symbols: list[str]) -> dict[str, dict]:
         rate = info.get("dividendRate")
         if rate is not None and currency == "GBp":
             rate /= 100
+
+        last_amount, last_date = None, None
+        try:
+            history = ticker.dividends
+            if not history.empty:
+                last_amount = float(history.iloc[-1])
+                last_date = history.index[-1].strftime("%Y-%m-%d")
+                if currency == "GBp":
+                    last_amount /= 100
+        except Exception:
+            logger.warning("fetch_dividend_forecast: could not fetch dividend history for %s", symbol, exc_info=True)
+
         forecast[symbol] = {
             "ex_dividend_date": ex_div_date,
             "dividend_rate": rate,
             "dividend_yield": info.get("dividendYield"),
+            "last_dividend_amount": last_amount,
+            "last_dividend_date": last_date,
             "currency": "GBP" if currency == "GBp" else currency,
         }
     return forecast

@@ -87,11 +87,13 @@ export function useSnapshotHistory(
   });
 }
 
-export function usePortfolioEvents(startDate?: string, endDate?: string) {
+export function usePortfolioEvents(startDate?: string, endDate?: string, currency?: string) {
   return useQuery({
-    queryKey: ["portfolio-events", startDate, endDate],
+    queryKey: ["portfolio-events", startDate, endDate, currency],
     queryFn: () =>
-      api.get<PortfolioEvent[]>(`/api/portfolio-events${qs({ start_date: startDate, end_date: endDate })}`),
+      api.get<PortfolioEvent[]>(
+        `/api/portfolio-events${qs({ start_date: startDate, end_date: endDate, currency })}`,
+      ),
   });
 }
 

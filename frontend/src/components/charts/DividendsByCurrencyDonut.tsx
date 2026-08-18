@@ -8,20 +8,26 @@ import { legendStyle, tooltipStyle } from "./chartTheme";
 import { Overlay, Table, Thead, Tbody, Tr, Th, Td, Select, TabToggle } from "../ui";
 
 function currencyTotals(events: PortfolioEvent[]) {
-  const totals = new Map<string, number>();
+  const totals = new Map<string, { native: number; converted: number }>();
   for (const e of events) {
-    totals.set(e.currency, (totals.get(e.currency) ?? 0) + e.quantity * e.price);
+    const prev = totals.get(e.currency) ?? { native: 0, converted: 0 };
+    totals.set(e.currency, {
+      native: prev.native + e.quantity * e.price,
+      converted: prev.converted + (e.converted_value ?? e.quantity * e.price),
+    });
   }
-  return [...totals.entries()].map(([name, value]) => ({ name, value }));
+  return [...totals.entries()].map(([name, v]) => ({ name, value: v.converted, nativeValue: v.native }));
 }
 
 type ViewMode = "year" | "month";
 
 export function DividendsByCurrencyDonut({
   events,
+  displayCurrency,
   fill = false,
 }: {
   events: PortfolioEvent[];
+  displayCurrency: string;
   fill?: boolean;
 }) {
   const [viewMode, setViewMode] = useState<ViewMode>("year");
@@ -52,7 +58,7 @@ export function DividendsByCurrencyDonut({
 
   const data = useMemo(() => currencyTotals(periodEvents), [periodEvents]);
 
-  const selectedTotal = selectedCurrency ? (data.find((d) => d.name === selectedCurrency)?.value ?? 0) : 0;
+  const selectedTotal = selectedCurrency ? (data.find((d) => d.name === selectedCurrency)?.nativeValue ?? 0) : 0;
   const selectedEvents = selectedCurrency
     ? periodEvents.filter((e) => e.currency === selectedCurrency).sort((a, b) => b.date.localeCompare(a.date))
     : [];
@@ -133,7 +139,10 @@ export function DividendsByCurrencyDonut({
                 />
               ))}
             </Pie>
-            <Tooltip {...tooltipStyle} />
+            <Tooltip
+              {...tooltipStyle}
+              formatter={(value) => (typeof value === "number" ? formatMoney(value, displayCurrency) : String(value))}
+            />
             <Legend wrapperStyle={legendStyle} />
           </PieChart>
         </ResponsiveContainer>

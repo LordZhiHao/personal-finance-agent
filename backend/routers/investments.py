@@ -52,11 +52,21 @@ def snapshot_history(
 def portfolio_events(
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
+    currency: str | None = Query(None),
     user_id: str = Depends(get_current_user),
 ):
     """Date bounds are optional, matching dashboard_insert_portfolio_event's default of
-    full unfiltered trade history until the frontend's filter bar has been applied."""
-    return get_portfolio_events(start_date, end_date, user_id)
+    full unfiltered trade history until the frontend's filter bar has been applied.
+    `currency` is also optional — when passed, each row gets a converted_value field
+    (quantity * price converted via utils/fx.py), same enrichment pattern as
+    GET /snapshots, so charts comparing events across currencies (e.g. Dividends by
+    Currency) don't need their own FX calls. Omitting it keeps every other caller
+    (trade history table, edit dialogs, dividend calendar) unchanged."""
+    rows = get_portfolio_events(start_date, end_date, user_id)
+    if currency:
+        for r in rows:
+            r["converted_value"] = convert(r["quantity"] * r["price"], r["currency"], currency)
+    return rows
 
 
 @router.post("/portfolio-events", status_code=201)

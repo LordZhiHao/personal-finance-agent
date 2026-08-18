@@ -116,7 +116,7 @@ export function InvestmentsPage() {
   // Dividends by Currency chart's own year/month picker can browse any year in
   // history, not just whatever range the filter bar happens to cover. Dedupes
   // against eventsQuery in the common case (no custom filters applied).
-  const allDividendEventsQuery = usePortfolioEvents(undefined, undefined);
+  const allDividendEventsQuery = usePortfolioEvents(undefined, undefined, displayCurrency);
 
   const visible = (id: InvestmentsTab) => !hiddenDashboardSections.includes(sectionKey("investments", id));
   const visibleTabs = useMemo(
@@ -456,7 +456,7 @@ export function InvestmentsPage() {
 
   const dividendsByCurrencyChart = (
     <ChartCard title="Dividends by Currency" fill className={mobileChartHeight}>
-      <DividendsByCurrencyDonut events={dividendEvents} fill />
+      <DividendsByCurrencyDonut events={dividendEvents} displayCurrency={displayCurrency} fill />
     </ChartCard>
   );
 
@@ -555,6 +555,8 @@ export function InvestmentsPage() {
               left={topHoldingsChart}
               rightVisible={visible("dividendCalendar")}
               right={dividendCalendarChart}
+              leftSpan={7}
+              rightSpan={5}
               className="items-stretch"
             />
 
@@ -563,6 +565,8 @@ export function InvestmentsPage() {
               left={dividendsByCurrencyChart}
               rightVisible={visible("upcomingDividends")}
               right={upcomingDividendsPanel}
+              leftSpan={7}
+              rightSpan={5}
               className="items-stretch"
             />
 

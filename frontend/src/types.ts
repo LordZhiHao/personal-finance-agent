@@ -87,6 +87,7 @@ export interface PortfolioEvent {
   fees: number | null;
   notes: string | null;
   accounts: { name: string; currency: string } | null;
+  converted_value?: number | null;
 }
 
 export interface AssetSnapshot {
@@ -205,6 +206,8 @@ export interface DividendForecast {
   ex_dividend_date: string | null;
   dividend_rate: number | null;
   dividend_yield: number | null;
+  last_dividend_amount: number | null;
+  last_dividend_date: string | null;
   currency?: string;
 }
 

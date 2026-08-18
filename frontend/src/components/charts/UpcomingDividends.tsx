@@ -27,6 +27,7 @@ export function UpcomingDividends({
   const { sorted, requestSort, directionFor } = useSortableRows(forecast, {
     ticker: (f) => f.ticker,
     ex_dividend_date: (f) => f.ex_dividend_date,
+    last_dividend_amount: (f) => f.last_dividend_amount,
     dividend_rate: (f) => f.dividend_rate,
     dividend_yield: (f) => f.dividend_yield,
     effective_yield: (f) => effectiveYieldFor(f),
@@ -46,8 +47,15 @@ export function UpcomingDividends({
           <Th sortDirection={directionFor("ex_dividend_date")} onSort={() => requestSort("ex_dividend_date")}>
             Next Ex-Dividend
           </Th>
+          <Th
+            align="right"
+            sortDirection={directionFor("last_dividend_amount")}
+            onSort={() => requestSort("last_dividend_amount")}
+          >
+            Last Payment
+          </Th>
           <Th align="right" sortDirection={directionFor("dividend_rate")} onSort={() => requestSort("dividend_rate")}>
-            Rate / Share
+            Annual Rate (TTM)
           </Th>
           <Th align="right" sortDirection={directionFor("dividend_yield")} onSort={() => requestSort("dividend_yield")}>
             Dividend Yield
@@ -74,6 +82,14 @@ export function UpcomingDividends({
                   )}
                 </Td>
                 <Td style={{ color: "var(--text-secondary)" }}>{f.ex_dividend_date ?? "—"}</Td>
+                <Td align="right">
+                  {f.last_dividend_amount !== null ? formatMoney(f.last_dividend_amount, f.currency ?? "") : "—"}
+                  {f.last_dividend_date && (
+                    <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                      {f.last_dividend_date}
+                    </div>
+                  )}
+                </Td>
                 <Td align="right">
                   {f.dividend_rate !== null ? formatMoney(f.dividend_rate, f.currency ?? "") : "—"}
                 </Td>
