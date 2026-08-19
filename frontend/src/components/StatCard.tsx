@@ -39,7 +39,11 @@ export function StatCard({
           {label}
         </div>
         <div
-          className={hero ? "text-4xl font-extrabold tabular-nums mt-1" : "text-3xl font-bold tabular-nums mt-1"}
+          className={
+            hero
+              ? "text-3xl sm:text-4xl font-extrabold tabular-nums mt-1"
+              : "text-2xl sm:text-3xl font-bold tabular-nums mt-1"
+          }
           style={{ color: hero ? "#fff" : "var(--text-heading)" }}
         >
           {value}

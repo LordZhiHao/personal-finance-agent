@@ -261,19 +261,21 @@ export function SpendingPage() {
       <div className="md:hidden -mt-3 mb-4">
         <MobileSectionTabs tabs={visibleTabs} active={mobileTab} onChange={setMobileTab} />
       </div>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <h1
-          className="flex items-center gap-2 text-xl font-semibold"
+          className="flex items-center gap-2 text-lg sm:text-xl font-semibold shrink-0"
           style={{ color: "var(--text-heading)" }}
         >
           <Receipt size={22} />
           Spending
         </h1>
-        <Button variant="primary" onClick={() => setDialogOpen(true)}>
-          ＋ Add Transaction
-        </Button>
+        <div className="flex items-center gap-2 shrink-0 relative">
+          <FilterBar accounts={accountsQuery.data ?? []} value={filters} onChange={setFilters} />
+          <Button variant="primary" onClick={() => setDialogOpen(true)}>
+            ＋ Add Transaction
+          </Button>
+        </div>
       </div>
-      <FilterBar accounts={accountsQuery.data ?? []} value={filters} onChange={setFilters} />
 
       {filtered.length === 0 ? (
         <p style={{ color: "var(--text-secondary)" }}>

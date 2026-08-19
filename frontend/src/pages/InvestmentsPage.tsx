@@ -508,27 +508,29 @@ export function InvestmentsPage() {
       <div className="md:hidden -mt-3 mb-4">
         <MobileSectionTabs tabs={visibleTabs} active={mobileTab} onChange={setMobileTab} />
       </div>
-      <div className="flex items-center justify-between">
-        <h1 className="flex items-center gap-2 text-xl font-semibold" style={{ color: "var(--text-heading)" }}>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h1 className="flex items-center gap-2 text-lg sm:text-xl font-semibold shrink-0" style={{ color: "var(--text-heading)" }}>
           <PieChart size={22} />
           Investments
         </h1>
-        <Button
-          variant="ghost"
-          onClick={() => refreshPricesMutation.mutate()}
-          disabled={refreshPricesMutation.isPending}
-        >
-          {refreshPricesMutation.isPending ? "Refreshing…" : "🔄 Refresh Prices"}
-        </Button>
+        <div className="flex items-center gap-2 shrink-0 relative">
+          <FilterBar
+            accounts={accountsQuery.data ?? []}
+            value={filters}
+            onChange={(v) => {
+              setFilters(v);
+              setHasCustomFilters(true);
+            }}
+          />
+          <Button
+            variant="primary"
+            onClick={() => refreshPricesMutation.mutate()}
+            disabled={refreshPricesMutation.isPending}
+          >
+            {refreshPricesMutation.isPending ? "Refreshing…" : "⟳ Refresh"}
+          </Button>
+        </div>
       </div>
-      <FilterBar
-        accounts={accountsQuery.data ?? []}
-        value={filters}
-        onChange={(v) => {
-          setFilters(v);
-          setHasCustomFilters(true);
-        }}
-      />
 
       <SwipeableSections
         tabs={visibleTabs}

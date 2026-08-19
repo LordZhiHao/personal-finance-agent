@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SlidersHorizontal } from "lucide-react";
 import type { Account } from "../types";
 import { Button, Input, MultiSelect } from "./ui";
@@ -40,11 +40,21 @@ const TYPE_OPTIONS = [
 export function FilterBar({ accounts, value, onChange }: FilterBarProps) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState<FilterValue>(value);
+  const ref = useRef<HTMLDivElement>(null);
 
   const accountOptions = accounts.map((a) => ({ value: a.name, label: a.name }));
   const showType = value.types !== undefined;
 
   const activeCount = value.accounts.length + value.months.length + (value.types?.length ?? 0);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
 
   function handleToggle() {
     if (!open) setPending(value);
@@ -57,7 +67,7 @@ export function FilterBar({ accounts, value, onChange }: FilterBarProps) {
   }
 
   return (
-    <div className="mb-4">
+    <div ref={ref}>
       <Button variant="outline" onClick={handleToggle} className="flex items-center gap-2">
         <SlidersHorizontal size={16} />
         Filter
@@ -73,7 +83,7 @@ export function FilterBar({ accounts, value, onChange }: FilterBarProps) {
 
       {open && (
         <div
-          className="mt-2 p-4 flex flex-wrap items-end gap-3"
+          className="absolute right-0 mt-2 p-4 flex flex-wrap items-end gap-3 z-30 w-[min(92vw,560px)]"
           style={{ background: "var(--surface-1)", borderRadius: "var(--radius-card)", boxShadow: "var(--shadow-card)" }}
         >
           <div className="flex flex-col gap-1">
