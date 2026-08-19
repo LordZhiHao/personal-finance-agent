@@ -210,7 +210,13 @@ export function SpendingPage() {
 
   const monthlySpendChart = (
     <ChartCard title="Monthly Spend by Category" fill className={mobileChartHeight}>
-      <MonthlySpendBarChart transactions={spendTxns} categories={categories} categoryColors={categoryColors} fill />
+      <MonthlySpendBarChart
+        transactions={spendTxns}
+        categories={categories}
+        categoryColors={categoryColors}
+        currency={mainCurrency}
+        fill
+      />
     </ChartCard>
   );
   const spendByCategoryChart = (
@@ -220,6 +226,8 @@ export function SpendingPage() {
         categoryColors={categoryColors}
         currency={mainCurrency}
         accounts={filters.accounts}
+        categories={categories}
+        allAccounts={accountsQuery.data ?? []}
         fill
       />
     </ChartCard>
@@ -236,7 +244,13 @@ export function SpendingPage() {
   );
   const spendingCalendarChart = (
     <ChartCard title="Spending Calendar" fill className={mobileChartHeight}>
-      <SpendingHeatmap accounts={filters.accounts} currency={mainCurrency} fill />
+      <SpendingHeatmap
+        accounts={filters.accounts}
+        currency={mainCurrency}
+        categories={categories}
+        allAccounts={accountsQuery.data ?? []}
+        fill
+      />
     </ChartCard>
   );
   const momComparisonChart = (

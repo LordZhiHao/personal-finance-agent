@@ -113,7 +113,7 @@ export function DividendCalendar({ events, fill = false }: { events: PortfolioEv
         </p>
       )}
       {selectedDate && (
-        <Overlay onClose={() => setSelectedDate(null)}>
+        <Overlay onClose={() => setSelectedDate(null)} maxHeightVh={70}>
           <h2 className="text-lg font-semibold mb-4" style={{ color: "var(--text-heading)" }}>
             Dividends — {format(parseISO(selectedDate), "d MMM yyyy")}
           </h2>

@@ -1,12 +1,14 @@
 import { useMemo, useState } from "react";
 import { addMonths, endOfMonth, format, parseISO, startOfMonth, subMonths } from "date-fns";
-import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
-import type { Transaction } from "../../types";
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import type { Account, Transaction } from "../../types";
 import { useMeta, useTransactions } from "../../hooks/api";
 import { colorForKey } from "../../lib/palette";
 import { formatMoney } from "../../lib/format";
-import { legendStyle, tooltipStyle } from "./chartTheme";
+import { tooltipStyle } from "./chartTheme";
+import { ChartLegend } from "./ChartLegend";
 import { Overlay, Table, Thead, Tbody, Tr, Th, Td } from "../ui";
+import { EditTransactionDialog } from "../EditTransactionDialog";
 
 function categoryTotals(transactions: Transaction[]) {
   const totals = new Map<string, number>();
@@ -15,7 +17,9 @@ function categoryTotals(transactions: Transaction[]) {
     const cat = t.category || "Other";
     totals.set(cat, (totals.get(cat) ?? 0) + Math.abs(t.converted_amount ?? t.amount));
   }
-  return [...totals.entries()].map(([name, value]) => ({ name, value }));
+  // Sorted by magnitude so the pie's slice order (12 o'clock, clockwise) and
+  // the ChartLegend list order below it agree on "biggest first".
+  return [...totals.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
 }
 
 export function SpendByCategoryDonut({
@@ -23,16 +27,21 @@ export function SpendByCategoryDonut({
   categoryColors,
   currency,
   accounts,
+  categories,
+  allAccounts,
   fill = false,
 }: {
   transactions: Transaction[];
   categoryColors: string[];
   currency: string;
   accounts?: string[];
+  categories: string[];
+  allAccounts: Account[];
   fill?: boolean;
 }) {
   const [monthFilter, setMonthFilter] = useState<Date | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
 
   // Independent per-month fetch once a month is picked, mirroring
   // SpendingHeatmap — so any month in history works immediately, not just
@@ -131,13 +140,21 @@ export function SpendByCategoryDonut({
               ))}
             </Pie>
             <Tooltip {...tooltipStyle} />
-            <Legend wrapperStyle={legendStyle} />
           </PieChart>
         </ResponsiveContainer>
       )}
 
+      {data.length > 0 && (
+        <ChartLegend
+          items={data.map((d) => ({ name: d.name, value: d.value, color: colorForKey(d.name, categoryColors) }))}
+          formatValue={(v) => formatMoney(v, currency)}
+          onSelect={setSelectedCategory}
+          className="mt-2"
+        />
+      )}
+
       {selectedCategory && (
-        <Overlay onClose={() => setSelectedCategory(null)}>
+        <Overlay onClose={() => setSelectedCategory(null)} maxHeightVh={70}>
           <h2 className="text-lg font-semibold mb-1" style={{ color: "var(--text-heading)" }}>
             {selectedCategory}
           </h2>
@@ -152,7 +169,14 @@ export function SpendByCategoryDonut({
             </Thead>
             <Tbody>
               {selectedTransactions.map((t) => (
-                <Tr key={t.id}>
+                <Tr
+                  key={t.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setEditingTransaction(t)}
+                  onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setEditingTransaction(t)}
+                  className="cursor-pointer hover:bg-black/[0.02]"
+                >
                   <Td>{t.description}</Td>
                   <Td>{format(parseISO(t.date), "d MMM yyyy")}</Td>
                   <Td align="right">{formatMoney(Math.abs(t.amount), t.currency)}</Td>
@@ -161,6 +185,16 @@ export function SpendByCategoryDonut({
             </Tbody>
           </Table>
         </Overlay>
+      )}
+
+      {editingTransaction && (
+        <EditTransactionDialog
+          transaction={editingTransaction}
+          onClose={() => setEditingTransaction(null)}
+          categories={categories}
+          accounts={allAccounts}
+          refetchKey={["transactions"]}
+        />
       )}
     </div>
   );

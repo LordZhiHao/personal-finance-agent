@@ -11,11 +11,14 @@ import {
   startOfWeek,
   subMonths,
 } from "date-fns";
+import type { Account } from "../../types";
 import { useMeta, useTransactions } from "../../hooks/api";
 import { dailySpendTotals, type DailyTotal } from "../../lib/dates";
 import { SEQUENTIAL } from "../../lib/palette";
 import { formatCompact, formatMoney } from "../../lib/format";
 import { Overlay, Table, Thead, Tbody, Tr, Th, Td } from "../ui";
+import { EditTransactionDialog } from "../EditTransactionDialog";
+import type { Transaction } from "../../types";
 
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
 const EMPTY_CELL = "var(--gridline)";
@@ -46,14 +49,19 @@ function textColor(level: number | undefined): string {
 export function SpendingHeatmap({
   accounts,
   currency,
+  categories,
+  allAccounts,
   fill = false,
 }: {
   accounts?: string[];
   currency: string;
+  categories: string[];
+  allAccounts: Account[];
   fill?: boolean;
 }) {
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [selected, setSelected] = useState<{ date: string; total: number } | null>(null);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
 
   const monthStart = format(startOfMonth(month), "yyyy-MM-dd");
   const monthEnd = format(endOfMonth(month), "yyyy-MM-dd");
@@ -161,7 +169,7 @@ export function SpendingHeatmap({
       )}
 
       {selected && (
-        <Overlay onClose={() => setSelected(null)}>
+        <Overlay onClose={() => setSelected(null)} maxHeightVh={70}>
           <h2 className="text-lg font-semibold mb-1" style={{ color: "var(--text-heading)" }}>
             {format(parseISO(selected.date), "d MMMM yyyy")}
           </h2>
@@ -176,7 +184,14 @@ export function SpendingHeatmap({
             </Thead>
             <Tbody>
               {selectedTransactions.map((t) => (
-                <Tr key={t.id}>
+                <Tr
+                  key={t.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setEditingTransaction(t)}
+                  onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setEditingTransaction(t)}
+                  className="cursor-pointer hover:bg-black/[0.02]"
+                >
                   <Td>{t.description}</Td>
                   <Td>{t.category}</Td>
                   <Td align="right">{formatMoney(Math.abs(t.amount), t.currency)}</Td>
@@ -185,6 +200,16 @@ export function SpendingHeatmap({
             </Tbody>
           </Table>
         </Overlay>
+      )}
+
+      {editingTransaction && (
+        <EditTransactionDialog
+          transaction={editingTransaction}
+          onClose={() => setEditingTransaction(null)}
+          categories={categories}
+          accounts={allAccounts}
+          refetchKey={["transactions"]}
+        />
       )}
     </div>
   );

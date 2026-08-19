@@ -331,7 +331,7 @@ export function InvestmentsPage() {
       }
     >
       {allocationData.length > 0 ? (
-        <AssetAllocationDonut data={allocationData} fill />
+        <AssetAllocationDonut data={allocationData} currency={displayCurrency} fill />
       ) : (
         <p style={{ color: "var(--text-secondary)" }}>No asset snapshots yet.</p>
       )}

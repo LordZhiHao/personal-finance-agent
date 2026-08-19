@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 import { addMonths, format, parseISO, subMonths } from "date-fns";
-import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import type { PortfolioEvent } from "../../types";
 import { colorForKey } from "../../lib/palette";
 import { formatMoney } from "../../lib/format";
-import { legendStyle, tooltipStyle } from "./chartTheme";
+import { tooltipStyle } from "./chartTheme";
+import { ChartLegend } from "./ChartLegend";
 import { Overlay, Table, Thead, Tbody, Tr, Th, Td, Select, TabToggle } from "../ui";
 
 function currencyTotals(events: PortfolioEvent[]) {
@@ -16,7 +17,11 @@ function currencyTotals(events: PortfolioEvent[]) {
       converted: prev.converted + (e.converted_value ?? e.quantity * e.price),
     });
   }
-  return [...totals.entries()].map(([name, v]) => ({ name, value: v.converted, nativeValue: v.native }));
+  // Sorted by (converted) magnitude so the pie's slice order and the
+  // ChartLegend list order below it agree on "biggest first".
+  return [...totals.entries()]
+    .map(([name, v]) => ({ name, value: v.converted, nativeValue: v.native }))
+    .sort((a, b) => b.value - a.value);
 }
 
 type ViewMode = "year" | "month";
@@ -143,13 +148,21 @@ export function DividendsByCurrencyDonut({
               {...tooltipStyle}
               formatter={(value) => (typeof value === "number" ? formatMoney(value, displayCurrency) : String(value))}
             />
-            <Legend wrapperStyle={legendStyle} />
           </PieChart>
         </ResponsiveContainer>
       )}
 
+      {data.length > 0 && (
+        <ChartLegend
+          items={data.map((d) => ({ name: d.name, value: d.value, color: colorForKey(d.name, knownCurrencies) }))}
+          formatValue={(v) => formatMoney(v, displayCurrency)}
+          onSelect={setSelectedCurrency}
+          className="mt-2"
+        />
+      )}
+
       {selectedCurrency && (
-        <Overlay onClose={() => setSelectedCurrency(null)}>
+        <Overlay onClose={() => setSelectedCurrency(null)} maxHeightVh={70}>
           <h2 className="text-lg font-semibold mb-1" style={{ color: "var(--text-heading)" }}>
             {selectedCurrency} Dividends — {periodLabel}
           </h2>
