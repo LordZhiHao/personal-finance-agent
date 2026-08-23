@@ -32,6 +32,7 @@ import { TradeHistoryTable } from "../components/charts/TradeHistoryTable";
 import { HoldingsTable } from "../components/charts/HoldingsTable";
 import { MarketHoldingsTable } from "../components/charts/MarketHoldingsTable";
 import { BalancesTable } from "../components/charts/BalancesTable";
+import { LoadingFinn } from "../components/LoadingFinn";
 import { sectionKey } from "../lib/dashboardSections";
 import { formatMoney, formatPct } from "../lib/format";
 import { CURRENCY_MARKET } from "../lib/markets";
@@ -368,6 +369,10 @@ export function InvestmentsPage() {
     }
     return groups;
   }, [filteredHoldings]);
+
+  if (accountsQuery.isLoading || snapshotsQuery.isLoading || holdingsQuery.isLoading || balancesQuery.isLoading) {
+    return <LoadingFinn />;
+  }
 
   const marketCards = [...holdingsByMarket.entries()].map(([market, group]) => {
     const marketCostBasis = group.holdings.reduce((sum, h) => sum + h.native_cost_basis, 0);
