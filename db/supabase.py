@@ -866,23 +866,38 @@ def get_ticker_metadata(ticker: str) -> dict | None:
     ticker_metadata — global market data, not tenant-scoped, same category as
     equity_prices. Used by bot/ticker_resolver.py to skip a repeat DeepSeek call
     for a ticker/symbol string already resolved before, and by
-    utils/equity_pricing.py::resolve_yfinance_symbol for price lookups."""
-    db = get_client()
-    ticker = ticker.strip()
-    row = db.table("ticker_metadata").select("*").ilike("ticker", ticker).limit(1).execute().data
-    if not row:
-        row = db.table("ticker_metadata").select("*").ilike("symbol", ticker).limit(1).execute().data
-    return row[0] if row else None
+    utils/equity_pricing.py::resolve_yfinance_symbol for price lookups.
+
+    Best-effort: this is purely a cache/enrichment lookup, never load-bearing for a
+    save or a price fetch to succeed, so any failure (e.g. the migration adding this
+    table hasn't been applied to this environment yet) degrades to "no metadata
+    available" rather than raising into callers like compute_holdings_summary or the
+    hourly equity price updater, which must not break because of this cache."""
+    try:
+        db = get_client()
+        ticker = ticker.strip()
+        row = db.table("ticker_metadata").select("*").ilike("ticker", ticker).limit(1).execute().data
+        if not row:
+            row = db.table("ticker_metadata").select("*").ilike("symbol", ticker).limit(1).execute().data
+        return row[0] if row else None
+    except Exception:
+        logger.warning("get_ticker_metadata: lookup failed for ticker=%s", ticker, exc_info=True)
+        return None
 
 
 def get_ticker_metadata_batch(tickers: list[str]) -> dict[str, dict]:
     """Batched version of get_ticker_metadata, keyed by ticker — used by
-    utils/portfolio.py::compute_holdings_summary to avoid one query per holding."""
+    utils/portfolio.py::compute_holdings_summary to avoid one query per holding.
+    Same best-effort degradation as get_ticker_metadata — see its docstring."""
     if not tickers:
         return {}
-    db = get_client()
-    rows = db.table("ticker_metadata").select("*").in_("ticker", tickers).execute().data
-    return {r["ticker"]: r for r in rows}
+    try:
+        db = get_client()
+        rows = db.table("ticker_metadata").select("*").in_("ticker", tickers).execute().data
+        return {r["ticker"]: r for r in rows}
+    except Exception:
+        logger.warning("get_ticker_metadata_batch: lookup failed for %d ticker(s)", len(tickers), exc_info=True)
+        return {}
 
 
 def upsert_ticker_metadata(
