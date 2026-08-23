@@ -43,7 +43,8 @@ Schema:
     {{
       "ticker": "string",
       "action": "BUY" | "SELL" | "DIVIDEND",
-      "quantity": float,
+      "quantity": float or null,
+      "total_amount": float or null,
       "price": float,
       "currency": "string",
       "fees": float,
@@ -55,6 +56,12 @@ Schema:
 Rules:
 - amount is NEGATIVE for expenses/debits, POSITIVE for income/credits
 - portfolio_events is an empty list [] if no trades are present
+- For a trade event: if the user states quantity/shares directly, set "quantity" and
+  leave "total_amount" null. If instead the user describes a total amount spent
+  (e.g. "bought $300 worth of CSPX", "put 500 into maybank"), set "total_amount" to
+  that figure and "quantity" to null — do NOT guess a share count in this case; leave
+  "price" as your best-effort estimate only if you independently know it, otherwise 0.
+  Exactly one of quantity/total_amount must be non-null for a BUY/SELL event.
 - If date is not visible, use today's date
 - If the input is a short natural-language message rather than a document (e.g. "Spent 0.5+3.5 on
   meals today"), treat it as a single manually-typed expense: evaluate any arithmetic in the
@@ -68,7 +75,9 @@ Rules:
 
 
 REQUIRED_TXN_FIELDS = {"date", "description", "amount", "category", "confidence"}
-REQUIRED_EVENT_FIELDS = {"ticker", "action", "quantity", "price", "currency", "date"}
+# "quantity"/"price" are validated separately below, since exactly one of
+# quantity/total_amount is required rather than quantity unconditionally.
+REQUIRED_EVENT_FIELDS = {"ticker", "action", "currency", "date"}
 
 
 def _validate_schema(obj: dict, categories: list[str]) -> None:
@@ -101,6 +110,12 @@ def _validate_schema(obj: dict, categories: list[str]) -> None:
             raise ValueError(f"portfolio_events[{i}] missing field(s): {missing}")
         if e["action"] not in PORTFOLIO_ACTIONS:
             raise ValueError(f"portfolio_events[{i}].action {e['action']!r} not in {PORTFOLIO_ACTIONS}")
+        has_qty = isinstance(e.get("quantity"), (int, float)) and e.get("quantity")
+        has_amount = isinstance(e.get("total_amount"), (int, float)) and e.get("total_amount")
+        if not has_qty and not has_amount:
+            raise ValueError(f"portfolio_events[{i}] must have a non-zero 'quantity' or 'total_amount'")
+        if has_qty and "price" not in e:
+            raise ValueError(f"portfolio_events[{i}] missing field(s): {{'price'}}")
 
 
 def _parse_response(raw: str, categories: list[str]) -> dict:

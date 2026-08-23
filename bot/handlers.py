@@ -10,6 +10,7 @@ from bot.account_matcher import match_account
 from bot.extractor import extract_from_image, extract_from_pdf_images, extract_from_text
 from bot.finance_agent import answer_question
 from bot.router import classify_intent
+from bot.ticker_resolver import enrich_portfolio_event
 from db.supabase import (
     consume_telegram_link_code,
     create_account,
@@ -29,8 +30,8 @@ from db.supabase import (
 )
 from scheduler.report_builder import month_comparison, summarize_transactions
 from utils.balances import compute_account_balances, compute_net_worth_trend
-from utils.constants import ACCOUNT_TYPES, CURRENCIES, DASHBOARD_URL, DEFAULT_CURRENCY, TICKER_YFINANCE_MAP
-from utils.equity_pricing import fetch_dividend_forecast
+from utils.constants import ACCOUNT_TYPES, CURRENCIES, DASHBOARD_URL, DEFAULT_CURRENCY
+from utils.equity_pricing import fetch_dividend_forecast, resolve_yfinance_symbol
 from utils.fx import convert
 from utils.formatters import format_money, format_pct
 from utils.logger import get_logger
@@ -219,6 +220,16 @@ async def _commit_and_reply(
         logger.info("_commit_and_reply: no accounts for user_id=%s", uid)
         await update.message.reply_text(NO_ACCOUNTS_MSG)
         return
+    if data.get("portfolio_events"):
+        enriched = [enrich_portfolio_event(e) for e in data["portfolio_events"]]
+        data["portfolio_events"] = [e for e in enriched if e.get("quantity")]
+        if len(data["portfolio_events"]) < len(enriched):
+            await update.message.reply_text(
+                "⚠️ Couldn't work out the share quantity for one or more trades (no live price "
+                "available) — they were skipped. Try again with an exact quantity."
+            )
+        if not data.get("transactions") and not data["portfolio_events"]:
+            return
     match = match_account(data, accounts)
     if match["account_id"]:
         await _finalize(update, data, user_id, uid, match["account_id"], receipt_bytes, receipt_content_type)
@@ -523,7 +534,7 @@ async def handle_dividends_command(update: Update, context: ContextTypes.DEFAULT
         await update.message.reply_text("No holdings found.")
         return
 
-    symbols = {t: TICKER_YFINANCE_MAP.get(t, t) for t in tickers}
+    symbols = {t: resolve_yfinance_symbol(t) for t in tickers}
     await update.message.reply_text("⏳ Checking dividend forecasts...")
     # Blocking yfinance I/O — offloaded to a thread so it doesn't stall the bot's
     # single asyncio event loop (and every other user's messages) while it runs.

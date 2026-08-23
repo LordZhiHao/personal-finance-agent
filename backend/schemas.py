@@ -388,6 +388,20 @@ class MemoryCreate(BaseModel):
         return v
 
 
+class TickerResolveRequest(BaseModel):
+    """Backs the Add Trade dialog's "Resolve" button — a free-text company name/
+    nickname/ticker to resolve via bot/ticker_resolver.py::resolve_ticker."""
+    query: str
+
+    @field_validator("query")
+    @classmethod
+    def query_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Query is required.")
+        return v
+
+
 class PortfolioEventCreate(BaseModel):
     account_id: str
     date: date

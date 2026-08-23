@@ -10,6 +10,7 @@ from bot.extractor import extract_from_image, extract_from_pdf_images, extract_f
 from bot.finance_agent import answer_question
 from bot.handlers import save_extraction
 from bot.router import classify_intent
+from bot.ticker_resolver import enrich_portfolio_event
 from db.supabase import get_accounts, get_categories_for_user, get_user_by_id
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -50,6 +51,19 @@ async def chat(payload: ChatRequest, user_id: str = Depends(get_current_user)):
     if not accounts:
         return ChatResponse(reply="You don't have any accounts yet — create one in Settings first.")
 
+    skipped_events = 0
+    if data.get("portfolio_events"):
+        enriched = await run_in_threadpool(
+            lambda: [enrich_portfolio_event(e, default_currency) for e in data["portfolio_events"]]
+        )
+        data["portfolio_events"] = [e for e in enriched if e.get("quantity")]
+        skipped_events = len(enriched) - len(data["portfolio_events"])
+        if not data.get("transactions") and not data["portfolio_events"]:
+            return ChatResponse(
+                reply="Couldn't work out the share quantity for that trade (no live price available) "
+                "— try again with an exact quantity."
+            )
+
     match = await run_in_threadpool(match_account, data, accounts)
     if not match["account_id"]:
         return ChatResponse(
@@ -62,7 +76,13 @@ async def chat(payload: ChatRequest, user_id: str = Depends(get_current_user)):
         )
 
     result = save_extraction(data, user_id, match["account_id"])
-    return ChatResponse(**_build_saved_response(data, result))
+    response_data = _build_saved_response(data, result)
+    if skipped_events:
+        response_data["summary"] += (
+            " — ⚠️ couldn't work out the share quantity for one or more other trades "
+            "(no live price available), so they were skipped"
+        )
+    return ChatResponse(**response_data)
 
 
 def _format_saved_lines(data: dict) -> list[str]:
@@ -134,6 +154,20 @@ async def upload_file(file: UploadFile, user_id: str = Depends(get_current_user)
             detail="You don't have any accounts yet — create one in Settings first.",
         )
 
+    skipped_events = 0
+    if data.get("portfolio_events"):
+        enriched = await run_in_threadpool(
+            lambda: [enrich_portfolio_event(e, default_currency) for e in data["portfolio_events"]]
+        )
+        data["portfolio_events"] = [e for e in enriched if e.get("quantity")]
+        skipped_events = len(enriched) - len(data["portfolio_events"])
+        if not data.get("transactions") and not data["portfolio_events"]:
+            return {
+                "needs_account_selection": False,
+                "summary": "Couldn't work out the share quantity for that trade (no live price available).",
+                "lines": [], "transaction_ids": [], "portfolio_event_ids": [],
+            }
+
     match = await run_in_threadpool(match_account, data, accounts)
     if not match["account_id"]:
         return {
@@ -146,7 +180,13 @@ async def upload_file(file: UploadFile, user_id: str = Depends(get_current_user)
         }
 
     result = save_extraction(data, user_id, match["account_id"], file_bytes, file.content_type)
-    return _build_saved_response(data, result)
+    response_data = _build_saved_response(data, result)
+    if skipped_events:
+        response_data["summary"] += (
+            " — ⚠️ couldn't work out the share quantity for one or more other trades "
+            "(no live price available), so they were skipped"
+        )
+    return response_data
 
 
 @router.post("/chat/commit")

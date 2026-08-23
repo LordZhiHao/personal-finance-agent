@@ -98,6 +98,15 @@ export function usePortfolioEvents(startDate?: string, endDate?: string, currenc
   });
 }
 
+export function useResolveTicker() {
+  return useMutation({
+    mutationFn: (query: string) =>
+      api.post<
+        { ticker: string; company: string; symbol: string; exchange: string } | { error: string }
+      >("/api/resolve-ticker", { query }),
+  });
+}
+
 export function useHoldings(currency: string) {
   return useQuery({
     queryKey: ["holdings", currency],

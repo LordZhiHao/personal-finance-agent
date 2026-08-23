@@ -861,6 +861,58 @@ def get_latest_equity_prices(tickers: list[str]) -> dict[str, dict]:
     return latest
 
 
+def get_ticker_metadata(ticker: str) -> dict | None:
+    """Exact-match lookup (case-insensitive), by ticker then by symbol, in
+    ticker_metadata — global market data, not tenant-scoped, same category as
+    equity_prices. Used by bot/ticker_resolver.py to skip a repeat DeepSeek call
+    for a ticker/symbol string already resolved before, and by
+    utils/equity_pricing.py::resolve_yfinance_symbol for price lookups."""
+    db = get_client()
+    ticker = ticker.strip()
+    row = db.table("ticker_metadata").select("*").ilike("ticker", ticker).limit(1).execute().data
+    if not row:
+        row = db.table("ticker_metadata").select("*").ilike("symbol", ticker).limit(1).execute().data
+    return row[0] if row else None
+
+
+def get_ticker_metadata_batch(tickers: list[str]) -> dict[str, dict]:
+    """Batched version of get_ticker_metadata, keyed by ticker — used by
+    utils/portfolio.py::compute_holdings_summary to avoid one query per holding."""
+    if not tickers:
+        return {}
+    db = get_client()
+    rows = db.table("ticker_metadata").select("*").in_("ticker", tickers).execute().data
+    return {r["ticker"]: r for r in rows}
+
+
+def upsert_ticker_metadata(
+    ticker: str, company_name: str | None, exchange: str | None, symbol: str | None, yfinance_symbol: str | None
+) -> dict:
+    """Global cache of resolved ticker metadata (see bot/ticker_resolver.py). Uses
+    the service key, same convention as insert_equity_prices/upsert_asset_snapshot."""
+    db = get_client(use_service_key=True)
+    try:
+        result = (
+            db.table("ticker_metadata")
+            .upsert(
+                {
+                    "ticker": ticker,
+                    "company_name": company_name,
+                    "exchange": exchange,
+                    "symbol": symbol,
+                    "yfinance_symbol": yfinance_symbol,
+                },
+                on_conflict="ticker",
+            )
+            .execute()
+        )
+    except Exception:
+        logger.exception("upsert_ticker_metadata failed for ticker=%s", ticker)
+        raise
+    logger.info("upsert_ticker_metadata: saved ticker=%s", ticker)
+    return result.data[0] if result.data else {}
+
+
 def get_recent_transactions(limit: int, user_id: str) -> list[dict]:
     logger.debug("get_recent_transactions: limit=%d", limit)
     db = get_client()

@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.concurrency import run_in_threadpool
 
 from backend.auth import get_current_user
-from backend.schemas import PortfolioEventCreate, PortfolioEventUpdate
+from backend.schemas import PortfolioEventCreate, PortfolioEventUpdate, TickerResolveRequest
+from bot.ticker_resolver import resolve_ticker
 from db.supabase import (
     dashboard_insert_portfolio_event,
     delete_portfolio_events,
@@ -13,9 +14,8 @@ from db.supabase import (
     update_portfolio_event,
 )
 from scheduler.equity_price_updater import update_equity_prices
-from utils.constants import TICKER_YFINANCE_MAP
 from utils.dividends import compute_dividend_total
-from utils.equity_pricing import fetch_dividend_forecast
+from utils.equity_pricing import fetch_dividend_forecast, resolve_yfinance_symbol
 from utils.fx import convert
 from utils.portfolio import compute_holdings_summary
 
@@ -80,6 +80,17 @@ def create_portfolio_event(payload: PortfolioEventCreate, user_id: str = Depends
     return result.data[0] if result.data else row
 
 
+@router.post("/resolve-ticker")
+def resolve_ticker_endpoint(payload: TickerResolveRequest, user_id: str = Depends(get_current_user)):
+    """Backs the Add Trade dialog's "Resolve" button — lets a user type a company
+    name/nickname (e.g. "maybank") instead of an exact exchange ticker. Same resolver
+    used by the chat/extraction pipeline's enrich_portfolio_event."""
+    result = resolve_ticker(payload.query)
+    if not result:
+        return {"error": "Couldn't resolve that ticker — try the exact exchange symbol."}
+    return result
+
+
 @router.patch("/portfolio-events/{event_id}")
 def patch_portfolio_event(
     event_id: str, fields: PortfolioEventUpdate, user_id: str = Depends(get_current_user)
@@ -131,6 +142,6 @@ async def dividend_forecast(user_id: str = Depends(get_current_user)):
     I/O, same as /refresh-prices."""
     positions = get_held_positions(user_id)
     tickers = sorted({p["ticker"] for p in positions})
-    symbols = {t: TICKER_YFINANCE_MAP.get(t, t) for t in tickers}
+    symbols = {t: resolve_yfinance_symbol(t) for t in tickers}
     forecast = await run_in_threadpool(fetch_dividend_forecast, sorted(set(symbols.values())))
     return [{"ticker": t, **forecast.get(symbols[t], {})} for t in tickers]

@@ -1,7 +1,6 @@
 from bot.handlers import chunk_lines
 from db.supabase import get_all_portfolio_events, get_all_users, get_held_positions, insert_portfolio_events
-from utils.constants import TICKER_YFINANCE_MAP
-from utils.equity_pricing import fetch_dividends
+from utils.equity_pricing import fetch_dividends, resolve_yfinance_symbol
 from utils.formatters import format_money
 from utils.logger import get_logger
 
@@ -34,7 +33,7 @@ def _scan_user_dividends(user_id: str) -> list[dict]:
         if e["action"] in ("BUY", "SELL"):
             events_by_key.setdefault((e["account_id"], e["ticker"]), []).append(e)
 
-    symbols = {p["ticker"]: TICKER_YFINANCE_MAP.get(p["ticker"], p["ticker"]) for p in positions}
+    symbols = {p["ticker"]: resolve_yfinance_symbol(p["ticker"]) for p in positions}
     dividends = fetch_dividends(sorted(set(symbols.values())))
 
     new_rows = []

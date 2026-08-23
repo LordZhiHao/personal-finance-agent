@@ -1,4 +1,10 @@
-from db.supabase import get_accounts, get_all_portfolio_events, get_held_positions, get_latest_equity_prices
+from db.supabase import (
+    get_accounts,
+    get_all_portfolio_events,
+    get_held_positions,
+    get_latest_equity_prices,
+    get_ticker_metadata_batch,
+)
 from utils.fx import convert
 from utils.logger import get_logger
 
@@ -40,6 +46,7 @@ def compute_holdings_summary(user_id: str, display_currency: str = "SGD") -> dic
     accounts = {a["id"]: a for a in get_accounts(account_type="brokerage", user_id=user_id)}
     tickers = sorted({p["ticker"] for p in positions})
     prices = get_latest_equity_prices(tickers)
+    ticker_meta = get_ticker_metadata_batch(tickers)
     cost_state = _build_cost_basis_state(get_all_portfolio_events(user_id))
 
     holdings = []
@@ -77,7 +84,8 @@ def compute_holdings_summary(user_id: str, display_currency: str = "SGD") -> dic
         holdings.append({
             "account_name": account["name"],
             "ticker": ticker,
-            "name": price_info["name"] if price_info else None,
+            "name": (ticker_meta.get(ticker) or {}).get("company_name")
+            or (price_info["name"] if price_info else None),
             "price": price_info["price"] if price_info else None,
             "price_currency": price_info["currency"] if price_info else None,
             "quantity": qty,

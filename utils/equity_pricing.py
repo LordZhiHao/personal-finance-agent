@@ -2,9 +2,21 @@ from datetime import datetime, timezone
 
 import yfinance as yf
 
+from db.supabase import get_ticker_metadata
+from utils.constants import TICKER_YFINANCE_MAP
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def resolve_yfinance_symbol(ticker: str) -> str:
+    """ticker_metadata (populated by bot/ticker_resolver.py, covering any exchange
+    the resolver has seen) takes priority over the static, hand-maintained
+    TICKER_YFINANCE_MAP; falls back to the raw ticker if neither has an entry."""
+    meta = get_ticker_metadata(ticker)
+    if meta and meta.get("yfinance_symbol"):
+        return meta["yfinance_symbol"]
+    return TICKER_YFINANCE_MAP.get(ticker, ticker)
 
 
 def fetch_prices(symbols: list[str]) -> dict[str, dict]:

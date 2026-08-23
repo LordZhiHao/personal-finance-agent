@@ -84,11 +84,11 @@ export function HoldingsTable({
                   <Td sticky className="min-w-[110px]">
                     <div className="font-medium">
                       {noPrice && "⚠️ "}
-                      {h.ticker}
+                      {h.name ?? h.ticker}
                     </div>
                     {h.name && (
                       <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                        {h.name}
+                        {h.ticker}
                       </div>
                     )}
                   </Td>
@@ -129,7 +129,7 @@ export function HoldingsTable({
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
                   {noPrice && "⚠️ "}
-                  {h.ticker}
+                  {h.name ?? h.ticker}
                 </span>
                 <span className="text-sm font-semibold shrink-0">
                   {noPrice ? "no price available" : formatMoney(h.market_value!, currency)}
@@ -137,7 +137,7 @@ export function HoldingsTable({
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs truncate" style={{ color: "var(--text-muted)" }}>
-                  {h.name ?? h.ticker}
+                  {h.ticker}
                 </span>
                 <span className="text-xs shrink-0" style={{ color: "var(--text-muted)" }}>
                   {h.account_name} · Qty: {h.quantity.toFixed(2)}

@@ -221,7 +221,11 @@ export function InvestmentsPage() {
     }
     return [...totals.entries()]
       .sort(([, a], [, b]) => b - a)
-      .map(([name, value]) => ({ name, subtitle: tickerNames[name], value }));
+      .map(([ticker, value]) => ({
+        name: tickerNames[ticker] ?? ticker,
+        subtitle: tickerNames[ticker] ? ticker : undefined,
+        value,
+      }));
   }, [holdingsQuery.data, tickerNames]);
 
   const eventsSorted = useMemo(() => [...events].sort((a, b) => b.date.localeCompare(a.date)), [events]);

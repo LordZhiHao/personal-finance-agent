@@ -12,7 +12,8 @@ from db.supabase import (
 from scheduler.emailer import send_reminder_email
 from scheduler.report_builder import summarize_transactions
 from utils.balances import compute_account_balances
-from utils.constants import DEFAULT_CURRENCY, TICKER_YFINANCE_MAP
+from utils.constants import DEFAULT_CURRENCY
+from utils.equity_pricing import resolve_yfinance_symbol
 from utils.logger import get_logger
 from utils.portfolio import compute_holdings_summary
 
@@ -44,10 +45,10 @@ def _daily_spend_totals(user_ids: set[str], now: datetime) -> dict[str, float]:
 
 
 def _stock_prices(tickers: set[str]) -> dict[str, dict | None]:
-    """Keyed by the raw ticker (e.g. 'CSPX'), mapped through TICKER_YFINANCE_MAP before
+    """Keyed by the raw ticker (e.g. 'CSPX'), mapped through resolve_yfinance_symbol before
     the lookup — same pattern bot/finance_agent.py's get_dividend_forecast tool uses,
     since equity_prices stores the Yahoo Finance symbol, not the raw broker ticker."""
-    symbol_map = {t: TICKER_YFINANCE_MAP.get(t, t) for t in tickers}
+    symbol_map = {t: resolve_yfinance_symbol(t) for t in tickers}
     prices = get_latest_equity_prices(sorted(set(symbol_map.values())))
     return {t: prices.get(symbol_map[t]) for t in tickers}
 

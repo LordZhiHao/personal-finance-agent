@@ -175,6 +175,19 @@ TICKER_YFINANCE_MAP = {
     "CSPX": "CSPX.L",
 }
 
+# Deterministic Yahoo Finance suffix per exchange code returned by
+# bot/ticker_resolver.py::resolve_ticker — the LLM only picks the exchange (one of
+# these exact keys), never the Yahoo suffix syntax itself, so a resolved ticker's
+# yfinance_symbol is always built in code, not trusted from the model.
+EXCHANGE_YFINANCE_SUFFIX = {
+    "US": "",
+    "SGX": ".SI",
+    "KLSE": ".KL",
+    "LSE": ".L",
+    "HKEX": ".HK",
+    "ASX": ".AX",
+}
+
 # Hard allowlist for bot/finance_agent.py's query_financial_records tool
 # (db.supabase.query_records) — the finance Q&A agent can only read tables/fields
 # listed here, and can never construct raw SQL, so this dict is the entire

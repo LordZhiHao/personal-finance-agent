@@ -74,10 +74,10 @@ export function UpcomingDividends({
             return (
               <Tr key={f.ticker}>
                 <Td sticky className="min-w-[110px]">
-                  <div className="font-medium">{f.ticker}</div>
+                  <div className="font-medium">{names?.[f.ticker] ?? f.ticker}</div>
                   {names?.[f.ticker] && (
                     <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                      {names[f.ticker]}
+                      {f.ticker}
                     </div>
                   )}
                 </Td>

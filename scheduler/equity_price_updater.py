@@ -6,8 +6,7 @@ from db.supabase import (
     insert_equity_prices,
     upsert_asset_snapshot,
 )
-from utils.constants import TICKER_YFINANCE_MAP
-from utils.equity_pricing import fetch_prices
+from utils.equity_pricing import fetch_prices, resolve_yfinance_symbol
 from utils.fx import convert
 from utils.logger import get_logger
 
@@ -34,7 +33,7 @@ def update_equity_prices(user_id: str | None = None):
     symbols_failed: list[str] = []
     if positions:
         held_account_ids = {p["account_id"] for p in positions}
-        symbols = sorted({TICKER_YFINANCE_MAP.get(p["ticker"], p["ticker"]) for p in positions})
+        symbols = sorted({resolve_yfinance_symbol(p["ticker"]) for p in positions})
         prices = fetch_prices(symbols)
 
         fetched_at = datetime.now(timezone.utc).isoformat()
@@ -56,7 +55,7 @@ def update_equity_prices(user_id: str | None = None):
             logger.warning("update_equity_prices: failed to price %d symbol(s): %s", len(symbols_failed), symbols_failed)
 
         for p in positions:
-            symbol = TICKER_YFINANCE_MAP.get(p["ticker"], p["ticker"])
+            symbol = resolve_yfinance_symbol(p["ticker"])
             quote = prices.get(symbol)
             if not quote:
                 logger.warning("update_equity_prices: no price for %s (%s) — excluded from snapshot", p["ticker"], symbol)

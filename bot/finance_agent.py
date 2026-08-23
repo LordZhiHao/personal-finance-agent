@@ -55,9 +55,8 @@ from utils.constants import (
     QUERYABLE_OPERATORS,
     QUERYABLE_SCHEMA,
     THEME_COLORS,
-    TICKER_YFINANCE_MAP,
 )
-from utils.equity_pricing import fetch_dividend_forecast
+from utils.equity_pricing import fetch_dividend_forecast, resolve_yfinance_symbol
 from utils.logger import get_logger
 from utils.period import parse_period
 from utils.portfolio import compute_holdings_summary
@@ -952,7 +951,7 @@ def _run_tool(name: str, args: dict, user_id: str, currency: str, classification
     if name == "get_dividend_forecast":
         positions = get_held_positions(user_id)
         tickers = sorted({p["ticker"] for p in positions})
-        symbols = {t: TICKER_YFINANCE_MAP.get(t, t) for t in tickers}
+        symbols = {t: resolve_yfinance_symbol(t) for t in tickers}
         forecast = fetch_dividend_forecast(sorted(set(symbols.values())))
         return {"forecast": [{"ticker": t, **forecast.get(symbols[t], {})} for t in tickers]}
     if name == "get_allocation":

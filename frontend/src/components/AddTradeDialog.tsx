@@ -5,6 +5,7 @@ import { z } from "zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Account, Meta } from "../types";
 import { api } from "../api/client";
+import { useResolveTicker } from "../hooks/api";
 import { Button, Field, Input, Overlay, Select } from "./ui";
 
 const schema = z
@@ -42,10 +43,15 @@ export function AddTradeDialog({
 }) {
   const queryClient = useQueryClient();
   const [serverError, setServerError] = useState<string | null>(null);
+  const [resolveError, setResolveError] = useState<string | null>(null);
+  const [resolvedInfo, setResolvedInfo] = useState<string | null>(null);
+  const resolveTicker = useResolveTicker();
   const {
     register,
     handleSubmit,
     reset,
+    getValues,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -84,6 +90,21 @@ export function AddTradeDialog({
     onError: (err) => setServerError(err instanceof Error ? err.message : "Failed to save."),
   });
 
+  const onResolve = async () => {
+    setResolveError(null);
+    setResolvedInfo(null);
+    const query = getValues("companyName") || getValues("ticker");
+    if (!query) return;
+    const result = await resolveTicker.mutateAsync(query);
+    if ("error" in result) {
+      setResolveError(result.error);
+      return;
+    }
+    setValue("ticker", result.ticker, { shouldValidate: true });
+    setValue("companyName", result.company);
+    setResolvedInfo(`Resolved: ${result.ticker} (${result.exchange}) — ${result.company}`);
+  };
+
   if (!open) return null;
 
   if (accounts.length === 0) {
@@ -108,7 +129,16 @@ export function AddTradeDialog({
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Company Name" error={undefined}>
-            <Input {...register("companyName")} placeholder="e.g. Apple Inc" className="w-full" />
+            <div className="flex gap-2">
+              <Input
+                {...register("companyName")}
+                placeholder="e.g. Apple Inc, or just 'maybank'"
+                className="w-full"
+              />
+              <Button type="button" variant="ghost" onClick={onResolve} disabled={resolveTicker.isPending}>
+                {resolveTicker.isPending ? "Resolving…" : "Resolve"}
+              </Button>
+            </div>
           </Field>
           <Field label="Ticker Symbol *" error={errors.ticker?.message}>
             <Input {...register("ticker")} placeholder="e.g. AAPL, CSPX" className="w-full" />
@@ -156,6 +186,17 @@ export function AddTradeDialog({
         <Field label="Description / Notes" error={undefined}>
           <Input {...register("notes")} placeholder="Optional notes about this trade" className="w-full" />
         </Field>
+
+        {resolvedInfo && (
+          <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+            {resolvedInfo}
+          </p>
+        )}
+        {resolveError && (
+          <p className="text-sm" style={{ color: "var(--tint-red-text)" }}>
+            {resolveError}
+          </p>
+        )}
 
         {serverError && (
           <p className="text-sm" style={{ color: "var(--tint-red-text)" }}>
