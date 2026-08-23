@@ -109,8 +109,12 @@ export function Layout() {
       >
         <div className="flex items-center">
           <h1
-            className="flex items-center gap-2 text-base font-semibold px-4 py-2 rounded-full"
-            style={{ background: "var(--surface-1)", boxShadow: "var(--shadow-card)" }}
+            className="flex items-center gap-2 text-base font-semibold px-4 py-2"
+            style={{
+              background: "var(--surface-1)",
+              boxShadow: "var(--shadow-card)",
+              borderRadius: "var(--radius-control)",
+            }}
           >
             <BrandMark isChatPage={isChatPage} imgClassName="h-6 w-6" />
           </h1>
@@ -130,8 +134,12 @@ export function Layout() {
         </nav>
 
         <div
-          className="flex items-center gap-2 px-3 py-2 rounded-full justify-self-end"
-          style={{ background: "var(--surface-1)", boxShadow: "var(--shadow-card)" }}
+          className="flex items-center gap-2 px-3 py-2 justify-self-end"
+          style={{
+            background: "var(--surface-1)",
+            boxShadow: "var(--shadow-card)",
+            borderRadius: "var(--radius-control)",
+          }}
         >
           <NavLink to="/settings" aria-label="Settings" title="Settings" className="flex items-center gap-2">
             <div
