@@ -178,6 +178,20 @@ Tenant isolation flows through **`accounts.user_id` only** — `transactions`, `
 
 ---
 
+## Field Encryption
+
+`transactions.amount`/`description`/`raw_text`, `portfolio_events.quantity`/`price`/`fees`, and `asset_snapshots.total_value` are stored as AES-256-GCM ciphertext, not plaintext — this is a separate protection layer from Supabase's own at-rest disk encryption, specifically so a leaked `SUPABASE_SERVICE_KEY` or direct DB access exposes only ciphertext, never real financial figures. `date`, `category`, `currency`, `source`, `receipt_id`, `account_id`, `ticker`, `action`, `snapshot_date`, and `accounts.comments` stay plaintext — they're needed for SQL filtering/joins/grouping, or (in `comments`' case) sent to an LLM for account matching.
+
+- **`utils/crypto.py`** — the only place `FIELD_ENCRYPTION_KEY` (32-byte hex string) is read. `encrypt_str(value)`/`decrypt_str(token)` do the AES-256-GCM work (random 12-byte nonce per call, never reused for a given key); `encrypt_float`/`decrypt_float`/`encrypt_text`/`decrypt_text` are thin `None`-safe typed wrappers. The key is never sent to or stored in Supabase in any form — it lives only in Railway's env vars (and locally in `.env`), same trust boundary as `JWT_SECRET`/`BOT_TOKEN`.
+- **`db/supabase.py`** — each of the three tables has a private `_encrypt_<table>_row()`/`_decrypt_<table>_row()` pair that takes/returns the exact same dict shape every caller already used before encryption existed (e.g. `{"amount": -12.40, ...}` in, same key out) — encryption is invisible outside this file, so no Pydantic schema, bot handler, aggregation util (`report_builder.py`, `utils/portfolio.py`, `utils/balances.py`, `utils/subscriptions.py`, `utils/dividends.py`), or frontend code needed to change. Every insert/update/select on `transactions`/`portfolio_events`/`asset_snapshots` in `db/supabase.py` routes through these helpers — encrypt immediately before `.insert()`/`.update()`, decrypt immediately after `.select()`/on the `.data` of an insert/update response. **Any new function added to this file that touches these three tables must do the same** — never insert/update raw `amount`/`description`/`raw_text`/`quantity`/`price`/`fees`/`total_value`, and never return a row straight from `.execute().data` without decrypting it first.
+- **Columns**: each encrypted value lives in a `<field>_enc text` column (e.g. `amount_enc`), added alongside the original plaintext column in `migrations/0017_field_encryption.sql` (which also drops that column's `NOT NULL` constraint, since new code stops writing to it). The plaintext columns are left in place, unused, as a rollback path — a later migration will drop them once the encrypted columns are confirmed correct in production.
+- **`query_records()`** (backs the finance agent's `query_financial_records` tool, see "Finance Q&A Agent" below) can't push a `>`/`<`/`like` filter on an encrypted field into Postgres — `utils/constants.py::ENCRYPTED_QUERYABLE_FIELDS` marks which `QUERYABLE_SCHEMA` fields are affected per table (`amount`/`description` on `transactions`, `quantity`/`price` on `portfolio_events`, `total_value` on `asset_snapshots`). For those fields, `query_records()` fetches rows (still bounded by the required date range plus any plaintext-field filters, and by a hard `QUERYABLE_ROW_FETCH_CAP` ceiling), decrypts them, then applies the filter in Python via `_matches_operator()` — the Python-side twin of `_apply_operator()`'s SQL-builder logic. Functionality is unchanged from the agent's/caller's perspective.
+- **Rollout** (same "must not run with mismatched `db/supabase.py` expectations" caution as multi-tenancy's rollout above): apply `migrations/0017_field_encryption.sql` → set `FIELD_ENCRYPTION_KEY` (Railway + local `.env`) → run `python -m scripts.backfill_encrypt_fields` once → deploy `db/supabase.py`+`utils/crypto.py`+`backend/`+`bot/`+`scheduler/` together (a brief maintenance window is safer here than a dual-read plaintext/ciphertext shim) → verify → ship a follow-up migration dropping the old plaintext columns.
+- **Verification**: `python -m tests.test_field_encryption` seeds a throwaway user/account, inserts a transaction and a portfolio event, confirms `db/supabase.py`'s read path returns the original plaintext, confirms the raw stored `*_enc` column is genuinely ciphertext (not the plaintext value), and exercises `query_records()`'s Python-side filter on an encrypted field.
+- **Scope boundary**: this protects against a compromised database, a leaked `SUPABASE_SERVICE_KEY`, or a Supabase-side actor. It does **not** protect against a compromised Railway environment, since the key lives there too — that would need a real secrets manager (AWS Secrets Manager/Doppler), deliberately out of scope for now.
+
+---
+
 ## Onboarding
 
 A freshly signed-up (or newly Telegram-linked) user has zero accounts, zero custom categories, and no `users.onboarding_completed_at` — `frontend/src/auth/ProtectedRoute.tsx` gates on this: once authenticated, it renders `OnboardingWizard` full-screen instead of the app (`children`) whenever `onboardingCompleted` is `false`, and renders nothing at all while the initial `GET /api/auth/me` is in flight. This is a hard replace, not a modal — there's no way to dismiss into the app underneath.
@@ -225,11 +239,14 @@ DASHBOARD_EMAIL
 DASHBOARD_PASSWORD
 JWT_SECRET
 CORS_ALLOWED_ORIGIN
+FIELD_ENCRYPTION_KEY
 ```
 
 `DEEPSEEK_ROUTER_MODEL`/`DEEPSEEK_EXTRACTOR_MODEL`/`DEEPSEEK_AGENT_MODEL`/`DEEPSEEK_ACCOUNT_MATCHER_MODEL` are optional per-component model overrides — each defaults to `"deepseek-v4-pro"` in code if unset, so they only need to be set in `.env` to pin a component to a different model.
 
 `JWT_SECRET` and `CORS_ALLOWED_ORIGIN` (comma-separated allowed frontend origins) are used only by `backend/`. The React frontend has its own env var, set in `frontend/.env.local` / Vercel project settings, not `.env`: `VITE_API_URL` — the backend's base URL.
+
+`FIELD_ENCRYPTION_KEY` is a 32-byte key, hex-encoded (64 hex characters), read only by `utils/crypto.py` — see "Field Encryption" above. Generate one with `python -c "import os; print(os.urandom(32).hex())"`. Losing this key permanently loses access to every encrypted `amount`/`description`/`raw_text`/`quantity`/`price`/`fees`/`total_value` value in the database — there is no recovery path, so back it up somewhere durable outside Railway/`.env` (e.g. a password manager).
 
 **Multi-tenancy note:** `DASHBOARD_EMAIL`/`DASHBOARD_PASSWORD` are permanent, not legacy — `dashboard/auth.py` still reads them directly for its own untouched single-tenant login, and `scripts/backfill_owner.py` reads them once to create the original owner's `users` row. `YOUR_TELEGRAM_CHAT_ID` and `NOTIFY_EMAIL` are now **backfill-only**: read once by `scripts/backfill_owner.py` to seed the owner's `telegram_chat_id`/`notify_email`, no longer read anywhere in `bot/` or `scheduler/` (which now look up every user's chat id/email from the `users` table instead). Every other user's password, Telegram chat id, and notify email live in the `users` table, not in env vars.
 
@@ -513,6 +530,8 @@ Use Plotly for all charts (`plotly.express`). Use `st.columns()` for side-by-sid
 - Do not add a `user_id` column to `transactions`/`portfolio_events`/`asset_snapshots` — tenant scoping flows through `accounts.user_id` only, by design (see "Multi-Tenancy" above)
 - Do not reintroduce `passlib` for password hashing — it's unmaintained and incompatible with modern `bcrypt`; use `backend/auth.py`'s `hash_password`/`verify_password` (thin wrappers over `bcrypt` directly)
 - Do not hard-`DELETE` a row from `accounts` — `transactions`/`portfolio_events`/`asset_snapshots` have no `ON DELETE` clause on their `account_id` FK, so it will fail once the account has any history. `DELETE /api/accounts/{id}` already soft-deletes via `db.supabase.deactivate_account()` (sets `is_active=False`) — use that, don't add a hard-delete path
+- Do not read or write `transactions.amount`/`description`/`raw_text`, `portfolio_events.quantity`/`price`/`fees`, or `asset_snapshots.total_value` directly anywhere in `db/supabase.py` — always go through that table's `_encrypt_*_row()`/`_decrypt_*_row()` helpers (see "Field Encryption" above). A raw `.select()`/`.insert()`/`.update()` on these columns either returns ciphertext to a caller expecting plaintext, or writes plaintext into a column meant to hold ciphertext only
+- Do not log a decrypted `amount`/`description`/`raw_text`/`quantity`/`price`/`fees`/`total_value` value — logging the encrypted `*_enc` value, the row id, or non-sensitive fields (category, date, ticker) is fine, but a plaintext financial value in application logs defeats the point of encrypting it in the database
 
 ---
 
@@ -572,6 +591,15 @@ asyncio.run(send_weekly_report(bot))
 
 **Add a new Supabase query:**
 → Add a function to `db/supabase.py`. Import it where needed. Never write inline Supabase calls.
+
+**Apply the field-encryption migration and backfill (new environment / not yet applied):**
+```bash
+psql "$SUPABASE_DB_URL" -f migrations/0017_field_encryption.sql
+# set FIELD_ENCRYPTION_KEY in .env / Railway, then:
+python -m scripts.backfill_encrypt_fields
+python -m tests.test_field_encryption
+```
+See "Field Encryption" above for the full rollout sequencing (deploy order matters).
 
 **Trigger the equity price update manually for testing:**
 ```python

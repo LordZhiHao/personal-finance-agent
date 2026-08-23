@@ -117,3 +117,19 @@ QUERYABLE_OPERATORS = {
 }
 
 QUERYABLE_MAX_LIMIT = 200
+
+# Fields that are stored encrypted (see utils/crypto.py, db.supabase's _encrypt_*/
+# _decrypt_* row helpers) and therefore can't be filtered/compared at the Postgres
+# level — db.supabase.query_records applies these filters in Python, post-decrypt,
+# instead of pushing them into the query builder like every other filter.
+ENCRYPTED_QUERYABLE_FIELDS = {
+    "transactions": {"amount", "description"},
+    "portfolio_events": {"quantity", "price"},
+    "asset_snapshots": {"total_value"},
+}
+
+# Upper bound on rows fetched for query_records when any requested filter is on an
+# encrypted field (so it can't be pushed into the SQL WHERE clause) — still bounded
+# by the caller-required start_date/end_date, this is just a hard ceiling so an
+# unusually wide date range can't pull an unbounded number of rows into memory.
+QUERYABLE_ROW_FETCH_CAP = 2000

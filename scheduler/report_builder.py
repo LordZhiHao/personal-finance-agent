@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 from dateutil.relativedelta import relativedelta
 
-from db.supabase import get_account_ids_for_user, get_category_classifications_for_user, get_client
+from db.supabase import get_category_classifications_for_user, get_latest_snapshots, get_transactions
 from utils.constants import DEFAULT_CURRENCY
 from utils.fx import convert
 
@@ -103,43 +103,16 @@ def month_comparison(txns: list[dict], classifications: dict[str, str]) -> list[
 
 
 def get_weekly_data(user_id: str, display_currency: str = DEFAULT_CURRENCY) -> dict:
-    db = get_client()
     today = date.today()
     # Last full Mon–Sun window
     days_since_sunday = (today.weekday() + 1) % 7
     week_end = today - timedelta(days=days_since_sunday)
     week_start = week_end - timedelta(days=6)
 
-    account_ids = get_account_ids_for_user(user_id)
-
-    txns = (
-        db.table("transactions")
-        .select("*")
-        .in_("account_id", account_ids)
-        .gte("date", week_start.isoformat())
-        .lte("date", week_end.isoformat())
-        .execute()
-        .data
-        if account_ids else []
-    )
-
+    txns = get_transactions(week_start.isoformat(), week_end.isoformat(), user_id)
     summary = summarize_transactions(txns, get_category_classifications_for_user(user_id))
 
-    snapshots = (
-        db.table("asset_snapshots")
-        .select("*, accounts(name, currency)")
-        .in_("account_id", account_ids)
-        .order("snapshot_date", desc=True)
-        .limit(50)
-        .execute()
-        .data
-        if account_ids else []
-    )
-    seen = {}
-    for s in snapshots:
-        if s["account_id"] not in seen:
-            seen[s["account_id"]] = s
-    latest_snapshots = list(seen.values())
+    latest_snapshots = get_latest_snapshots(user_id)
     total_assets = sum(convert(s["total_value"], s["currency"], display_currency) for s in latest_snapshots)
 
     return {

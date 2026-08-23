@@ -5,7 +5,16 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from supabase import create_client
 
-from utils.constants import BUILTIN_CATEGORY_CLASSIFICATIONS, CATEGORIES, QUERYABLE_OPERATORS, QUERYABLE_SCHEMA
+from utils import crypto
+from utils.constants import (
+    BUILTIN_CATEGORY_CLASSIFICATIONS,
+    CATEGORIES,
+    ENCRYPTED_QUERYABLE_FIELDS,
+    QUERYABLE_MAX_LIMIT,
+    QUERYABLE_OPERATORS,
+    QUERYABLE_ROW_FETCH_CAP,
+    QUERYABLE_SCHEMA,
+)
 from utils.logger import get_logger
 
 load_dotenv()
@@ -37,28 +46,114 @@ def _validate_owned_accounts(account_ids: list[str], user_id: str):
         raise PermissionError(f"Account(s) {not_owned} not owned by user {user_id}")
 
 
+# ── Field encryption ──────────────────────────────────────────────────────
+# transactions.amount/description/raw_text, portfolio_events.quantity/price/fees,
+# and asset_snapshots.total_value are stored as AES-256-GCM ciphertext (see
+# utils/crypto.py) in *_enc columns — never in plaintext, so even a leaked
+# SUPABASE_SERVICE_KEY or direct DB access only exposes ciphertext. These helpers
+# are the only place that boundary is crossed: every insert/update/select on these
+# three tables in this file must route through them, so every function outside
+# this file keeps seeing the exact same plain dict shape it always has.
+
+def _encrypt_transaction_row(row: dict) -> dict:
+    row = dict(row)
+    if "amount" in row:
+        row["amount_enc"] = crypto.encrypt_float(row.pop("amount"))
+    if "description" in row:
+        row["description_enc"] = crypto.encrypt_text(row.pop("description"))
+    if "raw_text" in row:
+        row["raw_text_enc"] = crypto.encrypt_text(row.pop("raw_text"))
+    return row
+
+
+def _decrypt_transaction_row(row: dict) -> dict:
+    row = dict(row)
+    if "amount_enc" in row:
+        row["amount"] = crypto.decrypt_float(row.pop("amount_enc"))
+    if "description_enc" in row:
+        row["description"] = crypto.decrypt_text(row.pop("description_enc"))
+    if "raw_text_enc" in row:
+        row["raw_text"] = crypto.decrypt_text(row.pop("raw_text_enc"))
+    return row
+
+
+def _encrypt_portfolio_event_row(row: dict) -> dict:
+    row = dict(row)
+    if "quantity" in row:
+        row["quantity_enc"] = crypto.encrypt_float(row.pop("quantity"))
+    if "price" in row:
+        row["price_enc"] = crypto.encrypt_float(row.pop("price"))
+    if "fees" in row:
+        row["fees_enc"] = crypto.encrypt_float(row.pop("fees"))
+    return row
+
+
+def _decrypt_portfolio_event_row(row: dict) -> dict:
+    row = dict(row)
+    if "quantity_enc" in row:
+        row["quantity"] = crypto.decrypt_float(row.pop("quantity_enc"))
+    if "price_enc" in row:
+        row["price"] = crypto.decrypt_float(row.pop("price_enc"))
+    if "fees_enc" in row:
+        row["fees"] = crypto.decrypt_float(row.pop("fees_enc"))
+    return row
+
+
+def _encrypt_snapshot_row(row: dict) -> dict:
+    row = dict(row)
+    if "total_value" in row:
+        row["total_value_enc"] = crypto.encrypt_float(row.pop("total_value"))
+    return row
+
+
+def _decrypt_snapshot_row(row: dict) -> dict:
+    row = dict(row)
+    if "total_value_enc" in row:
+        row["total_value"] = crypto.decrypt_float(row.pop("total_value_enc"))
+    return row
+
+
+_ROW_DECRYPTORS = {
+    "transactions": _decrypt_transaction_row,
+    "portfolio_events": _decrypt_portfolio_event_row,
+    "asset_snapshots": _decrypt_snapshot_row,
+}
+
+
+def _decrypt_result_data(result, table: str):
+    """Decrypts an APIResponse's `.data` list in place (mutating each dict, not
+    reassigning the list itself, since some postgrest response objects don't allow
+    attribute reassignment) — for insert()/update() calls whose returned rows get
+    handed straight back to a caller (e.g. backend routers returning the inserted
+    row to the frontend)."""
+    decryptor = _ROW_DECRYPTORS[table]
+    for i, row in enumerate(result.data or []):
+        result.data[i] = decryptor(row)
+    return result
+
+
 def insert_transactions(rows: list[dict], user_id: str):
     _validate_owned_accounts([r["account_id"] for r in rows], user_id)
     db = get_client(use_service_key=True)
     try:
-        result = db.table("transactions").insert(rows).execute()
+        result = db.table("transactions").insert([_encrypt_transaction_row(r) for r in rows]).execute()
     except Exception:
         logger.exception("insert_transactions failed for %d row(s)", len(rows))
         raise
     logger.info("insert_transactions: saved %d row(s)", len(rows))
-    return result
+    return _decrypt_result_data(result, "transactions")
 
 
 def insert_portfolio_events(rows: list[dict], user_id: str):
     _validate_owned_accounts([r["account_id"] for r in rows], user_id)
     db = get_client(use_service_key=True)
     try:
-        result = db.table("portfolio_events").insert(rows).execute()
+        result = db.table("portfolio_events").insert([_encrypt_portfolio_event_row(r) for r in rows]).execute()
     except Exception:
         logger.exception("insert_portfolio_events failed for %d row(s)", len(rows))
         raise
     logger.info("insert_portfolio_events: saved %d row(s)", len(rows))
-    return result
+    return _decrypt_result_data(result, "portfolio_events")
 
 
 def create_receipt(user_id: str, storage_path: str, content_type: str) -> dict:
@@ -136,7 +231,8 @@ def get_transactions(start_date: str, end_date: str, user_id: str | None = None)
     )
     if user_id is not None:
         query = query.in_("account_id", get_account_ids_for_user(user_id))
-    return query.order("date", desc=True).execute().data
+    rows = query.order("date", desc=True).execute().data
+    return [_decrypt_transaction_row(r) for r in rows]
 
 
 def update_transaction(transaction_id: str, fields: dict, user_id: str | None = None):
@@ -149,13 +245,13 @@ def update_transaction(transaction_id: str, fields: dict, user_id: str | None = 
         _validate_owned_account(fields["account_id"], user_id)
     logger.info("update_transaction: id=%s fields=%s", transaction_id, list(fields.keys()))
     db = get_client(use_service_key=True)
-    query = db.table("transactions").update(fields).eq("id", transaction_id)
+    query = db.table("transactions").update(_encrypt_transaction_row(fields)).eq("id", transaction_id)
     if user_id is not None:
         query = query.in_("account_id", get_account_ids_for_user(user_id))
     result = query.execute()
     if user_id is not None and not result.data:
         raise LookupError(f"Transaction {transaction_id} not found")
-    return result
+    return _decrypt_result_data(result, "transactions")
 
 
 def dashboard_insert_portfolio_event(row: dict, user_id: str | None = None):
@@ -164,12 +260,12 @@ def dashboard_insert_portfolio_event(row: dict, user_id: str | None = None):
         _validate_owned_account(row["account_id"], user_id)
     db = get_client(use_service_key=True)
     try:
-        result = db.table("portfolio_events").insert(row).execute()
+        result = db.table("portfolio_events").insert(_encrypt_portfolio_event_row(row)).execute()
     except Exception:
         logger.exception("dashboard_insert_portfolio_event failed for ticker=%s", row.get("ticker"))
         raise
     logger.info("dashboard_insert_portfolio_event: saved ticker=%s action=%s", row.get("ticker"), row.get("action"))
-    return result
+    return _decrypt_result_data(result, "portfolio_events")
 
 
 def update_portfolio_event(event_id: str, fields: dict, user_id: str):
@@ -182,14 +278,14 @@ def update_portfolio_event(event_id: str, fields: dict, user_id: str):
     db = get_client(use_service_key=True)
     result = (
         db.table("portfolio_events")
-        .update(fields)
+        .update(_encrypt_portfolio_event_row(fields))
         .eq("id", event_id)
         .in_("account_id", get_account_ids_for_user(user_id))
         .execute()
     )
     if not result.data:
         raise LookupError(f"Portfolio event {event_id} not found")
-    return result
+    return _decrypt_result_data(result, "portfolio_events")
 
 
 def get_latest_snapshots(user_id: str | None = None):
@@ -204,7 +300,7 @@ def get_latest_snapshots(user_id: str | None = None):
     seen = {}
     for s in snapshots:
         if s["account_id"] not in seen:
-            seen[s["account_id"]] = s
+            seen[s["account_id"]] = _decrypt_snapshot_row(s)
     return list(seen.values())
 
 
@@ -230,7 +326,8 @@ def get_snapshot_history(
         query = query.gte("snapshot_date", start_date)
     if end_date is not None:
         query = query.lte("snapshot_date", end_date)
-    return query.order("snapshot_date").execute().data
+    rows = query.order("snapshot_date").execute().data
+    return [_decrypt_snapshot_row(r) for r in rows]
 
 
 def get_accounts(account_type: str | list[str] | None = None, user_id: str | None = None):
@@ -694,7 +791,8 @@ def get_portfolio_events(start_date: str | None = None, end_date: str | None = N
         query = query.lte("date", end_date)
     if user_id is not None:
         query = query.in_("account_id", get_account_ids_for_user(user_id))
-    return query.order("date", desc=True).execute().data
+    rows = query.order("date", desc=True).execute().data
+    return [_decrypt_portfolio_event_row(r) for r in rows]
 
 
 def get_all_portfolio_events(user_id: str) -> list[dict]:
@@ -702,7 +800,7 @@ def get_all_portfolio_events(user_id: str) -> list[dict]:
     basis from scratch (unlike get_portfolio_events, not bounded to a date range)."""
     logger.debug("get_all_portfolio_events")
     db = get_client()
-    return (
+    rows = (
         db.table("portfolio_events")
         .select("*")
         .in_("account_id", get_account_ids_for_user(user_id))
@@ -710,6 +808,7 @@ def get_all_portfolio_events(user_id: str) -> list[dict]:
         .execute()
         .data
     )
+    return [_decrypt_portfolio_event_row(r) for r in rows]
 
 
 def get_held_positions(user_id: str | None = None) -> list[dict]:
@@ -719,10 +818,14 @@ def get_held_positions(user_id: str | None = None) -> list[dict]:
     equity price updater, which prices every held ticker in one batch regardless of owner."""
     logger.debug("get_held_positions: user_id=%s", user_id)
     db = get_client()
-    query = db.table("portfolio_events").select("account_id, ticker, action, quantity").in_("action", ["BUY", "SELL"])
+    query = (
+        db.table("portfolio_events")
+        .select("account_id, ticker, action, quantity_enc")
+        .in_("action", ["BUY", "SELL"])
+    )
     if user_id is not None:
         query = query.in_("account_id", get_account_ids_for_user(user_id))
-    events = query.execute().data
+    events = [_decrypt_portfolio_event_row(r) for r in query.execute().data]
     positions: dict[tuple, float] = {}
     for e in events:
         key = (e["account_id"], e["ticker"])
@@ -761,7 +864,7 @@ def get_latest_equity_prices(tickers: list[str]) -> dict[str, dict]:
 def get_recent_transactions(limit: int, user_id: str) -> list[dict]:
     logger.debug("get_recent_transactions: limit=%d", limit)
     db = get_client()
-    return (
+    rows = (
         db.table("transactions")
         .select("*, accounts(name, currency)")
         .in_("account_id", get_account_ids_for_user(user_id))
@@ -770,6 +873,7 @@ def get_recent_transactions(limit: int, user_id: str) -> list[dict]:
         .execute()
         .data
     )
+    return [_decrypt_transaction_row(r) for r in rows]
 
 
 def get_account_cash_totals(user_id: str) -> dict[str, float]:
@@ -780,14 +884,15 @@ def get_account_cash_totals(user_id: str) -> dict[str, float]:
     db = get_client()
     rows = (
         db.table("transactions")
-        .select("account_id, amount")
+        .select("account_id, amount_enc")
         .in_("account_id", get_account_ids_for_user(user_id))
         .execute()
         .data
     )
     totals: dict[str, float] = {}
     for r in rows:
-        totals[r["account_id"]] = totals.get(r["account_id"], 0) + r["amount"]
+        amount = crypto.decrypt_float(r["amount_enc"]) or 0
+        totals[r["account_id"]] = totals.get(r["account_id"], 0) + amount
     return totals
 
 
@@ -795,7 +900,9 @@ def _apply_operator(query, field: str, op: str, value, field_type: str):
     """Applies one already-validated {field, op, value} filter to a supabase-py
     query builder chain, for query_records below. `field_type` (from
     QUERYABLE_SCHEMA) further restricts which operators are valid per field —
-    e.g. 'like' only makes sense on text columns."""
+    e.g. 'like' only makes sense on text columns. Only ever called for fields NOT
+    in ENCRYPTED_QUERYABLE_FIELDS — an encrypted column can't be compared/matched
+    at the Postgres level, since it holds ciphertext, not the real value."""
     if op == "like" and field_type != "text":
         raise ValueError(f"operator 'like' is not valid for field '{field}'")
     if op == "in":
@@ -805,6 +912,34 @@ def _apply_operator(query, field: str, op: str, value, field_type: str):
     if op == "like":
         return query.ilike(field, f"%{value}%")
     return getattr(query, QUERYABLE_OPERATORS[op])(field, value)
+
+
+def _matches_operator(row_value, op: str, value, field_type: str) -> bool:
+    """Python-side equivalent of _apply_operator, for filters on encrypted fields —
+    applied post-decrypt since the real value never reaches Postgres for these."""
+    if op == "like" and field_type != "text":
+        raise ValueError(f"operator 'like' is not valid for field '{field_type}'")
+    if row_value is None:
+        return False
+    if op == "like":
+        return str(value).lower() in str(row_value).lower()
+    if op == "in":
+        if not isinstance(value, list):
+            raise ValueError("operator 'in' requires a list value")
+        return row_value in value
+    if op == "=":
+        return row_value == value
+    if op == "!=":
+        return row_value != value
+    if op == ">":
+        return row_value > value
+    if op == ">=":
+        return row_value >= value
+    if op == "<":
+        return row_value < value
+    if op == "<=":
+        return row_value <= value
+    raise ValueError(f"unsupported operator '{op}'")
 
 
 def _group_rows(rows: list[dict], group_by: str, metric_field: str | None) -> list[dict]:
@@ -840,8 +975,16 @@ def query_records(
     against that table's schema (same convention as other tool args re-validated in
     bot/finance_agent.py::_run_tool, since a DeepSeek tool call's JSON isn't
     FastAPI/Pydantic-validated). Tenant scoping is applied here unconditionally,
-    regardless of what filters the caller passes in — never left to the LLM."""
+    regardless of what filters the caller passes in — never left to the LLM.
+
+    Filters on an encrypted field (ENCRYPTED_QUERYABLE_FIELDS[table] — amount/
+    description/quantity/price/total_value) can't be pushed into the Postgres WHERE
+    clause, since those columns hold ciphertext. Everything else (date range, plus
+    any filter on a plaintext field) is still applied at the SQL level as before;
+    encrypted-field filters are applied in Python, after decrypting each fetched row."""
     schema = QUERYABLE_SCHEMA[table]
+    encrypted_fields = ENCRYPTED_QUERYABLE_FIELDS.get(table, set())
+    decryptor = _ROW_DECRYPTORS[table]
     db = get_client()
     query = db.table(table).select("*")
     if schema["scope"] == "account":
@@ -853,11 +996,23 @@ def query_records(
         query = query.gte(date_field, start_date)
     if end_date:
         query = query.lte(date_field, end_date)
-    for f in filters:
+
+    sql_filters = [f for f in filters if f["field"] not in encrypted_fields]
+    python_filters = [f for f in filters if f["field"] in encrypted_fields]
+    for f in sql_filters:
         field_type = schema["fields"][f["field"]]
         query = _apply_operator(query, f["field"], f["op"], f["value"], field_type)
-    rows = query.order(date_field, desc=True).limit(limit).execute().data
-    result = {"rows": rows, "row_count": len(rows), "truncated": len(rows) == limit}
+
+    fetch_cap = QUERYABLE_ROW_FETCH_CAP if python_filters else min(limit, QUERYABLE_MAX_LIMIT)
+    raw_rows = query.order(date_field, desc=True).limit(fetch_cap).execute().data
+    rows = [decryptor(r) for r in raw_rows]
+    for f in python_filters:
+        field_type = schema["fields"][f["field"]]
+        rows = [r for r in rows if _matches_operator(r.get(f["field"]), f["op"], f["value"], field_type)]
+
+    truncated = len(raw_rows) == fetch_cap or len(rows) > limit
+    rows = rows[:limit]
+    result = {"rows": rows, "row_count": len(rows), "truncated": truncated}
     if group_by:
         result["grouped"] = _group_rows(rows, group_by, schema.get("metric_field"))
     return result
@@ -921,13 +1076,13 @@ def upsert_asset_snapshot(
         result = (
             db.table("asset_snapshots")
             .upsert(
-                {
+                _encrypt_snapshot_row({
                     "account_id": account_id,
                     "snapshot_date": snapshot_date,
                     "total_value": total_value,
                     "currency": currency,
                     "notes": notes,
-                },
+                }),
                 on_conflict="account_id,snapshot_date",
             )
             .execute()
@@ -939,7 +1094,7 @@ def upsert_asset_snapshot(
         "upsert_asset_snapshot: account_id=%s date=%s total_value=%.2f %s",
         account_id, snapshot_date, total_value, currency,
     )
-    return result
+    return _decrypt_result_data(result, "asset_snapshots")
 
 
 # ── Users & Telegram linking ──────────────────────────────────────────────
