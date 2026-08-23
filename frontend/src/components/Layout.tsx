@@ -43,7 +43,7 @@ function NavIconLink({ item }: { item: NavItem }) {
   );
 }
 
-/** Desktop nav capsule item: icon + label, generous padding; Finn keeps its permanent highlighted capsule. */
+/** Desktop nav capsule item: icon + label, generous padding; every item (including Finn) is tinted only while active. */
 function DesktopNavLink({ item }: { item: NavItem }) {
   const Icon = item.icon;
   const isChat = item.variant === "chat";
@@ -52,21 +52,12 @@ function DesktopNavLink({ item }: { item: NavItem }) {
       to={item.to}
       aria-label={item.label}
       className="relative flex items-center gap-2.5 shrink-0 font-medium text-sm transition-colors"
-      style={({ isActive }) =>
-        isChat
-          ? {
-              padding: "0.9rem 1.85rem",
-              borderRadius: "var(--radius-control)",
-              background: isActive ? "var(--brand-hover)" : "var(--brand)",
-              color: "#fff",
-            }
-          : {
-              padding: "0.9rem 1.5rem",
-              borderRadius: "var(--radius-control)",
-              background: isActive ? "var(--brand-tint)" : "transparent",
-              color: isActive ? "var(--brand)" : "var(--text-secondary)",
-            }
-      }
+      style={({ isActive }) => ({
+        padding: isChat ? "0.9rem 1.85rem" : "0.9rem 1.5rem",
+        borderRadius: "var(--radius-control)",
+        background: isActive ? "var(--brand-tint)" : "transparent",
+        color: isActive ? "var(--brand)" : "var(--text-secondary)",
+      })}
     >
       {({ isActive }) => (
         <>
@@ -126,8 +117,12 @@ export function Layout() {
         </div>
 
         <nav
-          className="flex items-center gap-1.5 px-3 py-2.5 rounded-full justify-self-center"
-          style={{ background: "var(--surface-1)", boxShadow: "var(--shadow-card)" }}
+          className="flex items-center gap-1.5 px-3 py-2.5 justify-self-center"
+          style={{
+            background: "var(--surface-1)",
+            boxShadow: "var(--shadow-card)",
+            borderRadius: "var(--radius-control)",
+          }}
         >
           {NAV_ITEMS.map((item) => (
             <DesktopNavLink key={item.to} item={item} />
