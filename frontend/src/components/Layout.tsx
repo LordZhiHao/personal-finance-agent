@@ -19,34 +19,61 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/investments", label: "Investments", icon: PieChart },
 ];
 
+/** Mobile bottom-nav icon: every item (including Finn) is tinted only while active, no permanent fill. */
 function NavIconLink({ item }: { item: NavItem }) {
   const Icon = item.icon;
   const isChat = item.variant === "chat";
+  const size = isChat ? 56 : 48;
   return (
     <NavLink
       to={item.to}
       aria-label={item.label}
       title={item.label}
       className="relative flex items-center justify-center shrink-0 transition-colors"
+      style={({ isActive }) => ({
+        width: size,
+        height: size,
+        borderRadius: "var(--radius-control)",
+        background: isActive ? "var(--brand-tint)" : "transparent",
+        color: isActive ? "var(--brand)" : "var(--text-secondary)",
+      })}
+    >
+      {({ isActive }) => <Icon size={isChat ? 28 : 24} strokeWidth={isActive ? 2.25 : 2} />}
+    </NavLink>
+  );
+}
+
+/** Desktop nav capsule item: icon + label, generous padding; Finn keeps its permanent highlighted capsule. */
+function DesktopNavLink({ item }: { item: NavItem }) {
+  const Icon = item.icon;
+  const isChat = item.variant === "chat";
+  return (
+    <NavLink
+      to={item.to}
+      aria-label={item.label}
+      className="relative flex items-center gap-2.5 shrink-0 font-medium text-sm transition-colors"
       style={({ isActive }) =>
         isChat
           ? {
-              width: 56,
-              height: 56,
+              padding: "0.9rem 1.85rem",
               borderRadius: "var(--radius-control)",
               background: isActive ? "var(--brand-hover)" : "var(--brand)",
               color: "#fff",
             }
           : {
-              width: 48,
-              height: 48,
+              padding: "0.9rem 1.5rem",
               borderRadius: "var(--radius-control)",
               background: isActive ? "var(--brand-tint)" : "transparent",
               color: isActive ? "var(--brand)" : "var(--text-secondary)",
             }
       }
     >
-      {({ isActive }) => <Icon size={isChat ? 28 : 24} strokeWidth={isActive ? 2.25 : 2} />}
+      {({ isActive }) => (
+        <>
+          <Icon size={isChat ? 26 : 22} strokeWidth={isActive ? 2.25 : 2} />
+          <span>{item.label}</span>
+        </>
+      )}
     </NavLink>
   );
 }
@@ -99,11 +126,11 @@ export function Layout() {
         </div>
 
         <nav
-          className="flex items-center gap-1 px-2 py-2 rounded-full justify-self-center"
+          className="flex items-center gap-1.5 px-3 py-2.5 rounded-full justify-self-center"
           style={{ background: "var(--surface-1)", boxShadow: "var(--shadow-card)" }}
         >
           {NAV_ITEMS.map((item) => (
-            <NavIconLink key={item.to} item={item} />
+            <DesktopNavLink key={item.to} item={item} />
           ))}
         </nav>
 
