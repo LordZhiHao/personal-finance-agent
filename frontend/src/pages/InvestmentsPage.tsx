@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { format, getMonth, parseISO, startOfYear, subDays, subMonths, subYears } from "date-fns";
-import { Briefcase, Coins, PieChart, Receipt, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import { Briefcase, Coins, PieChart, Plus, Receipt, TrendingDown, TrendingUp, Wallet } from "lucide-react";
 import type { Holding } from "../types";
 import {
   useAccounts,
@@ -36,7 +36,7 @@ import { LoadingFinn } from "../components/LoadingFinn";
 import { sectionKey } from "../lib/dashboardSections";
 import { formatMoney, formatPct } from "../lib/format";
 import { CURRENCY_MARKET } from "../lib/markets";
-import { Button, Input, Select, TabToggle, Card } from "../components/ui";
+import { Button, Fab, Input, Select, TabToggle, Card } from "../components/ui";
 
 const today = format(new Date(), "yyyy-MM-dd");
 const defaultFilters: FilterValue = {
@@ -479,7 +479,7 @@ export function InvestmentsPage() {
     <ChartCard
       title="Trade History"
       headerRight={
-        <Button variant="primary" onClick={() => setDialogOpen(true)}>
+        <Button variant="primary" className="hidden md:inline-flex" onClick={() => setDialogOpen(true)}>
           ＋ Add Entry
         </Button>
       }
@@ -536,6 +536,10 @@ export function InvestmentsPage() {
           </Button>
         </div>
       </div>
+
+      <Fab onClick={() => setDialogOpen(true)} aria-label="Add entry">
+        <Plus size={24} />
+      </Fab>
 
       <SwipeableSections
         tabs={visibleTabs}

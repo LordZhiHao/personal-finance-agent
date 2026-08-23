@@ -10,7 +10,7 @@ import {
   subDays,
   subMonths,
 } from "date-fns";
-import { Banknote, PiggyBank, Receipt, TrendingDown, TrendingUp } from "lucide-react";
+import { Banknote, PiggyBank, Plus, Receipt, TrendingDown, TrendingUp } from "lucide-react";
 import { useAccounts, useMeta, useTransactions } from "../hooks/api";
 import { useAuth } from "../auth/AuthContext";
 import { FilterBar, type FilterValue } from "../components/FilterBar";
@@ -31,7 +31,7 @@ import { monthKey } from "../lib/dates";
 import { sectionKey } from "../lib/dashboardSections";
 import { categoryColorOrder } from "../lib/palette";
 import { formatMoney, formatPct } from "../lib/format";
-import { Button } from "../components/ui";
+import { Button, Fab } from "../components/ui";
 import { LoadingFinn } from "../components/LoadingFinn";
 
 const today = format(new Date(), "yyyy-MM-dd");
@@ -285,11 +285,15 @@ export function SpendingPage() {
         </h1>
         <div className="flex items-center gap-2 shrink-0 relative">
           <FilterBar accounts={accountsQuery.data ?? []} value={filters} onChange={setFilters} />
-          <Button variant="primary" onClick={() => setDialogOpen(true)}>
+          <Button variant="primary" className="hidden md:inline-flex" onClick={() => setDialogOpen(true)}>
             ＋ Add Transaction
           </Button>
         </div>
       </div>
+
+      <Fab onClick={() => setDialogOpen(true)} aria-label="Add transaction">
+        <Plus size={24} />
+      </Fab>
 
       {filtered.length === 0 ? (
         <p style={{ color: "var(--text-secondary)" }}>

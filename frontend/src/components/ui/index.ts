@@ -2,6 +2,7 @@ export { Card } from "./Card";
 export type { CardTint } from "./Card";
 export { Button } from "./Button";
 export type { ButtonVariant } from "./Button";
+export { Fab } from "./Fab";
 export { Input, Select } from "./Input";
 export { MultiSelect } from "./MultiSelect";
 export type { MultiSelectOption } from "./MultiSelect";
