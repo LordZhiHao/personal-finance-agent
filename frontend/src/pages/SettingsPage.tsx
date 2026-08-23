@@ -919,8 +919,14 @@ const profileSchema = z.object({
   gender_other_text: z.string().max(300).optional(),
   marital_status: z.string().optional(),
   marital_status_other_text: z.string().max(300).optional(),
-  num_kids: z.coerce.number().int().min(0, "Must be 0 or more.").max(20, "Must be 20 or fewer."),
-  num_pets: z.coerce.number().int().min(0, "Must be 0 or more.").max(20, "Must be 20 or fewer."),
+  num_kids: z
+    .string()
+    .optional()
+    .refine((v) => !v || (Number(v) >= 0 && Number(v) <= 20), "Must be between 0 and 20."),
+  num_pets: z
+    .string()
+    .optional()
+    .refine((v) => !v || (Number(v) >= 0 && Number(v) <= 20), "Must be between 0 and 20."),
   persona: z.string().optional(),
   persona_custom_text: z.string().max(300).optional(),
 });
@@ -945,8 +951,8 @@ function ProfileCard() {
       gender_other_text: meQuery.data?.gender_other_text ?? "",
       marital_status: meQuery.data?.marital_status ?? "",
       marital_status_other_text: meQuery.data?.marital_status_other_text ?? "",
-      num_kids: meQuery.data?.num_kids ?? 0,
-      num_pets: meQuery.data?.num_pets ?? 0,
+      num_kids: meQuery.data ? String(meQuery.data.num_kids) : "0",
+      num_pets: meQuery.data ? String(meQuery.data.num_pets) : "0",
       persona: meQuery.data?.persona ?? "",
       persona_custom_text: meQuery.data?.persona_custom_text ?? "",
     },
@@ -967,8 +973,8 @@ function ProfileCard() {
         marital_status: values.marital_status || null,
         marital_status_other_text:
           values.marital_status === "other" ? values.marital_status_other_text?.trim() || null : null,
-        num_kids: values.num_kids,
-        num_pets: values.num_pets,
+        num_kids: values.num_kids ? Number(values.num_kids) : 0,
+        num_pets: values.num_pets ? Number(values.num_pets) : 0,
         persona: values.persona || null,
         persona_custom_text: values.persona === "other" ? values.persona_custom_text?.trim() || null : null,
       },
