@@ -48,6 +48,9 @@ from utils.constants import (
     CURRENCIES,
     DASHBOARD_URL,
     DEFAULT_CURRENCY,
+    GENDERS,
+    MARITAL_STATUSES,
+    PERSONAS,
     QUERYABLE_MAX_LIMIT,
     QUERYABLE_OPERATORS,
     QUERYABLE_SCHEMA,
@@ -101,8 +104,8 @@ that ticker in the results, then explicitly state its average buy price vs. curr
 whether the position is in the green (unrealized_gain > 0) or red (unrealized_gain < 0).
 
 You can also edit the user's own settings directly instead of telling them to go to the Settings page:
-profile (main_currency, theme), accounts (create/edit/delete), custom categories (create/rename/delete),
-and saved memories (forget one). Destructive actions (delete_account, delete_category, forget_memory,
+profile (main_currency, theme, personal details, and persona), accounts (create/edit/delete), custom
+categories (create/rename/delete), and saved memories (forget one). Destructive actions (delete_account, delete_category, forget_memory,
 delete_reminder) execute immediately with no confirmation step — do not ask the user to confirm first,
 just do it, same as remember_preference. Never guess an account_id/category_id/memory_id/reminder_id —
 call the matching list_* tool first if it isn't already visible in this conversation.
@@ -162,8 +165,48 @@ forget_memory(memory_id) with that id if the user asks you to forget/remove one:
 {notes}"""
 
 
-def _build_system_prompt(channel: str, memories: list[dict], currency: str) -> str:
-    shared = _shared_prompt_body(currency) + _memories_block(memories)
+def _profile_block(user: dict) -> str:
+    """Builds an optional paragraph of demographic/persona context from the user's
+    profile fields (see migrations/0018_user_profile_persona.sql). Returns "" if
+    nothing is set yet, same convention as _memories_block, so a user who hasn't
+    filled in ProfileStep/PersonaStep gets no stray text in the prompt."""
+    facts = []
+    if user.get("name"):
+        facts.append(user["name"])
+    if user.get("age") is not None:
+        facts.append(f"age {user['age']}")
+    gender = user.get("gender")
+    if gender == "other" and user.get("gender_other_text"):
+        facts.append(user["gender_other_text"])
+    elif gender:
+        facts.append(gender.replace("_", " "))
+    marital_status = user.get("marital_status")
+    if marital_status == "other" and user.get("marital_status_other_text"):
+        facts.append(user["marital_status_other_text"])
+    elif marital_status:
+        facts.append(marital_status)
+    if user.get("num_kids"):
+        facts.append(f"{user['num_kids']} kid(s)")
+    if user.get("num_pets"):
+        facts.append(f"{user['num_pets']} pet(s)")
+    fact_line = f"About this user: {', '.join(facts)}." if facts else ""
+
+    persona = user.get("persona")
+    persona_paragraph = ""
+    if persona == "other":
+        persona_paragraph = PERSONAS["other"]["prompt_blurb"].format(
+            custom_text=user.get("persona_custom_text") or "not specified"
+        )
+    elif persona in PERSONAS:
+        persona_paragraph = PERSONAS[persona]["prompt_blurb"]
+
+    if not fact_line and not persona_paragraph:
+        return ""
+    return "\n\n" + "\n\n".join(p for p in (fact_line, persona_paragraph) if p)
+
+
+def _build_system_prompt(channel: str, memories: list[dict], currency: str, user: dict) -> str:
+    shared = _shared_prompt_body(currency) + _profile_block(user) + _memories_block(memories)
     if channel == "web":
         return f"""You are a personal finance assistant for a user based in Singapore, integrated into
 their web dashboard. Keep replies concise and use plain text with line breaks where helpful.
@@ -365,12 +408,26 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "update_profile_settings",
-            "description": "Change the user's own profile settings. Only pass the field(s) you want to change.",
+            "description": (
+                "Change the user's own profile settings: currency/theme, personal details "
+                "(name, age, gender, marital status, number of kids/pets), and persona. "
+                "Only pass the field(s) you want to change."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "main_currency": {"type": "string", "enum": CURRENCIES},
                     "theme": {"type": "string", "enum": list(THEME_COLORS.keys())},
+                    "name": {"type": "string"},
+                    "age": {"type": "integer"},
+                    "gender": {"type": "string", "enum": GENDERS},
+                    "gender_other_text": {"type": "string"},
+                    "marital_status": {"type": "string", "enum": MARITAL_STATUSES},
+                    "marital_status_other_text": {"type": "string"},
+                    "num_kids": {"type": "integer"},
+                    "num_pets": {"type": "integer"},
+                    "persona": {"type": "string", "enum": list(PERSONAS.keys())},
+                    "persona_custom_text": {"type": "string"},
                 },
             },
         },
@@ -932,13 +989,26 @@ def _run_tool(name: str, args: dict, user_id: str, currency: str, classification
         _, err = _catch_lookup(delete_user_memory, memory_id, user_id)
         return {"error": err} if err else {"status": "deleted"}
     if name == "update_profile_settings":
-        fields = {k: args[k] for k in ("main_currency", "theme") if k in args}
+        allowed = (
+            "main_currency", "theme", "name", "age", "gender", "gender_other_text",
+            "marital_status", "marital_status_other_text", "num_kids", "num_pets",
+            "persona", "persona_custom_text",
+        )
+        fields = {k: args[k] for k in allowed if k in args}
         if not fields:
             return {"error": "no fields provided to update"}
         if "main_currency" in fields and fields["main_currency"] not in CURRENCIES:
             return {"error": f"main_currency must be one of {CURRENCIES}"}
         if "theme" in fields and fields["theme"] not in THEME_COLORS:
             return {"error": f"theme must be one of {list(THEME_COLORS.keys())}"}
+        if "gender" in fields and fields["gender"] not in GENDERS:
+            return {"error": f"gender must be one of {GENDERS}"}
+        if "marital_status" in fields and fields["marital_status"] not in MARITAL_STATUSES:
+            return {"error": f"marital_status must be one of {MARITAL_STATUSES}"}
+        if "persona" in fields and fields["persona"] not in PERSONAS:
+            return {"error": f"persona must be one of {list(PERSONAS.keys())}"}
+        if "age" in fields and fields["age"] is not None and not (0 <= fields["age"] <= 120):
+            return {"error": "age must be between 0 and 120"}
         update_user(user_id, fields)
         return {"status": "updated"}
     if name == "list_accounts":
@@ -1205,7 +1275,7 @@ def answer_question(uid: int | str, raw_text: str, user_id: str, channel: str = 
     user = get_user_by_id(user_id)
     currency = (user or {}).get("main_currency") or DEFAULT_CURRENCY
     classifications = get_category_classifications_for_user(user_id)
-    system_prompt = _build_system_prompt(channel, memories, currency)
+    system_prompt = _build_system_prompt(channel, memories, currency, user or {})
     messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": raw_text}]
 
     try:

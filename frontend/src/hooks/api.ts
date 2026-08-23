@@ -14,6 +14,7 @@ import type {
   ExpenseSummary,
   Goal,
   HoldingsSummary,
+  Me,
   Memory,
   Meta,
   PortfolioEvent,
@@ -165,6 +166,23 @@ export function useUpdateHiddenDashboardSections() {
   return useMutation({
     mutationFn: (hidden_dashboard_sections: string[]) =>
       api.patch<{ hidden_dashboard_sections: string[] }>("/api/auth/me", { hidden_dashboard_sections }),
+  });
+}
+
+export function useMe() {
+  return useQuery({
+    queryKey: ["me"],
+    queryFn: () => api.get<Me>("/api/auth/me"),
+  });
+}
+
+export function useUpdateMe() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (fields: Partial<Me>) => api.patch<Me>("/api/auth/me", fields),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["me"] });
+    },
   });
 }
 

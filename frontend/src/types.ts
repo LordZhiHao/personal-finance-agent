@@ -148,6 +148,22 @@ export interface ExpenseSummary {
   by_category: Record<string, number>;
 }
 
+export interface PersonaStarterSuggestion {
+  type: "goal" | "budget";
+  name?: string;
+  target_amount?: number;
+  category?: string;
+  monthly_limit?: number;
+  description: string;
+}
+
+export interface PersonaMeta {
+  id: string;
+  label: string;
+  ui_description: string;
+  starter_suggestion: PersonaStarterSuggestion | null;
+}
+
 export interface Meta {
   categories: string[];
   category_classifications: Record<string, CategoryClassification>;
@@ -155,6 +171,9 @@ export interface Meta {
   currencies: string[];
   account_types: string[];
   portfolio_actions: string[];
+  genders: string[];
+  marital_statuses: string[];
+  personas: PersonaMeta[];
 }
 
 export interface Me {
@@ -165,6 +184,16 @@ export interface Me {
   theme: string;
   hidden_dashboard_sections: string[];
   onboarding_completed: boolean;
+  name: string | null;
+  age: number | null;
+  gender: string | null;
+  gender_other_text: string | null;
+  marital_status: string | null;
+  marital_status_other_text: string | null;
+  num_kids: number;
+  num_pets: number;
+  persona: string | null;
+  persona_custom_text: string | null;
 }
 
 export interface AccountCandidate {

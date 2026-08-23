@@ -3,7 +3,15 @@ from datetime import date as _date
 
 from pydantic import BaseModel, field_validator, model_validator
 
-from utils.constants import ACCOUNT_TYPES, CLASSIFICATIONS, CURRENCIES, PORTFOLIO_ACTIONS
+from utils.constants import (
+    ACCOUNT_TYPES,
+    CLASSIFICATIONS,
+    CURRENCIES,
+    GENDERS,
+    MARITAL_STATUSES,
+    PERSONAS,
+    PORTFOLIO_ACTIONS,
+)
 
 
 class LoginRequest(BaseModel):
@@ -88,6 +96,16 @@ class MeUpdate(BaseModel):
     main_currency: str | None = None
     theme: str | None = None
     hidden_dashboard_sections: list[str] | None = None
+    name: str | None = None
+    age: int | None = None
+    gender: str | None = None
+    gender_other_text: str | None = None
+    marital_status: str | None = None
+    marital_status_other_text: str | None = None
+    num_kids: int | None = None
+    num_pets: int | None = None
+    persona: str | None = None
+    persona_custom_text: str | None = None
 
     @field_validator("main_currency")
     @classmethod
@@ -116,6 +134,61 @@ class MeUpdate(BaseModel):
             if item and item not in cleaned:
                 cleaned.append(item)
         return cleaned
+
+    @field_validator("name")
+    @classmethod
+    def name_valid(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if len(v) > 100:
+            raise ValueError("name must be at most 100 characters.")
+        return v
+
+    @field_validator("age")
+    @classmethod
+    def age_valid(cls, v: int | None) -> int | None:
+        if v is not None and not (13 <= v <= 120):
+            raise ValueError("age must be between 13 and 120.")
+        return v
+
+    @field_validator("gender")
+    @classmethod
+    def gender_valid(cls, v: str | None) -> str | None:
+        if v is not None and v not in GENDERS:
+            raise ValueError(f"gender must be one of {GENDERS}")
+        return v
+
+    @field_validator("marital_status")
+    @classmethod
+    def marital_status_valid(cls, v: str | None) -> str | None:
+        if v is not None and v not in MARITAL_STATUSES:
+            raise ValueError(f"marital_status must be one of {MARITAL_STATUSES}")
+        return v
+
+    @field_validator("gender_other_text", "marital_status_other_text", "persona_custom_text")
+    @classmethod
+    def other_text_valid(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if len(v) > 300:
+            raise ValueError("must be at most 300 characters.")
+        return v
+
+    @field_validator("num_kids", "num_pets")
+    @classmethod
+    def count_valid(cls, v: int | None) -> int | None:
+        if v is not None and not (0 <= v <= 20):
+            raise ValueError("must be between 0 and 20.")
+        return v
+
+    @field_validator("persona")
+    @classmethod
+    def persona_valid(cls, v: str | None) -> str | None:
+        if v is not None and v not in PERSONAS:
+            raise ValueError(f"persona must be one of {list(PERSONAS)}")
+        return v
 
 
 class CustomCategoryUpdate(BaseModel):

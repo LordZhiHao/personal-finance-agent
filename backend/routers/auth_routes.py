@@ -42,6 +42,16 @@ def _me_response(user: dict) -> dict:
         "theme": user["theme"],
         "hidden_dashboard_sections": user["hidden_dashboard_sections"],
         "onboarding_completed": user["onboarding_completed_at"] is not None,
+        "name": user.get("name"),
+        "age": user.get("age"),
+        "gender": user.get("gender"),
+        "gender_other_text": user.get("gender_other_text"),
+        "marital_status": user.get("marital_status"),
+        "marital_status_other_text": user.get("marital_status_other_text"),
+        "num_kids": user.get("num_kids", 0),
+        "num_pets": user.get("num_pets", 0),
+        "persona": user.get("persona"),
+        "persona_custom_text": user.get("persona_custom_text"),
     }
 
 

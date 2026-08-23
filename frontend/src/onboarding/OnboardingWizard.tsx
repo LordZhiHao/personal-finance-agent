@@ -5,6 +5,9 @@ import { CurrencyStep } from "./CurrencyStep";
 import { AccountsStep } from "./AccountsStep";
 import { CategoriesStep } from "./CategoriesStep";
 import { TelegramStep } from "./TelegramStep";
+import { ProfileStep } from "./ProfileStep";
+import { PersonaStep } from "./PersonaStep";
+import { StarterSuggestionStep } from "./StarterSuggestionStep";
 import { AboutYouStep } from "./AboutYouStep";
 import { SummaryStep } from "./SummaryStep";
 
@@ -19,6 +22,9 @@ const STEPS = [
   AccountsStep,
   CategoriesStep,
   TelegramStep,
+  ProfileStep,
+  PersonaStep,
+  StarterSuggestionStep,
   AboutYouStep,
   SummaryStep,
 ] as const;

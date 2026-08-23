@@ -29,6 +29,128 @@ CURRENCIES = ["SGD", "MYR", "USD"]
 
 DEFAULT_CURRENCY = "SGD"
 
+GENDERS = ["female", "male", "non_binary", "other"]
+
+MARITAL_STATUSES = ["single", "married", "divorced", "widowed", "other"]
+
+# Curated onboarding/Settings personas. Each entry personalizes Finn (see
+# bot/finance_agent.py::_profile_block) via `prompt_blurb` (third-person, injected
+# into the system prompt) and offers an onboarding starter budget/goal via
+# `starter_suggestion` (None, or {"type": "goal"|"budget", ...fields..., "description"}
+# — modest generic defaults since no real financial data exists yet; currency is filled
+# in at accept-time from the user's main_currency, not baked in here). "other" is the
+# free-text escape hatch: its prompt_blurb has a {custom_text} placeholder filled in at
+# read time from users.persona_custom_text, and it has no starter suggestion.
+PERSONAS = {
+    "fresh_grad": {
+        "label": "Fresh grad / student",
+        "ui_description": "Just starting out and building your financial habits.",
+        "prompt_blurb": (
+            "This user identifies as a fresh graduate or student, early in their financial "
+            "journey and likely on a limited or variable income. Keep advice approachable and "
+            "jargon-free, favor small concrete steps over aggressive investment talk, and don't "
+            "assume they have significant savings, a mortgage, or dependents."
+        ),
+        "starter_suggestion": {
+            "type": "goal",
+            "name": "Emergency Fund",
+            "target_amount": 1000,
+            "description": "A small starter cushion for unexpected costs while you're just getting going.",
+        },
+    },
+    "young_professional": {
+        "label": "Young professional",
+        "ui_description": "Steady income, building habits and starting to invest.",
+        "prompt_blurb": (
+            "This user is an early-career working professional with a steady income, likely "
+            "focused on consistent budgeting, building an emergency fund, and starting to invest. "
+            "Advice can be a bit more ambitious than for a student, but avoid assuming a high net "
+            "worth, kids, or a mortgage yet."
+        ),
+        "starter_suggestion": {
+            "type": "budget",
+            "category": "Entertainment",
+            "monthly_limit": 200,
+            "description": "A starter budget for discretionary spend — a common first budget once income is steady.",
+        },
+    },
+    "parent_family": {
+        "label": "Parent / family",
+        "ui_description": "Raising a family and juggling household costs.",
+        "prompt_blurb": (
+            "This user is raising a family — factor in household and childcare costs, saving for "
+            "kids' education, and balancing family needs against personal financial goals. Assume "
+            "less spending flexibility than a single professional, and be mindful that big-ticket "
+            "'family' expenses (school fees, childcare, insurance) are often non-negotiable."
+        ),
+        "starter_suggestion": {
+            "type": "budget",
+            "category": "Childcare",
+            "monthly_limit": 500,
+            "description": "A starter budget line for childcare/family costs — adjust it to match your real spend.",
+        },
+    },
+    "debt_payoff": {
+        "label": "Paying off debt",
+        "ui_description": "Focused on knocking out credit cards, loans, or other debt.",
+        "prompt_blurb": (
+            "This user is focused on paying off debt (credit cards, student loans, etc.). "
+            "Emphasize practical debt-reduction strategies, be encouraging about progress, and be "
+            "cautious about recommending discretionary spending or new investments before "
+            "higher-interest debt is addressed — gently flag it if a question seems to prioritize "
+            "investing over payoff without the user raising that tradeoff first."
+        ),
+        "starter_suggestion": {
+            "type": "goal",
+            "name": "Debt Payoff",
+            "target_amount": 5000,
+            "description": "A placeholder target — edit the amount in Settings once you know your real payoff figure.",
+        },
+    },
+    "saver_investor": {
+        "label": "Saver / investor",
+        "ui_description": "Comfortable with the basics and focused on growing wealth.",
+        "prompt_blurb": (
+            "This user is focused on saving and investing — comfortable with financial basics and "
+            "looking to optimize returns, diversify, and grow wealth efficiently. Feel free to go "
+            "deeper on investment nuance (asset allocation, dividend tracking, fees) than with other "
+            "personas, while still grounding answers in this user's actual holdings via tools."
+        ),
+        "starter_suggestion": {
+            "type": "goal",
+            "name": "Investment Boost",
+            "target_amount": 3000,
+            "description": "A starter target for extra investable savings beyond your emergency fund.",
+        },
+    },
+    "retiree": {
+        "label": "Retiree / near-retirement",
+        "ui_description": "Focused on preserving savings and planning withdrawals.",
+        "prompt_blurb": (
+            "This user is retired or near retirement — likely prioritizing capital preservation, "
+            "predictable income/withdrawal planning, and healthcare costs over aggressive growth or "
+            "debt payoff. Avoid assuming active employment income; frame advice around drawing down "
+            "savings sustainably rather than accumulating."
+        ),
+        "starter_suggestion": {
+            "type": "budget",
+            "category": "Health",
+            "monthly_limit": 300,
+            "description": "A starter budget for healthcare/medical costs — a common focus in retirement planning.",
+        },
+    },
+    "other": {
+        "label": "Other — describe your own",
+        "ui_description": "None of these quite fit — tell us in your own words.",
+        "prompt_blurb": (
+            "This user described their own financial situation instead of picking a preset "
+            'persona: "{custom_text}". Use that description to inform tone and advice — don\'t '
+            "assume specifics that weren't stated."
+        ),
+        "starter_suggestion": None,
+    },
+}
+
 DASHBOARD_URL = "https://personal-finance-agent-kappa.vercel.app/"
 
 ACCOUNT_TYPES = ["bank", "brokerage", "ewallet"]

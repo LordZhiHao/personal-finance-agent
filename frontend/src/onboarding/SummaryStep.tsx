@@ -1,15 +1,18 @@
 import { useAuth } from "../auth/AuthContext";
 import { Button } from "../components/ui";
-import { useAccounts, useCustomCategories } from "../hooks/api";
+import { useAccounts, useCustomCategories, useMe, useMeta } from "../hooks/api";
 import type { OnboardingStepProps } from "./OnboardingWizard";
 
 export function SummaryStep({ onBack }: OnboardingStepProps) {
   const { mainCurrency, telegramLinked, completeOnboarding } = useAuth();
   const accountsQuery = useAccounts();
   const customQuery = useCustomCategories();
+  const meQuery = useMe();
+  const metaQuery = useMeta();
 
   const accountCount = accountsQuery.data?.length ?? 0;
   const customCount = customQuery.data?.length ?? 0;
+  const personaLabel = metaQuery.data?.personas.find((p) => p.id === meQuery.data?.persona)?.label ?? "Not set";
 
   return (
     <div>
@@ -33,6 +36,9 @@ export function SummaryStep({ onBack }: OnboardingStepProps) {
         </li>
         <li>
           🤖 Telegram: <strong>{telegramLinked ? "Linked" : "Not linked"}</strong>
+        </li>
+        <li>
+          📋 Persona: <strong>{personaLabel}</strong>
         </li>
       </ul>
 
