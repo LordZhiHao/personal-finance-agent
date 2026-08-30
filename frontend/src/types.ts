@@ -213,6 +213,22 @@ export interface Me {
   num_pets: number;
   persona: string | null;
   persona_custom_text: string | null;
+  monthly_income: number | null;
+}
+
+export interface SuggestedPlanCategory {
+  category: string;
+  avg_monthly: number;
+  suggested_limit: number;
+}
+
+export interface SuggestedPlan {
+  has_enough_data: boolean;
+  transaction_count: number;
+  monthly_income: number | null;
+  typical_month_expenses: number;
+  left_to_plan: number | null;
+  categories: SuggestedPlanCategory[];
 }
 
 export interface AccountCandidate {

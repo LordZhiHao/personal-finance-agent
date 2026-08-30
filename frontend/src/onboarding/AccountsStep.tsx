@@ -3,7 +3,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button, Field, Input, Select } from "../components/ui";
-import { useAccounts, useCreateAccount, useMeta } from "../hooks/api";
+import { useAuth } from "../auth/AuthContext";
+import { useAccounts, useCreateAccount, useMeta, useUpdateMainCurrency } from "../hooks/api";
 import type { OnboardingStepProps } from "./OnboardingWizard";
 import { WizardFooter } from "./WizardFooter";
 
@@ -15,7 +16,14 @@ const accountSchema = z.object({
 });
 type AccountFormValues = z.infer<typeof accountSchema>;
 
+/** Merges the former WelcomeStep (splash), CurrencyStep (single currency picker) and
+ * AccountsStep (account creation) into one step — the wizard's first, matching the
+ * mockup's "Which accounts should Finn track?" framing. */
 export function AccountsStep({ onNext, onBack }: OnboardingStepProps) {
+  const { mainCurrency, refreshMe } = useAuth();
+  const currencyMutation = useUpdateMainCurrency();
+  const [currencyDraft, setCurrencyDraft] = useState(mainCurrency);
+
   const metaQuery = useMeta();
   const accountsQuery = useAccounts();
   const createMutation = useCreateAccount();
@@ -35,6 +43,12 @@ export function AccountsStep({ onNext, onBack }: OnboardingStepProps) {
     },
   });
 
+  function handleCurrencyChange(next: string) {
+    setCurrencyDraft(next);
+    if (next === mainCurrency) return;
+    currencyMutation.mutate(next, { onSuccess: () => refreshMe() });
+  }
+
   function onSubmit(values: AccountFormValues) {
     setServerError(null);
     createMutation.mutate(values, {
@@ -50,12 +64,28 @@ export function AccountsStep({ onNext, onBack }: OnboardingStepProps) {
   return (
     <div>
       <h2 className="text-lg font-semibold mb-1" style={{ color: "var(--text-heading)" }}>
-        Add your first account
+        Which accounts should Finn track?
       </h2>
       <p className="text-sm mb-4" style={{ color: "var(--text-secondary)" }}>
-        A bank, e-wallet, or brokerage account to log transactions and trades against. You can add more anytime in
-        Settings.
+        Name them and enter today's balance. Nothing connects to your bank — you stay in control of the numbers.
       </p>
+
+      <div className="mb-4">
+        <label className="text-sm" style={{ color: "var(--text-secondary)" }}>
+          Track everything in
+        </label>
+        <Select
+          value={currencyDraft}
+          onChange={(e) => handleCurrencyChange(e.target.value)}
+          className="w-32 mt-1"
+        >
+          {metaQuery.data.currencies.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </Select>
+      </div>
 
       {accounts.length > 0 && (
         <div className="mb-3">
@@ -71,6 +101,9 @@ export function AccountsStep({ onNext, onBack }: OnboardingStepProps) {
               </span>
             </div>
           ))}
+          <p className="text-xs mt-1.5" style={{ fontFamily: "var(--font-plex-mono)", color: "var(--text-muted)" }}>
+            {accounts.length} account{accounts.length === 1 ? "" : "s"} added
+          </p>
         </div>
       )}
 

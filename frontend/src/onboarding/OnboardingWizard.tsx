@@ -1,35 +1,23 @@
 import { useState } from "react";
 import { Card } from "../components/ui";
-import { WelcomeStep } from "./WelcomeStep";
-import { CurrencyStep } from "./CurrencyStep";
 import { AccountsStep } from "./AccountsStep";
 import { CategoriesStep } from "./CategoriesStep";
-import { TelegramStep } from "./TelegramStep";
-import { ProfileStep } from "./ProfileStep";
-import { PersonaStep } from "./PersonaStep";
-import { StarterSuggestionStep } from "./StarterSuggestionStep";
 import { AboutYouStep } from "./AboutYouStep";
-import { SummaryStep } from "./SummaryStep";
+import { PlanStep } from "./PlanStep";
+import { MeetFinnStep } from "./MeetFinnStep";
+import { WrapUpStep } from "./WrapUpStep";
 
 export interface OnboardingStepProps {
   onNext: () => void;
   onBack: () => void;
 }
 
-const STEPS = [
-  WelcomeStep,
-  CurrencyStep,
-  AccountsStep,
-  CategoriesStep,
-  TelegramStep,
-  ProfileStep,
-  PersonaStep,
-  StarterSuggestionStep,
-  AboutYouStep,
-  SummaryStep,
-] as const;
+const STEPS = [AccountsStep, CategoriesStep, AboutYouStep, PlanStep, MeetFinnStep, WrapUpStep] as const;
 
 export function OnboardingWizard() {
+  // stepIndex intentionally doesn't persist across reload — a refresh always restarts
+  // at step 0. Pre-existing behavior, out of scope for this redesign; noted here for
+  // whoever picks this up next.
   const [stepIndex, setStepIndex] = useState(0);
   const Step = STEPS[stepIndex];
   const isFirst = stepIndex === 0;
@@ -47,7 +35,13 @@ export function OnboardingWizard() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "var(--page)" }}>
-      <Card className="w-full max-w-lg">
+      <Card className={stepIndex === 3 ? "w-full max-w-2xl" : "w-full max-w-lg"}>
+        <div
+          className="text-xs mb-2"
+          style={{ fontFamily: "var(--font-plex-mono)", letterSpacing: "0.09em", color: "var(--text-muted)" }}
+        >
+          STEP {stepIndex + 1} OF {STEPS.length}
+        </div>
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-2">
             <img src="/logo-mark.png" alt="" className="h-6 w-6" />

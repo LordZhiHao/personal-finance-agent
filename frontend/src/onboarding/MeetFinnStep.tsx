@@ -4,18 +4,18 @@ import { useGenerateTelegramLinkCode } from "../hooks/api";
 import type { OnboardingStepProps } from "./OnboardingWizard";
 import { WizardFooter } from "./WizardFooter";
 
-export function TelegramStep({ onNext, onBack }: OnboardingStepProps) {
+export function MeetFinnStep({ onNext, onBack }: OnboardingStepProps) {
   const { telegramLinked, refreshMe } = useAuth();
   const mutation = useGenerateTelegramLinkCode();
 
   return (
     <div>
       <h2 className="text-lg font-semibold mb-1" style={{ color: "var(--text-heading)" }}>
-        Link Telegram (optional)
+        Meet Finn on Telegram
       </h2>
       <p className="text-sm mb-4" style={{ color: "var(--text-secondary)" }}>
-        Snap a photo of a receipt or bank statement and send it to the bot — it'll extract and log the transactions
-        for you. You can always do this later from Settings.
+        Forward a receipt from anywhere and it lands here, categorised, in about four seconds. Optional — you can
+        always do this later from Settings.
       </p>
 
       {telegramLinked && !mutation.data ? (

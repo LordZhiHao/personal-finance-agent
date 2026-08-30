@@ -136,6 +136,7 @@ class MeUpdate(BaseModel):
     num_pets: int | None = None
     persona: str | None = None
     persona_custom_text: str | None = None
+    monthly_income: float | None = None
 
     @field_validator("main_currency")
     @classmethod
@@ -218,6 +219,13 @@ class MeUpdate(BaseModel):
     def persona_valid(cls, v: str | None) -> str | None:
         if v is not None and v not in PERSONAS:
             raise ValueError(f"persona must be one of {list(PERSONAS)}")
+        return v
+
+    @field_validator("monthly_income")
+    @classmethod
+    def monthly_income_valid(cls, v: float | None) -> float | None:
+        if v is not None and v < 0:
+            raise ValueError("monthly_income must be >= 0.")
         return v
 
 

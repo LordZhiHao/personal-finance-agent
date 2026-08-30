@@ -21,6 +21,7 @@ import type {
   PortfolioEvent,
   Preferences,
   ReceiptUrl,
+  SuggestedPlan,
   Transaction,
   UploadResult,
   UploadSaved,
@@ -232,6 +233,13 @@ export function useUpdateMe() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["me"] });
     },
+  });
+}
+
+export function useSuggestedPlan() {
+  return useQuery({
+    queryKey: ["suggested-plan"],
+    queryFn: () => api.get<SuggestedPlan>("/api/onboarding/suggested-plan"),
   });
 }
 

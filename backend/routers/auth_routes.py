@@ -52,6 +52,7 @@ def _me_response(user: dict) -> dict:
         "num_pets": user.get("num_pets", 0),
         "persona": user.get("persona"),
         "persona_custom_text": user.get("persona_custom_text"),
+        "monthly_income": user.get("monthly_income"),
     }
 
 
