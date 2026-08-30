@@ -35,7 +35,11 @@ export function AccountsStep({ onNext, onBack }: OnboardingStepProps) {
     formState: { errors, isSubmitting },
   } = useForm<AccountFormValues>({
     resolver: zodResolver(accountSchema),
-    defaultValues: {
+    // `values` (not `defaultValues`): metaQuery.data is still undefined on this
+    // component's first render (before the `!metaQuery.data` guard below bails
+    // out), so `defaultValues` would permanently latch type/currency to "" —
+    // same hazard AboutYouStep.tsx documents and avoids the same way.
+    values: {
       name: "",
       type: metaQuery.data?.account_types[0] ?? "",
       currency: metaQuery.data?.currencies[0] ?? "",

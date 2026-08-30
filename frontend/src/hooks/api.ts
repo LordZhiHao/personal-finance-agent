@@ -230,9 +230,12 @@ export function useUpdateMe() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (fields: Partial<Me>) => api.patch<Me>("/api/auth/me", fields),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["me"] });
-    },
+    // Returning (not just calling) invalidateQueries makes TanStack Query await the
+    // refetch before running a caller's own onSuccess — AboutYouStep chains a second
+    // useUpdateMe() call and navigates on success, so without this the "me" cache can
+    // still be one write behind when the next step reads it (e.g. PlanStep briefly
+    // showing the pre-update persona).
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["me"] }),
   });
 }
 
