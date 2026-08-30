@@ -38,17 +38,20 @@ async def check_budgets(bot):
             continue
 
         user = (user_budgets[0].get("users")) or {}
+        threshold_pct = user.get("budget_nudge_threshold") or 80
         for status, budget in zip(statuses, user_budgets):
             try:
-                if status["spent"] <= status["monthly_limit"]:
+                trigger_amount = status["monthly_limit"] * (threshold_pct / 100)
+                if status["spent"] < trigger_amount:
                     continue
                 if budget.get("last_alerted_month") == current_month:
                     continue
 
+                pct_used = (status["spent"] / status["monthly_limit"] * 100) if status["monthly_limit"] else 0
                 text = (
-                    f"🚨 Budget exceeded: {status['category']} — spent {status['currency']} "
-                    f"{status['spent']:,.2f} of your {status['currency']} {status['monthly_limit']:,.2f} "
-                    "monthly limit."
+                    f"🔔 {status['category']} is at {pct_used:.0f}% of your {status['currency']} "
+                    f"{status['monthly_limit']:,.2f} monthly limit (spent {status['currency']} "
+                    f"{status['spent']:,.2f})."
                 )
                 if user.get("telegram_chat_id"):
                     try:
@@ -59,7 +62,7 @@ async def check_budgets(bot):
                     try:
                         send_reminder_email(
                             text, to_email=user["notify_email"], theme=user.get("theme", "green"),
-                            subject="🚨 Budget exceeded",
+                            subject="🔔 Budget alert",
                         )
                     except Exception:
                         logger.exception("check_budgets: email send failed for budget_id=%s", budget["id"])

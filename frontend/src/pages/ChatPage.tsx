@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { format } from "date-fns";
-import { ArrowUp, Paperclip } from "lucide-react";
+import { ArrowUp, Camera, MessageCircleQuestion, Paperclip, Send } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { FinnAvatar } from "../components/FinnAvatar";
 import { useCyclingPhrase } from "../hooks/useCyclingPhrase";
@@ -61,7 +61,26 @@ function ThinkingIndicator() {
   );
 }
 
-export function ChatPage() {
+interface StarterChip {
+  code: string;
+  label: string;
+  hint: string;
+  bg: string;
+  fg: string;
+}
+
+const STARTER_CHIPS: StarterChip[] = [
+  { code: "TXT", label: "Spent 12 on lunch, DBS", hint: "Plain words, logged in a second", bg: "var(--tint-green-bg)", fg: "var(--tint-green-text)" },
+  { code: "IMG", label: "Snap a receipt or bank screenshot", hint: "I read the lines and split them", bg: "var(--brand-tint)", fg: "var(--brand-hover)" },
+  { code: "ASK", label: "How much did I spend on transport in July?", hint: "Answers straight from your data", bg: "var(--tint-amber-bg)", fg: "var(--tint-amber-text)" },
+  { code: "TG", label: "Forward from Telegram", hint: "Same Finn, inside your chats", bg: "var(--tint-neutral-bg)", fg: "var(--tint-neutral-text)" },
+];
+
+/** `embedded` renders inside the desktop Finn dock overlay (FinnDock) instead of
+ * as a full routed page — same content and logic, just sized to fill its parent
+ * rather than the app's `<main>` (see the negative-margin height calc below,
+ * which exists only to cancel `main`'s own padding on the full-page route). */
+export function ChatPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -130,6 +149,27 @@ export function ChatPage() {
 
   function handleAttachClick() {
     fileInputRef.current?.click();
+  }
+
+  function handleStarterChip(chip: StarterChip) {
+    if (chip.code === "IMG") {
+      handleAttachClick();
+      return;
+    }
+    if (chip.code === "TG") {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content:
+            "You can also message me directly on Telegram — link your account from Settings, then chat with me there any time.",
+          timestamp: now(),
+        },
+      ]);
+      return;
+    }
+    setDraft(chip.label);
+    textareaRef.current?.focus();
   }
 
   function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
@@ -210,6 +250,9 @@ export function ChatPage() {
 
   const isBusy = sendMutation.isPending || uploadMutation.isPending;
   const isEmpty = messages.length === 0;
+  const pageHeightClass = embedded
+    ? "h-full"
+    : "h-[calc(100vh-11.75rem)] md:h-[calc(100vh-5.5rem)] -mx-3 md:-mx-4 -mt-3 md:-mt-4 -mb-28 md:-mb-4";
 
   const inputBar = (
     <div
@@ -270,7 +313,7 @@ export function ChatPage() {
 
   if (isEmpty) {
     return (
-      <div className="flex flex-col h-[calc(100vh-11.75rem)] md:h-[calc(100vh-5.5rem)] -mx-3 md:-mx-4 -mt-3 md:-mt-4 -mb-28 md:-mb-4 items-center justify-center px-4 gap-6">
+      <div className={`flex flex-col ${pageHeightClass} items-center justify-center px-4 gap-6`}>
         <div className="flex flex-col items-center gap-3 text-center max-w-md">
           <FinnAvatar size={56} />
           <h2 className="text-2xl font-semibold" style={{ color: "var(--text-heading)" }}>
@@ -281,13 +324,39 @@ export function ChatPage() {
             record it, or just type it, like "spent 12 on lunch", and I'll log it directly.
           </p>
         </div>
+        <div className="w-full max-w-2xl grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {STARTER_CHIPS.map((chip) => (
+            <button
+              key={chip.code}
+              type="button"
+              onClick={() => handleStarterChip(chip)}
+              className="flex items-start gap-3 text-left px-3.5 py-3 rounded-2xl transition-colors hover:brightness-95"
+              style={{ background: "var(--surface-1)", boxShadow: "var(--shadow-card)" }}
+            >
+              <span
+                className="shrink-0 flex items-center justify-center rounded-xl"
+                style={{ width: 34, height: 34, background: chip.bg, color: chip.fg }}
+              >
+                {chip.code === "IMG" ? <Camera size={16} /> : chip.code === "ASK" ? <MessageCircleQuestion size={16} /> : chip.code === "TG" ? <Send size={16} /> : <ArrowUp size={16} />}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                  {chip.label}
+                </span>
+                <span className="block text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
+                  {chip.hint}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
         <div className="w-full max-w-2xl">{inputBar}</div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-11.75rem)] md:h-[calc(100vh-5.5rem)] -mx-3 md:-mx-4 -mt-3 md:-mt-4 -mb-28 md:-mb-4">
+    <div className={`flex flex-col ${pageHeightClass}`}>
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3">
         <div className="mx-auto w-full max-w-2xl space-y-2">
           {messages.map((m, i) => (

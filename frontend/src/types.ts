@@ -131,12 +131,31 @@ export interface AccountBalance {
   account_name: string;
   type: string;
   balance: number | null;
+  /** From the account's latest balance checkpoint — null if it's never been corrected. */
+  last_checked_at: string | null;
+  days_stale: number | null;
+  drift_amount: number | null;
 }
 
 export interface BalancesSummary {
   balances: AccountBalance[];
   total: number;
   currency: string;
+}
+
+export interface BalanceCheckpoint {
+  id: string;
+  account_id: string;
+  as_of: string;
+  stated_balance: number;
+  currency: string;
+  drift_amount: number;
+  created_at: string;
+}
+
+export interface Preferences {
+  budget_nudge_threshold: number;
+  weekly_recap: boolean;
 }
 
 export interface ExpenseSummary {

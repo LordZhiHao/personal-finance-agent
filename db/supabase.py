@@ -386,6 +386,81 @@ def deactivate_account(account_id: str, user_id: str) -> None:
     logger.info("deactivate_account: id=%s user_id=%s", account_id, user_id)
 
 
+def create_balance_checkpoint(account_id: str, user_id: str, as_of: str, stated_balance: float, currency: str) -> dict:
+    """A user-stated "this is the real balance as of this date" correction for a
+    bank/ewallet account — see utils/balances.py::compute_account_balances(), which
+    rolls transactions forward from the latest checkpoint instead of summing every
+    transaction ever from zero. Plaintext (not field-encrypted): this is a new table
+    outside the three tables Field Encryption covers, same precedent as
+    user_budgets.monthly_limit/user_goals.target_amount.
+
+    drift_amount is `stated_balance` minus what the *previous* checkpoint (or, for a
+    first checkpoint, a from-zero sum) projected forward to `as_of` — the
+    reconciliation delta, computed once here rather than on every later read."""
+    _validate_owned_account(account_id, user_id)
+    db = get_client(use_service_key=True)
+
+    previous = get_latest_balance_checkpoints([account_id]).get(account_id)
+    query = db.table("transactions").select("amount_enc").eq("account_id", account_id).lte("date", as_of)
+    if previous:
+        query = query.gt("date", previous["as_of"])
+    activity_rows = query.execute().data
+    activity_sum = sum(crypto.decrypt_float(r["amount_enc"]) or 0 for r in activity_rows)
+    projected = (previous["stated_balance"] if previous else 0.0) + activity_sum
+    drift_amount = stated_balance - projected
+
+    result = (
+        db.table("account_balance_checkpoints")
+        .insert({
+            "account_id": account_id, "as_of": as_of, "stated_balance": stated_balance,
+            "currency": currency, "drift_amount": drift_amount,
+        })
+        .execute()
+    )
+    logger.info("create_balance_checkpoint: account_id=%s as_of=%s drift=%.2f", account_id, as_of, drift_amount)
+    return result.data[0]
+
+
+def get_latest_balance_checkpoints(account_ids: list[str]) -> dict[str, dict]:
+    """Batch lookup of each account's most recent checkpoint (by as_of, then
+    created_at as a tiebreaker), for compute_account_balances() to roll every
+    account forward in one query rather than one per account. No ownership check —
+    callers already resolve `account_ids` from an owner-scoped accounts list."""
+    if not account_ids:
+        return {}
+    db = get_client(use_service_key=True)
+    rows = (
+        db.table("account_balance_checkpoints")
+        .select("*")
+        .in_("account_id", account_ids)
+        .order("as_of", desc=True)
+        .order("created_at", desc=True)
+        .execute()
+        .data
+    )
+    latest: dict[str, dict] = {}
+    for r in rows:
+        if r["account_id"] not in latest:
+            latest[r["account_id"]] = r
+    return latest
+
+
+def get_balance_checkpoint_history(account_id: str, user_id: str) -> list[dict]:
+    """Full correction history for one account, newest first — backs
+    GET /api/accounts/{id}/balance-history."""
+    _validate_owned_account(account_id, user_id)
+    db = get_client(use_service_key=True)
+    return (
+        db.table("account_balance_checkpoints")
+        .select("*")
+        .eq("account_id", account_id)
+        .order("as_of", desc=True)
+        .order("created_at", desc=True)
+        .execute()
+        .data
+    )
+
+
 def create_custom_category(user_id: str, name: str, classification: str = "expense") -> dict:
     db = get_client(use_service_key=True)
     result = (
@@ -704,7 +779,7 @@ def get_all_budgets() -> list[dict]:
     db = get_client(use_service_key=True)
     return (
         db.table("user_budgets")
-        .select("*, users(telegram_chat_id, notify_email, theme, main_currency)")
+        .select("*, users(telegram_chat_id, notify_email, theme, main_currency, budget_nudge_threshold)")
         .execute()
         .data
     )
@@ -943,21 +1018,29 @@ def get_recent_transactions(limit: int, user_id: str) -> list[dict]:
     return [_decrypt_transaction_row(r) for r in rows]
 
 
-def get_account_cash_totals(user_id: str) -> dict[str, float]:
+def get_account_cash_totals(user_id: str, since_by_account: dict[str, str] | None = None) -> dict[str, float]:
     """Sums transactions.amount grouped by account_id (Python-side, no group-by
     in supabase-py). Reflects only cash-type activity recorded in `transactions`
-    — brokerage accounts' invested value is tracked separately via asset_snapshots."""
+    — brokerage accounts' invested value is tracked separately via asset_snapshots.
+    `since_by_account`, when given, only sums each account's rows strictly after its
+    own cutoff date (exclusive) — see utils/balances.py::compute_account_balances(),
+    which rolls forward from the latest balance checkpoint instead of summing every
+    transaction ever from zero. An account with no entry in `since_by_account` (or
+    when the whole dict is omitted) keeps today's from-zero behavior."""
     logger.debug("get_account_cash_totals")
     db = get_client()
     rows = (
         db.table("transactions")
-        .select("account_id, amount_enc")
+        .select("account_id, date, amount_enc")
         .in_("account_id", get_account_ids_for_user(user_id))
         .execute()
         .data
     )
     totals: dict[str, float] = {}
     for r in rows:
+        cutoff = (since_by_account or {}).get(r["account_id"])
+        if cutoff and r["date"] <= cutoff:
+            continue
         amount = crypto.decrypt_float(r["amount_enc"]) or 0
         totals[r["account_id"]] = totals.get(r["account_id"], 0) + amount
     return totals

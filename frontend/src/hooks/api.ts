@@ -3,6 +3,7 @@ import { api, qs } from "../api/client";
 import type {
   Account,
   AssetSnapshot,
+  BalanceCheckpoint,
   BalancesSummary,
   Budget,
   BudgetStatus,
@@ -18,6 +19,7 @@ import type {
   Memory,
   Meta,
   PortfolioEvent,
+  Preferences,
   ReceiptUrl,
   Transaction,
   UploadResult,
@@ -118,6 +120,44 @@ export function useBalances(currency: string) {
   return useQuery({
     queryKey: ["balances", currency],
     queryFn: () => api.get<BalancesSummary>(`/api/accounts/balances${qs({ currency })}`),
+  });
+}
+
+export function useBalanceHistory(accountId: string, enabled: boolean = true) {
+  return useQuery({
+    queryKey: ["balance-history", accountId],
+    queryFn: () => api.get<BalanceCheckpoint[]>(`/api/accounts/${accountId}/balance-history`),
+    enabled,
+  });
+}
+
+export function useCreateBalanceCheckpoint() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ accountId, ...payload }: { accountId: string; as_of: string; stated_balance: number; currency: string }) =>
+      api.post<BalanceCheckpoint>(`/api/accounts/${accountId}/balance`, payload),
+    onSuccess: (_result, { accountId }) => {
+      queryClient.invalidateQueries({ queryKey: ["balances"] });
+      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["balance-history", accountId] });
+    },
+  });
+}
+
+export function usePreferences() {
+  return useQuery({
+    queryKey: ["preferences"],
+    queryFn: () => api.get<Preferences>("/api/preferences"),
+  });
+}
+
+export function useUpdatePreferences() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (fields: Partial<Preferences>) => api.patch<Preferences>("/api/preferences", fields),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["preferences"] });
+    },
   });
 }
 

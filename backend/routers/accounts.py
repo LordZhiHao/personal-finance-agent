@@ -1,8 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from backend.auth import get_current_user
-from backend.schemas import AccountCreate, AccountUpdate
-from db.supabase import create_account, deactivate_account, get_accounts, update_account
+from backend.schemas import AccountCreate, AccountUpdate, BalanceCheckpointCreate
+from db.supabase import (
+    create_account,
+    create_balance_checkpoint,
+    deactivate_account,
+    get_accounts,
+    get_balance_checkpoint_history,
+    update_account,
+)
 from utils.balances import compute_account_balances
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
@@ -38,5 +45,25 @@ def delete_account_route(account_id: str, user_id: str = Depends(get_current_use
 @router.get("/balances")
 def balances(currency: str = "SGD", user_id: str = Depends(get_current_user)):
     """Unified cash (bank/ewallet) + brokerage snapshot balances per account —
-    matches the Telegram /balance command, previously not exposed in any dashboard."""
+    matches the Telegram /balance command, previously not exposed in any dashboard.
+    Each row also carries last_checked_at/days_stale/drift_amount from the account's
+    latest balance checkpoint (null for an account that's never been corrected) —
+    the Settings page's staleness banner and "Update balance" flow read these
+    straight off this response rather than a separate call."""
     return compute_account_balances(user_id, currency)
+
+
+@router.post("/{account_id}/balance", status_code=status.HTTP_201_CREATED)
+def post_balance_checkpoint(
+    account_id: str, payload: BalanceCheckpointCreate, user_id: str = Depends(get_current_user)
+):
+    """Records a user-stated balance correction — see db.supabase.create_balance_checkpoint
+    for how the reconciliation delta (drift_amount) is computed."""
+    return create_balance_checkpoint(
+        account_id, user_id, payload.as_of.isoformat(), payload.stated_balance, payload.currency
+    )
+
+
+@router.get("/{account_id}/balance-history")
+def balance_history(account_id: str, user_id: str = Depends(get_current_user)):
+    return get_balance_checkpoint_history(account_id, user_id)

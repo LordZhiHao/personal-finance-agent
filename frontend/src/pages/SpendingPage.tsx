@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  addDays,
   differenceInCalendarDays,
   endOfMonth,
   format,
@@ -10,29 +9,58 @@ import {
   subDays,
   subMonths,
 } from "date-fns";
-import { Banknote, PiggyBank, Plus, Receipt, TrendingDown, TrendingUp } from "lucide-react";
-import { useAccounts, useMeta, useTransactions } from "../hooks/api";
+import { Plus, Receipt } from "lucide-react";
+import { useAccounts, useCreateBudget, useMeta, useTransactions } from "../hooks/api";
 import { useAuth } from "../auth/AuthContext";
 import { FilterBar, type FilterValue } from "../components/FilterBar";
-import { StatCard } from "../components/StatCard";
 import { ChartCard } from "../components/ChartCard";
 import { TransactionsList } from "../components/TransactionsList";
 import { AddTransactionDialog } from "../components/AddTransactionDialog";
 import { SwipeableSections } from "../components/SwipeableSections";
 import { MobileSectionTabs } from "../components/MobileSectionTabs";
 import { SectionPairRow } from "../components/SectionPairRow";
+import { MoreInsights } from "../components/MoreInsights";
+import { FinnInsightCard } from "../components/FinnInsightCard";
+import { SpendRingCard, type RingCategoryRow } from "../components/charts/SpendRingCard";
 import { MonthlySpendBarChart } from "../components/charts/MonthlySpendBarChart";
 import { SpendByCategoryDonut } from "../components/charts/SpendByCategoryDonut";
 import { IncomeVsSpendLineChart } from "../components/charts/IncomeVsSpendLineChart";
 import { SavingsRateLineChart } from "../components/charts/SavingsRateLineChart";
 import { SpendingHeatmap } from "../components/charts/SpendingHeatmap";
 import { MonthComparisonBarChart } from "../components/charts/MonthComparisonBarChart";
-import { monthKey } from "../lib/dates";
 import { sectionKey } from "../lib/dashboardSections";
-import { categoryColorOrder } from "../lib/palette";
-import { formatMoney, formatPct } from "../lib/format";
-import { Button, Fab } from "../components/ui";
+import { categoryColorOrder, colorForKey } from "../lib/palette";
+import { formatMoney } from "../lib/format";
+import { Button, Fab, TabToggle } from "../components/ui";
 import { LoadingFinn } from "../components/LoadingFinn";
+
+type SpendPeriod = "thisMonth" | "lastMonth" | "3m" | "6m" | "1y";
+const SPEND_PERIOD_OPTIONS: { value: SpendPeriod; label: string }[] = [
+  { value: "thisMonth", label: "This Month" },
+  { value: "lastMonth", label: "Last Month" },
+  { value: "3m", label: "3M" },
+  { value: "6m", label: "6M" },
+  { value: "1y", label: "Year" },
+];
+
+function periodRange(period: SpendPeriod): { startDate: string; endDate: string } {
+  const now = new Date();
+  switch (period) {
+    case "thisMonth":
+      return { startDate: format(startOfMonth(now), "yyyy-MM-dd"), endDate: format(now, "yyyy-MM-dd") };
+    case "lastMonth": {
+      const lm = subMonths(now, 1);
+      return { startDate: format(startOfMonth(lm), "yyyy-MM-dd"), endDate: format(endOfMonth(lm), "yyyy-MM-dd") };
+    }
+    case "3m":
+      return { startDate: format(subMonths(now, 3), "yyyy-MM-dd"), endDate: format(now, "yyyy-MM-dd") };
+    case "1y":
+      return { startDate: format(subMonths(now, 12), "yyyy-MM-dd"), endDate: format(now, "yyyy-MM-dd") };
+    case "6m":
+    default:
+      return { startDate: format(subMonths(now, 6), "yyyy-MM-dd"), endDate: format(now, "yyyy-MM-dd") };
+  }
+}
 
 const today = format(new Date(), "yyyy-MM-dd");
 const defaultFilters: FilterValue = {
@@ -46,19 +74,19 @@ const defaultFilters: FilterValue = {
 type SpendingTab =
   | "summary"
   | "monthlyTrend"
-  | "byCategory"
-  | "incomeVsSpend"
   | "savingsRate"
   | "calendar"
+  | "byCategory"
+  | "incomeVsSpend"
   | "momComparison"
   | "transactions";
 const SPENDING_TABS: { value: SpendingTab; label: string }[] = [
   { value: "summary", label: "Summary" },
   { value: "monthlyTrend", label: "Monthly Trend" },
-  { value: "byCategory", label: "By Category" },
-  { value: "incomeVsSpend", label: "Income vs Spend" },
   { value: "savingsRate", label: "Savings Rate" },
   { value: "calendar", label: "Calendar" },
+  { value: "byCategory", label: "By Category" },
+  { value: "incomeVsSpend", label: "Income vs Spend" },
   { value: "momComparison", label: "MoM Comparison" },
   { value: "transactions", label: "Transactions" },
 ];
@@ -66,12 +94,20 @@ const SPENDING_TABS: { value: SpendingTab; label: string }[] = [
 export function SpendingPage() {
   const { mainCurrency, hiddenDashboardSections } = useAuth();
   const [filters, setFilters] = useState<FilterValue>(defaultFilters);
+  const [period, setPeriod] = useState<SpendPeriod>("6m");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [mobileTab, setMobileTab] = useState<SpendingTab>("summary");
+  const [capSet, setCapSet] = useState(false);
   const accountsQuery = useAccounts(["bank", "ewallet"]);
   const metaQuery = useMeta();
   const txQuery = useTransactions(filters.startDate, filters.endDate, mainCurrency);
+  const createBudget = useCreateBudget();
   const classifications = metaQuery.data?.category_classifications ?? {};
+
+  function handlePeriodChange(p: SpendPeriod) {
+    setPeriod(p);
+    setFilters((f) => ({ ...f, ...periodRange(p) }));
+  }
 
   const visible = (id: SpendingTab) => !hiddenDashboardSections.includes(sectionKey("spending", id));
   const visibleTabs = useMemo(
@@ -107,49 +143,73 @@ export function SpendingPage() {
     [filtered, classifications],
   );
 
-  const { monthlyIncome, monthlySpend, savingsRate } = useMemo(() => {
-    if (filtered.length === 0) return { monthlyIncome: 0, monthlySpend: 0, savingsRate: 0 };
-    const latestMonth = filtered.reduce((max, t) => (monthKey(t.date) > max ? monthKey(t.date) : max), "");
-    const income = filtered
-      .filter((t) => t.amount > 0 && monthKey(t.date) === latestMonth)
-      .reduce((sum, t) => sum + (t.converted_amount ?? t.amount), 0);
+  // Totals for the whole selected period (not just its latest calendar month) —
+  // this is what the insight-first hero card below actually describes, since the
+  // period control now lets the user pick a range wider than one month.
+  const { periodIncome, periodSpend, periodSavingsRate } = useMemo(() => {
+    const income = filtered.filter((t) => t.amount > 0).reduce((sum, t) => sum + (t.converted_amount ?? t.amount), 0);
     const spend = spendTxns
-      .filter((t) => t.amount < 0 && monthKey(t.date) === latestMonth)
-      .reduce((sum, t) => sum + Math.abs(t.converted_amount ?? t.amount), 0);
-    const invested = filtered
-      .filter(
-        (t) =>
-          t.amount < 0 && monthKey(t.date) === latestMonth && classifications[t.category || "Other"] === "investment",
-      )
+      .filter((t) => t.amount < 0)
       .reduce((sum, t) => sum + Math.abs(t.converted_amount ?? t.amount), 0);
     const rate = income ? Math.round(((income - spend) / income) * 10000) / 100 : 0;
-    return { monthlyIncome: income, monthlySpend: spend, monthlyInvested: invested, savingsRate: rate };
-  }, [filtered, spendTxns, classifications]);
+    return { periodIncome: income, periodSpend: spend, periodSavingsRate: rate };
+  }, [filtered, spendTxns]);
 
-  // Month-to-date spend vs. the same day-of-month cutoff last month, for the
-  // "Spend Trend" card — "up" (spending more) is unfavorable, unlike the
-  // gain/loss cards elsewhere, hence StatCardDelta's `sentiment` override below.
-  const { trendDelta, trendPct } = useMemo(() => {
-    const now = new Date();
-    const mtdStart = startOfMonth(now);
-    const prevMtdStart = subMonths(mtdStart, 1);
-    const prevMtdEnd = new Date(
-      Math.min(
-        addDays(prevMtdStart, differenceInCalendarDays(now, mtdStart)).getTime(),
-        endOfMonth(prevMtdStart).getTime(),
-      ),
+  // Equal-length prior period (immediately before the selected range), for the
+  // hero card's per-category deltas and the Finn nudge — same account/type filters
+  // as the current period, but not the `months` filter (which is month-of-year,
+  // not meaningful across two different periods).
+  const periodDays = differenceInCalendarDays(parseISO(filters.endDate), parseISO(filters.startDate)) + 1;
+  const prevRangeStart = format(subDays(parseISO(filters.startDate), periodDays), "yyyy-MM-dd");
+  const prevRangeEnd = format(subDays(parseISO(filters.startDate), 1), "yyyy-MM-dd");
+  const prevTxQuery = useTransactions(prevRangeStart, prevRangeEnd, mainCurrency);
+
+  const prevSpendTxns = useMemo(() => {
+    return (prevTxQuery.data ?? []).filter((t) => {
+      if (filters.accounts.length > 0 && !filters.accounts.includes(t.accounts?.name ?? "")) return false;
+      if (filters.types && filters.types.length > 0) {
+        const type = t.amount > 0 ? "income" : "expense";
+        if (!filters.types.includes(type)) return false;
+      }
+      return t.amount >= 0 || (classifications[t.category || "Other"] ?? "expense") === "expense";
+    });
+  }, [prevTxQuery.data, filters.accounts, filters.types, classifications]);
+
+  const categoryDeltas = useMemo(() => {
+    const current = new Map<string, number>();
+    for (const t of spendTxns) {
+      if (t.amount >= 0) continue;
+      const cat = t.category || "Other";
+      current.set(cat, (current.get(cat) ?? 0) + Math.abs(t.converted_amount ?? t.amount));
+    }
+    const prev = new Map<string, number>();
+    for (const t of prevSpendTxns) {
+      if (t.amount >= 0) continue;
+      const cat = t.category || "Other";
+      prev.set(cat, (prev.get(cat) ?? 0) + Math.abs(t.converted_amount ?? t.amount));
+    }
+    return [...current.entries()]
+      .map(([category, amount]) => {
+        const prevAmount = prev.get(category) ?? 0;
+        const deltaAbs = amount - prevAmount;
+        return { category, amount, deltaAbs, deltaPct: prevAmount > 0 ? (deltaAbs / prevAmount) * 100 : undefined };
+      })
+      .sort((a, b) => b.amount - a.amount);
+  }, [spendTxns, prevSpendTxns]);
+
+  const nudge = useMemo(
+    () => categoryDeltas.find((c) => c.deltaAbs > 30 && (c.deltaPct ?? 0) > 15) ?? null,
+    [categoryDeltas],
+  );
+
+  function handleSetCap() {
+    if (!nudge) return;
+    const suggestedLimit = Math.ceil(nudge.amount / 10) * 10;
+    createBudget.mutate(
+      { category: nudge.category, monthly_limit: suggestedLimit, currency: mainCurrency },
+      { onSuccess: () => setCapSet(true) },
     );
-
-    const sumExpenses = (start: Date, end: Date) =>
-      spendTxns
-        .filter((t) => t.amount < 0 && parseISO(t.date) >= start && parseISO(t.date) <= end)
-        .reduce((sum, t) => sum + Math.abs(t.converted_amount ?? t.amount), 0);
-
-    const mtdSpend = sumExpenses(mtdStart, now);
-    const prevMtdSpend = sumExpenses(prevMtdStart, prevMtdEnd);
-    const delta = mtdSpend - prevMtdSpend;
-    return { trendDelta: delta, trendPct: prevMtdSpend > 0 ? (delta / prevMtdSpend) * 100 : null };
-  }, [spendTxns]);
+  }
 
   const categories = metaQuery.data?.categories ?? [];
   // Color order is scoped to categories actually present in this period's
@@ -170,36 +230,77 @@ export function SpendingPage() {
     return <LoadingFinn />;
   }
 
+  const topCategories = categoryDeltas.slice(0, 5);
+  const maxCategoryAmount = topCategories[0]?.amount ?? 1;
+  const ringRows: RingCategoryRow[] = topCategories.map((c) => ({
+    name: c.category,
+    color: colorForKey(c.category, categoryColors),
+    amount: c.amount,
+    widthPct: (c.amount / maxCategoryAmount) * 100,
+    deltaPct: c.deltaPct !== undefined ? Math.round(c.deltaPct) : undefined,
+  }));
+  const restCount = Math.max(0, categoryDeltas.length - topCategories.length);
+  const restAmount = categoryDeltas.slice(topCategories.length).reduce((sum, c) => sum + c.amount, 0);
+
   const summaryPanel = (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <StatCard
-        label="Monthly Spend"
-        value={formatMoney(monthlySpend, mainCurrency)}
-        icon={<Receipt size={20} />}
-        hero
-      />
-      <StatCard
-        label="Monthly Income"
-        value={formatMoney(monthlyIncome, mainCurrency)}
-        icon={<Banknote size={20} />}
-        tint="green"
-      />
-      <StatCard label="Savings Rate" value={`${savingsRate}%`} icon={<PiggyBank size={20} />} tint="amber" />
-      <StatCard
-        label="Spend Trend"
-        value={`${trendDelta >= 0 ? "+" : ""}${formatMoney(trendDelta, mainCurrency)}`}
-        icon={trendDelta >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
-        tint={trendDelta >= 0 ? "red" : "green"}
-        delta={
-          trendPct !== null
-            ? {
-                value: `${formatPct(trendPct)} vs last month`,
-                direction: trendDelta >= 0 ? "up" : "down",
-                sentiment: trendDelta >= 0 ? "bad" : "good",
-              }
-            : undefined
-        }
-      />
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+      <div className="lg:col-span-7">
+        <SpendRingCard
+          headline={
+            <>
+              You've spent <b style={{ color: "var(--brand-hover)" }}>{formatMoney(periodSpend, mainCurrency)}</b>
+              {periodIncome > 0 ? (
+                <>
+                  {" "}
+                  · income {formatMoney(periodIncome, mainCurrency)} · {periodSavingsRate}% saved this period.
+                </>
+              ) : (
+                " this period."
+              )}
+            </>
+          }
+          pctUsed={null}
+          categories={ringRows}
+          currency={mainCurrency}
+          footnote={
+            restCount > 0 ? (
+              <span style={{ color: "var(--text-muted)" }}>
+                {restCount} more categories · {formatMoney(restAmount, mainCurrency)}
+              </span>
+            ) : undefined
+          }
+        />
+      </div>
+      <div className="lg:col-span-5">
+        {nudge && !capSet ? (
+          <FinnInsightCard
+            body={
+              <>
+                <b>{nudge.category}</b> is up {formatMoney(nudge.deltaAbs, mainCurrency)} on the prior period
+                {nudge.deltaPct !== undefined ? ` (+${Math.round(nudge.deltaPct)}%)` : ""}. Want a cap with a nudge at
+                80%?
+              </>
+            }
+            actions={[
+              {
+                label: createBudget.isPending ? "Setting…" : "Set the cap",
+                onClick: handleSetCap,
+                disabled: createBudget.isPending,
+              },
+            ]}
+          />
+        ) : capSet && nudge ? (
+          <FinnInsightCard
+            body={
+              <>
+                Done — I set a {formatMoney(Math.ceil(nudge.amount / 10) * 10, mainCurrency)} cap on {nudge.category}.
+              </>
+            }
+          />
+        ) : (
+          <FinnInsightCard body="Nothing jumped out at me this period — spending looks steady across your categories." />
+        )}
+      </div>
     </div>
   );
 
@@ -283,7 +384,8 @@ export function SpendingPage() {
           <Receipt size={22} />
           Spending
         </h1>
-        <div className="flex items-center gap-2 shrink-0 relative">
+        <div className="flex items-center gap-2 shrink-0 relative flex-wrap">
+          <TabToggle options={SPEND_PERIOD_OPTIONS} value={period} onChange={handlePeriodChange} />
           <FilterBar accounts={accountsQuery.data ?? []} value={filters} onChange={setFilters} />
           <Button variant="primary" className="hidden md:inline-flex" onClick={() => setDialogOpen(true)}>
             ＋ Add Transaction
@@ -321,24 +423,20 @@ export function SpendingPage() {
               <SectionPairRow
                 leftVisible={visible("monthlyTrend")}
                 left={monthlySpendChart}
-                rightVisible={visible("byCategory")}
-                right={spendByCategoryChart}
-              />
-
-              <SectionPairRow
-                leftVisible={visible("incomeVsSpend")}
-                left={incomeVsSpendChart}
                 rightVisible={visible("savingsRate")}
                 right={savingsRateChart}
-              />
-
-              <SectionPairRow
-                leftVisible={visible("calendar")}
-                left={spendingCalendarChart}
-                rightVisible={visible("momComparison")}
-                right={momComparisonChart}
                 className="items-stretch"
               />
+
+              {visible("calendar") && spendingCalendarChart}
+
+              {(visible("byCategory") || visible("incomeVsSpend") || visible("momComparison")) && (
+                <MoreInsights>
+                  {visible("byCategory") && spendByCategoryChart}
+                  {visible("incomeVsSpend") && incomeVsSpendChart}
+                  {visible("momComparison") && momComparisonChart}
+                </MoreInsights>
+              )}
 
               {visible("transactions") && transactionsPanel}
             </>

@@ -91,6 +91,36 @@ class AccountUpdate(BaseModel):
         return v
 
 
+class BalanceCheckpointCreate(BaseModel):
+    """A user-stated balance correction for a bank/ewallet account — see
+    db.supabase.create_balance_checkpoint / utils/balances.py."""
+    as_of: date
+    stated_balance: float
+    currency: str
+
+    @field_validator("currency")
+    @classmethod
+    def currency_valid(cls, v: str) -> str:
+        if v not in CURRENCIES:
+            raise ValueError(f"currency must be one of {CURRENCIES}")
+        return v
+
+
+class PreferencesUpdate(BaseModel):
+    """Partial update for the "How Finn behaves" Settings card — a separate endpoint
+    from MeUpdate/GET /api/auth/me by design (see CLAUDE.md's api-gaps notes on
+    Preferences), not folded into the profile payload."""
+    budget_nudge_threshold: float | None = None
+    weekly_recap: bool | None = None
+
+    @field_validator("budget_nudge_threshold")
+    @classmethod
+    def threshold_valid(cls, v: float | None) -> float | None:
+        if v is not None and not (1 <= v <= 100):
+            raise ValueError("budget_nudge_threshold must be between 1 and 100.")
+        return v
+
+
 class MeUpdate(BaseModel):
     """Partial update for the current user's own profile fields (Settings page)."""
     main_currency: str | None = None

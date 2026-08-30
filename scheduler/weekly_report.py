@@ -45,6 +45,8 @@ async def send_weekly_report(bot):
     users = get_all_users()
     logger.info("send_weekly_report: building reports for %d user(s)", len(users))
     for user in users:
+        if not user.get("weekly_recap", True):
+            continue
         try:
             data = get_weekly_data(user["id"], user.get("main_currency", DEFAULT_CURRENCY))
         except Exception:
