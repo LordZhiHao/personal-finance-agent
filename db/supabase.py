@@ -1,6 +1,6 @@
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from dotenv import load_dotenv
 from supabase import create_client
@@ -544,6 +544,98 @@ def get_category_classifications_for_user(user_id: str) -> dict[str, str]:
     for row in get_custom_categories_full(user_id):
         classifications[row["name"]] = row["classification"]
     return classifications
+
+
+def create_category_rule(user_id: str, match_type: str, pattern: str, category: str) -> dict:
+    db = get_client(use_service_key=True)
+    result = (
+        db.table("category_rules")
+        .insert({"user_id": user_id, "match_type": match_type, "pattern": pattern, "category": category})
+        .execute()
+    )
+    logger.info(
+        "create_category_rule: user_id=%s match_type=%s pattern=%s category=%s",
+        user_id, match_type, pattern, category,
+    )
+    return result.data[0]
+
+
+def get_category_rules(user_id: str) -> list[dict]:
+    """Ordered oldest-first — this is also the match-priority order
+    bot/category_rules.py::apply_rules() relies on (the oldest matching rule wins
+    on an ambiguous pattern/category conflict between two rules)."""
+    db = get_client(use_service_key=True)
+    return (
+        db.table("category_rules")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("created_at", desc=False)
+        .execute()
+        .data
+    )
+
+
+def update_category_rule(rule_id: str, fields: dict, user_id: str) -> dict:
+    db = get_client(use_service_key=True)
+    result = db.table("category_rules").update(fields).eq("id", rule_id).eq("user_id", user_id).execute()
+    if not result.data:
+        raise LookupError(f"Rule {rule_id} not found")
+    logger.info("update_category_rule: id=%s fields=%s", rule_id, list(fields.keys()))
+    return result.data[0]
+
+
+def delete_category_rule(rule_id: str, user_id: str) -> None:
+    db = get_client(use_service_key=True)
+    result = db.table("category_rules").delete().eq("id", rule_id).eq("user_id", user_id).execute()
+    if not result.data:
+        raise LookupError(f"Rule {rule_id} not found")
+    logger.info("delete_category_rule: id=%s user_id=%s", rule_id, user_id)
+
+
+def increment_rule_hit_counts(rule_ids: set[str] | list[str], user_id: str) -> None:
+    """Bumps hit_count by 1 for every rule id that matched at least one transaction in
+    a single save (bot/handlers.py::save_extraction) — one SELECT plus a small per-rule
+    UPDATE loop bounded by however many distinct rules matched this one save (typically
+    very few), since postgrest's bulk update sets one shared value across every matched
+    row rather than a different per-row increment."""
+    rule_ids = list(rule_ids)
+    if not rule_ids:
+        return
+    db = get_client(use_service_key=True)
+    rows = (
+        db.table("category_rules")
+        .select("id, hit_count")
+        .in_("id", rule_ids)
+        .eq("user_id", user_id)
+        .execute()
+        .data
+    )
+    for row in rows:
+        db.table("category_rules").update({"hit_count": row["hit_count"] + 1}).eq("id", row["id"]).execute()
+    logger.info("increment_rule_hit_counts: user_id=%s rule_ids=%s", user_id, [r["id"] for r in rows])
+
+
+def apply_rule_backfill(rule_id: str, user_id: str) -> int:
+    """Re-files past transactions against one rule's current pattern/category — backs
+    the Settings page's "Re-file history" action after editing a rule. Fetches full
+    transaction history (not a recent window) since a rule should apply retroactively
+    regardless of age. Only counts/updates rows whose category actually changes."""
+    from bot.category_rules import matches_transaction
+
+    db = get_client(use_service_key=True)
+    rules = db.table("category_rules").select("*").eq("id", rule_id).eq("user_id", user_id).execute().data
+    if not rules:
+        raise LookupError(f"Rule {rule_id} not found")
+    rule = rules[0]
+
+    txns = get_transactions("1900-01-01", date.today().isoformat(), user_id)
+    updated = 0
+    for t in txns:
+        if matches_transaction(t, rule) and t["category"] != rule["category"]:
+            update_transaction(t["id"], {"category": rule["category"]}, user_id)
+            updated += 1
+    logger.info("apply_rule_backfill: rule_id=%s user_id=%s updated=%d", rule_id, user_id, updated)
+    return updated
 
 
 def create_user_memory(user_id: str, content: str, source: str = "agent") -> dict:

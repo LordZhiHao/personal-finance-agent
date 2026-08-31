@@ -17,6 +17,7 @@ from backend.routers import (  # noqa: E402
     meta,
     onboarding,
     preferences,
+    rules,
     spending,
     telegram_link,
 )
@@ -64,6 +65,7 @@ app.include_router(budgets.router)
 app.include_router(budgets.goals_router)
 app.include_router(preferences.router)
 app.include_router(onboarding.router)
+app.include_router(rules.router)
 
 
 @app.get("/health")

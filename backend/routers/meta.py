@@ -10,6 +10,7 @@ from utils.constants import (
     MARITAL_STATUSES,
     PERSONAS,
     PORTFOLIO_ACTIONS,
+    RULE_MATCH_TYPES,
 )
 
 router = APIRouter(prefix="/api/meta", tags=["meta"])
@@ -24,6 +25,7 @@ def get_meta(user_id: str = Depends(get_current_user)):
         "currencies": CURRENCIES,
         "account_types": ACCOUNT_TYPES,
         "portfolio_actions": PORTFOLIO_ACTIONS,
+        "rule_match_types": RULE_MATCH_TYPES,
         "genders": GENDERS,
         "marital_statuses": MARITAL_STATUSES,
         "personas": [

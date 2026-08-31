@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
+from bot.category_rules import format_rules_for_prompt
 from bot.deepseek_client import client as deepseek_client
 from utils.constants import CATEGORIES, PORTFOLIO_ACTIONS
 from utils.logger import get_logger
@@ -18,10 +19,19 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 MODEL = "gemini-3.5-flash"  # multimodal extraction (extract_from_image / extract_from_pdf_images)
 DEEPSEEK_EXTRACTOR_MODEL = os.getenv("DEEPSEEK_EXTRACTOR_MODEL", "deepseek-v4-pro")  # text-only extraction
 
-def _build_system_prompt(categories: list[str], default_currency: str = "SGD") -> str:
+def _build_system_prompt(categories: list[str], default_currency: str = "SGD", rules: list[dict] | None = None) -> str:
+    rules_block = format_rules_for_prompt(rules or [])
+    if rules_block:
+        rules_block = f"""
+Known categorization hints from this user's saved rules (a strong signal, but the
+exact category is enforced deterministically afterward regardless, so approximate
+is fine):
+{rules_block}
+"""
     return f"""
 You are a financial document parser.
 Extract ALL transactions visible in the provided document (image or text).
+{rules_block}
 
 Return ONLY a valid JSON object — no explanation, no markdown, no backticks.
 
@@ -136,7 +146,9 @@ def _parse_response(raw: str, categories: list[str]) -> dict:
     return obj
 
 
-def extract_from_pdf_images(pdf_bytes: bytes, categories: list[str] = CATEGORIES, default_currency: str = "SGD") -> dict:
+def extract_from_pdf_images(
+    pdf_bytes: bytes, categories: list[str] = CATEGORIES, default_currency: str = "SGD", rules: list[dict] | None = None
+) -> dict:
     from utils.pdf_converter import pdf_to_images
 
     page_images = pdf_to_images(pdf_bytes)
@@ -144,7 +156,9 @@ def extract_from_pdf_images(pdf_bytes: bytes, categories: list[str] = CATEGORIES
 
     merged: dict = {"document_type": None, "account_hint": None, "currency": None, "transactions": [], "portfolio_events": []}
     for i, img in enumerate(page_images, 1):
-        page_data = extract_from_image(img, mime_type="image/jpeg", categories=categories, default_currency=default_currency)
+        page_data = extract_from_image(
+            img, mime_type="image/jpeg", categories=categories, default_currency=default_currency, rules=rules
+        )
         logger.info("extract_from_pdf_images: page %d — %d txn(s), %d event(s)", i, len(page_data.get("transactions", [])), len(page_data.get("portfolio_events", [])))
         for key in ("document_type", "account_hint", "currency"):
             if merged[key] is None and page_data.get(key):
@@ -160,7 +174,11 @@ def extract_from_pdf_images(pdf_bytes: bytes, categories: list[str] = CATEGORIES
 
 
 def extract_from_image(
-    image_bytes: bytes, mime_type: str = "image/jpeg", categories: list[str] = CATEGORIES, default_currency: str = "SGD"
+    image_bytes: bytes,
+    mime_type: str = "image/jpeg",
+    categories: list[str] = CATEGORIES,
+    default_currency: str = "SGD",
+    rules: list[dict] | None = None,
 ) -> dict:
     logger.info("extract_from_image: calling %s (%d bytes, %s)", MODEL, len(image_bytes), mime_type)
     today = date.today().isoformat()
@@ -171,7 +189,7 @@ def extract_from_image(
             f"Today's date is {today}. Extract all transactions from this financial document.",
         ],
         config=types.GenerateContentConfig(
-            system_instruction=_build_system_prompt(categories, default_currency),
+            system_instruction=_build_system_prompt(categories, default_currency, rules),
             response_mime_type="application/json",
         ),
     )
@@ -183,13 +201,15 @@ def extract_from_image(
     return data
 
 
-def extract_from_text(text: str, categories: list[str] = CATEGORIES, default_currency: str = "SGD") -> dict:
+def extract_from_text(
+    text: str, categories: list[str] = CATEGORIES, default_currency: str = "SGD", rules: list[dict] | None = None
+) -> dict:
     logger.info("extract_from_text: calling %s (%d chars)", DEEPSEEK_EXTRACTOR_MODEL, len(text))
     today = date.today().isoformat()
     response = deepseek_client.chat.completions.create(
         model=DEEPSEEK_EXTRACTOR_MODEL,
         messages=[
-            {"role": "system", "content": _build_system_prompt(categories, default_currency)},
+            {"role": "system", "content": _build_system_prompt(categories, default_currency, rules)},
             {"role": "user", "content": f"Today's date is {today}. Extract all transactions from this text:\n\n{text}"},
         ],
         response_format={"type": "json_object"},

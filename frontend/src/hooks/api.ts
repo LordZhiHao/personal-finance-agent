@@ -21,6 +21,8 @@ import type {
   PortfolioEvent,
   Preferences,
   ReceiptUrl,
+  Rule,
+  RuleMatchType,
   SuggestedPlan,
   Transaction,
   UploadResult,
@@ -317,6 +319,58 @@ export function useDeleteCategory() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["meta"] });
       queryClient.invalidateQueries({ queryKey: ["categories"] });
+    },
+  });
+}
+
+export function useRules() {
+  return useQuery({
+    queryKey: ["rules"],
+    queryFn: () => api.get<Rule[]>("/api/rules"),
+    refetchInterval: 60_000,
+  });
+}
+
+export function useCreateRule() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ match_type, pattern, category }: { match_type: RuleMatchType; pattern: string; category: string }) =>
+      api.post<Rule>("/api/rules", { match_type, pattern, category }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+    },
+  });
+}
+
+export function useUpdateRule() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...fields }: { id: string; match_type?: RuleMatchType; pattern?: string; category?: string }) =>
+      api.patch<Rule>(`/api/rules/${id}`, fields),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+    },
+  });
+}
+
+export function useDeleteRule() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/api/rules/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+    },
+  });
+}
+
+export function useApplyRule() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: { id: string }) => api.post<{ updated_count: number }>(`/api/rules/${id}/apply`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["expense-summary"] });
     },
   });
 }

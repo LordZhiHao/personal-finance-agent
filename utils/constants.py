@@ -166,6 +166,11 @@ THEME_COLORS = {
 
 PORTFOLIO_ACTIONS = ["BUY", "SELL", "DIVIDEND"]
 
+# category_rules.match_type — deliberately just these two real mechanisms rather than
+# the mockup's "merchant is"/"payee is" framing, since transactions has no separate
+# merchant/payee column, only description (see migrations/0023_category_rules.sql).
+RULE_MATCH_TYPES = ["description_contains", "amount_equals"]
+
 # Maps a raw ticker (as extracted by Gemini from a broker screenshot, e.g. "CSPX")
 # to its Yahoo Finance symbol. Only needed for non-US listings, since yfinance
 # requires an exchange suffix for those (SGX -> ".SI", Bursa Malaysia -> ".KL",

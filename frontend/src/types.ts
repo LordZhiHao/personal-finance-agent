@@ -42,6 +42,18 @@ export interface BudgetStatus {
   spent: number;
 }
 
+export type RuleMatchType = "description_contains" | "amount_equals";
+
+export interface Rule {
+  id: string;
+  match_type: RuleMatchType;
+  pattern: string;
+  category: string;
+  hit_count: number;
+  learned_from: "manual" | "correction";
+  created_at: string;
+}
+
 export interface Goal {
   id: string;
   name: string;
@@ -190,6 +202,7 @@ export interface Meta {
   currencies: string[];
   account_types: string[];
   portfolio_actions: string[];
+  rule_match_types: RuleMatchType[];
   genders: string[];
   marital_statuses: string[];
   personas: PersonaMeta[];

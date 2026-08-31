@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Card } from "../components/ui/Card";
 import { MobileSectionTabs } from "../components/MobileSectionTabs";
+import { RulesCard } from "../components/RulesCard";
 import { Button, Field, Input, Overlay, Select } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
 import { formatMoney } from "../lib/format";
@@ -1426,7 +1427,12 @@ export function SettingsPage() {
             </>
           )}
           {section === "accounts" && <AccountsCard />}
-          {section === "categories" && <CategoriesCard />}
+          {section === "categories" && (
+            <>
+              <CategoriesCard />
+              <RulesCard />
+            </>
+          )}
           {section === "plans" && (
             <>
               <BudgetsCard />

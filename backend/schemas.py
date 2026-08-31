@@ -11,6 +11,7 @@ from utils.constants import (
     MARITAL_STATUSES,
     PERSONAS,
     PORTFOLIO_ACTIONS,
+    RULE_MATCH_TYPES,
 )
 
 
@@ -300,6 +301,68 @@ class CategoryCreate(BaseModel):
     def classification_valid(cls, v: str) -> str:
         if v not in CLASSIFICATIONS:
             raise ValueError(f"classification must be one of {CLASSIFICATIONS}")
+        return v
+
+
+class RuleCreate(BaseModel):
+    match_type: str
+    pattern: str
+    category: str
+
+    @field_validator("match_type")
+    @classmethod
+    def match_type_valid(cls, v: str) -> str:
+        if v not in RULE_MATCH_TYPES:
+            raise ValueError(f"match_type must be one of {RULE_MATCH_TYPES}")
+        return v
+
+    @field_validator("pattern")
+    @classmethod
+    def pattern_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Pattern is required.")
+        return v
+
+    @field_validator("category")
+    @classmethod
+    def category_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Category is required.")
+        return v
+
+
+class RuleUpdate(BaseModel):
+    """All fields optional for partial updates — only fields the client actually changed
+    are sent (exclude_unset=True)."""
+    match_type: str | None = None
+    pattern: str | None = None
+    category: str | None = None
+
+    @field_validator("match_type")
+    @classmethod
+    def match_type_valid(cls, v: str | None) -> str | None:
+        if v is not None and v not in RULE_MATCH_TYPES:
+            raise ValueError(f"match_type must be one of {RULE_MATCH_TYPES}")
+        return v
+
+    @field_validator("pattern")
+    @classmethod
+    def pattern_not_blank(cls, v: str | None) -> str | None:
+        if v is not None:
+            v = v.strip()
+            if not v:
+                raise ValueError("Pattern is required.")
+        return v
+
+    @field_validator("category")
+    @classmethod
+    def category_not_blank(cls, v: str | None) -> str | None:
+        if v is not None:
+            v = v.strip()
+            if not v:
+                raise ValueError("Category is required.")
         return v
 
 
