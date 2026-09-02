@@ -267,8 +267,22 @@ export interface UploadNeedsAccount {
 
 export type UploadResult = UploadSaved | UploadNeedsAccount;
 
+export interface Block {
+  type: "metric" | "comparison" | "breakdown" | "timeseries" | "txn_list" | "receipt_draft";
+  [key: string]: unknown;
+}
+
+export interface Action {
+  id: string;
+  label: string;
+  kind: string;
+}
+
 export interface ChatResult {
   reply: string | null;
+  reply_id: string | null;
+  blocks: Block[] | null;
+  actions: Action[] | null;
   needs_account_selection: boolean;
   data: Record<string, unknown> | null;
   candidates: AccountCandidate[] | null;

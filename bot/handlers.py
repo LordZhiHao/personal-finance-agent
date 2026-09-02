@@ -372,8 +372,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("handle_text: intent=%s for user_id=%s", intent, uid)
 
     if intent == "chat":
-        reply = answer_question(uid, raw_text, user_id)
-        for chunk in chunk_lines(reply.split("\n")):
+        envelope = answer_question(uid, raw_text, user_id)
+        for chunk in chunk_lines(envelope.text.split("\n")):
             await update.message.reply_text(chunk)
         return
 

@@ -28,8 +28,13 @@ async def chat(payload: ChatRequest, user_id: str = Depends(get_current_user)):
     intent = await run_in_threadpool(classify_intent, payload.message)
 
     if intent == "chat":
-        reply = await run_in_threadpool(answer_question, user_id, payload.message, user_id, channel="web")
-        return ChatResponse(reply=reply)
+        envelope = await run_in_threadpool(answer_question, user_id, payload.message, user_id, channel="web")
+        return ChatResponse(
+            reply=envelope.text,
+            reply_id=envelope.reply_id,
+            blocks=envelope.blocks,
+            actions=envelope.actions,
+        )
 
     categories = get_categories_for_user(user_id)
     default_currency = (get_user_by_id(user_id) or {}).get("main_currency", "SGD")

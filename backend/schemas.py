@@ -3,6 +3,7 @@ from datetime import date as _date
 
 from pydantic import BaseModel, field_validator, model_validator
 
+from backend.blocks import Action, Block
 from utils.constants import (
     ACCOUNT_TYPES,
     CLASSIFICATIONS,
@@ -558,6 +559,9 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     reply: str | None = None
+    reply_id: str | None = None
+    blocks: list[Block] | None = None
+    actions: list[Action] | None = None
     needs_account_selection: bool = False
     data: dict | None = None
     candidates: list[dict] | None = None

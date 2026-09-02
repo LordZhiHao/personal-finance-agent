@@ -5,6 +5,7 @@ from datetime import date, timedelta
 
 from dateutil.relativedelta import relativedelta
 
+from backend.blocks import AgentReply
 from bot.deepseek_client import client
 from db.supabase import (
     contribute_to_goal as db_contribute_to_goal,
@@ -1257,27 +1258,32 @@ def _run_tool(name: str, args: dict, user_id: str, currency: str, classification
     return {"error": f"unknown tool {name!r}"}
 
 
-def answer_question(uid: int | str, raw_text: str, user_id: str, channel: str = "telegram") -> str:
+def answer_question(uid: int | str, raw_text: str, user_id: str, channel: str = "telegram") -> AgentReply:
     """Runs a bounded tool-calling loop against DeepSeek. Never raises — any failure
-    (network, malformed tool call, etc.) is caught and turned into an apology string,
-    the same graceful-degradation convention used elsewhere in this bot (e.g. weekly
-    report email failures don't crash the job).
+    (network, malformed tool call, missing user record, etc.) is caught and turned
+    into an apology AgentReply, the same graceful-degradation convention used
+    elsewhere in this bot (e.g. weekly report email failures don't crash the job).
 
     `channel` selects the system prompt copy ("telegram" or "web") — the tools and
-    tool-calling loop are identical either way."""
+    tool-calling loop are identical either way.
+
+    Returns an AgentReply envelope (reply_id + text + blocks + actions). As of this
+    sub-phase, blocks and actions are always empty — callers should render `.text`
+    exactly as they rendered the old plain-string return."""
     history = chat_history.get(uid, [])
     try:
         memories = get_user_memories(user_id)
     except Exception:
         logger.exception("answer_question: get_user_memories failed for user_id=%s", user_id)
         memories = []
-    user = get_user_by_id(user_id)
-    currency = (user or {}).get("main_currency") or DEFAULT_CURRENCY
-    classifications = get_category_classifications_for_user(user_id)
-    system_prompt = _build_system_prompt(channel, memories, currency, user or {})
-    messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": raw_text}]
 
     try:
+        user = get_user_by_id(user_id)
+        currency = (user or {}).get("main_currency") or DEFAULT_CURRENCY
+        classifications = get_category_classifications_for_user(user_id)
+        system_prompt = _build_system_prompt(channel, memories, currency, user or {})
+        messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": raw_text}]
+
         final_text = None
         for _ in range(MAX_TOOL_ROUNDS):
             response = client.chat.completions.create(
@@ -1298,10 +1304,11 @@ def answer_question(uid: int | str, raw_text: str, user_id: str, channel: str = 
                 messages.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(result, default=str)})
         if final_text is None:
             final_text = "Sorry, I couldn't finish answering that — try a more specific question."
-    except Exception:
-        logger.exception("answer_question: DeepSeek call failed for user_id=%s", uid)
-        return "⚠️ Something went wrong answering that — please try again."
 
-    history = history + [{"role": "user", "content": raw_text}, {"role": "assistant", "content": final_text}]
-    chat_history[uid] = history[-(MAX_HISTORY_TURNS * 2):]
-    return final_text
+        history = history + [{"role": "user", "content": raw_text}, {"role": "assistant", "content": final_text}]
+        chat_history[uid] = history[-(MAX_HISTORY_TURNS * 2):]
+    except Exception:
+        logger.exception("answer_question: failed answering for user_id=%s", uid)
+        return AgentReply(text="⚠️ Something went wrong answering that — please try again.")
+
+    return AgentReply(text=final_text)
