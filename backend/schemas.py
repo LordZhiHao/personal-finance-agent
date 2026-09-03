@@ -3,6 +3,7 @@ from datetime import date as _date
 
 from pydantic import BaseModel, field_validator, model_validator
 
+from backend.blocks import Action, Block
 from utils.constants import (
     ACCOUNT_TYPES,
     CLASSIFICATIONS,
@@ -11,6 +12,7 @@ from utils.constants import (
     MARITAL_STATUSES,
     PERSONAS,
     PORTFOLIO_ACTIONS,
+    RULE_MATCH_TYPES,
 )
 
 
@@ -91,6 +93,36 @@ class AccountUpdate(BaseModel):
         return v
 
 
+class BalanceCheckpointCreate(BaseModel):
+    """A user-stated balance correction for a bank/ewallet account — see
+    db.supabase.create_balance_checkpoint / utils/balances.py."""
+    as_of: date
+    stated_balance: float
+    currency: str
+
+    @field_validator("currency")
+    @classmethod
+    def currency_valid(cls, v: str) -> str:
+        if v not in CURRENCIES:
+            raise ValueError(f"currency must be one of {CURRENCIES}")
+        return v
+
+
+class PreferencesUpdate(BaseModel):
+    """Partial update for the "How Finn behaves" Settings card — a separate endpoint
+    from MeUpdate/GET /api/auth/me by design (see CLAUDE.md's api-gaps notes on
+    Preferences), not folded into the profile payload."""
+    budget_nudge_threshold: float | None = None
+    weekly_recap: bool | None = None
+
+    @field_validator("budget_nudge_threshold")
+    @classmethod
+    def threshold_valid(cls, v: float | None) -> float | None:
+        if v is not None and not (1 <= v <= 100):
+            raise ValueError("budget_nudge_threshold must be between 1 and 100.")
+        return v
+
+
 class MeUpdate(BaseModel):
     """Partial update for the current user's own profile fields (Settings page)."""
     main_currency: str | None = None
@@ -106,6 +138,7 @@ class MeUpdate(BaseModel):
     num_pets: int | None = None
     persona: str | None = None
     persona_custom_text: str | None = None
+    monthly_income: float | None = None
 
     @field_validator("main_currency")
     @classmethod
@@ -190,6 +223,13 @@ class MeUpdate(BaseModel):
             raise ValueError(f"persona must be one of {list(PERSONAS)}")
         return v
 
+    @field_validator("monthly_income")
+    @classmethod
+    def monthly_income_valid(cls, v: float | None) -> float | None:
+        if v is not None and v < 0:
+            raise ValueError("monthly_income must be >= 0.")
+        return v
+
 
 class CustomCategoryUpdate(BaseModel):
     """Both fields optional for partial updates (exclude_unset=True) — a request can
@@ -262,6 +302,68 @@ class CategoryCreate(BaseModel):
     def classification_valid(cls, v: str) -> str:
         if v not in CLASSIFICATIONS:
             raise ValueError(f"classification must be one of {CLASSIFICATIONS}")
+        return v
+
+
+class RuleCreate(BaseModel):
+    match_type: str
+    pattern: str
+    category: str
+
+    @field_validator("match_type")
+    @classmethod
+    def match_type_valid(cls, v: str) -> str:
+        if v not in RULE_MATCH_TYPES:
+            raise ValueError(f"match_type must be one of {RULE_MATCH_TYPES}")
+        return v
+
+    @field_validator("pattern")
+    @classmethod
+    def pattern_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Pattern is required.")
+        return v
+
+    @field_validator("category")
+    @classmethod
+    def category_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Category is required.")
+        return v
+
+
+class RuleUpdate(BaseModel):
+    """All fields optional for partial updates — only fields the client actually changed
+    are sent (exclude_unset=True)."""
+    match_type: str | None = None
+    pattern: str | None = None
+    category: str | None = None
+
+    @field_validator("match_type")
+    @classmethod
+    def match_type_valid(cls, v: str | None) -> str | None:
+        if v is not None and v not in RULE_MATCH_TYPES:
+            raise ValueError(f"match_type must be one of {RULE_MATCH_TYPES}")
+        return v
+
+    @field_validator("pattern")
+    @classmethod
+    def pattern_not_blank(cls, v: str | None) -> str | None:
+        if v is not None:
+            v = v.strip()
+            if not v:
+                raise ValueError("Pattern is required.")
+        return v
+
+    @field_validator("category")
+    @classmethod
+    def category_not_blank(cls, v: str | None) -> str | None:
+        if v is not None:
+            v = v.strip()
+            if not v:
+                raise ValueError("Category is required.")
         return v
 
 
@@ -457,6 +559,9 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     reply: str | None = None
+    reply_id: str | None = None
+    blocks: list[Block] | None = None
+    actions: list[Action] | None = None
     needs_account_selection: bool = False
     data: dict | None = None
     candidates: list[dict] | None = None

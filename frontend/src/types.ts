@@ -42,6 +42,18 @@ export interface BudgetStatus {
   spent: number;
 }
 
+export type RuleMatchType = "description_contains" | "amount_equals";
+
+export interface Rule {
+  id: string;
+  match_type: RuleMatchType;
+  pattern: string;
+  category: string;
+  hit_count: number;
+  learned_from: "manual" | "correction";
+  created_at: string;
+}
+
 export interface Goal {
   id: string;
   name: string;
@@ -131,12 +143,31 @@ export interface AccountBalance {
   account_name: string;
   type: string;
   balance: number | null;
+  /** From the account's latest balance checkpoint — null if it's never been corrected. */
+  last_checked_at: string | null;
+  days_stale: number | null;
+  drift_amount: number | null;
 }
 
 export interface BalancesSummary {
   balances: AccountBalance[];
   total: number;
   currency: string;
+}
+
+export interface BalanceCheckpoint {
+  id: string;
+  account_id: string;
+  as_of: string;
+  stated_balance: number;
+  currency: string;
+  drift_amount: number;
+  created_at: string;
+}
+
+export interface Preferences {
+  budget_nudge_threshold: number;
+  weekly_recap: boolean;
 }
 
 export interface ExpenseSummary {
@@ -171,6 +202,7 @@ export interface Meta {
   currencies: string[];
   account_types: string[];
   portfolio_actions: string[];
+  rule_match_types: RuleMatchType[];
   genders: string[];
   marital_statuses: string[];
   personas: PersonaMeta[];
@@ -194,6 +226,22 @@ export interface Me {
   num_pets: number;
   persona: string | null;
   persona_custom_text: string | null;
+  monthly_income: number | null;
+}
+
+export interface SuggestedPlanCategory {
+  category: string;
+  avg_monthly: number;
+  suggested_limit: number;
+}
+
+export interface SuggestedPlan {
+  has_enough_data: boolean;
+  transaction_count: number;
+  monthly_income: number | null;
+  typical_month_expenses: number;
+  left_to_plan: number | null;
+  categories: SuggestedPlanCategory[];
 }
 
 export interface AccountCandidate {
@@ -219,8 +267,22 @@ export interface UploadNeedsAccount {
 
 export type UploadResult = UploadSaved | UploadNeedsAccount;
 
+export interface Block {
+  type: "metric" | "comparison" | "breakdown" | "timeseries" | "txn_list" | "receipt_draft";
+  [key: string]: unknown;
+}
+
+export interface Action {
+  id: string;
+  label: string;
+  kind: string;
+}
+
 export interface ChatResult {
   reply: string | null;
+  reply_id: string | null;
+  blocks: Block[] | null;
+  actions: Action[] | null;
   needs_account_selection: boolean;
   data: Record<string, unknown> | null;
   candidates: AccountCandidate[] | null;

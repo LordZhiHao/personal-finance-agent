@@ -46,6 +46,44 @@ def summarize_transactions(txns: list[dict], classifications: dict[str, str]) ->
     }
 
 
+def summarize_transactions_fx(txns: list[dict], classifications: dict[str, str], to_currency: str) -> dict:
+    """FX-converting twin of summarize_transactions(), for callers with no legacy
+    unconverted numbers to protect (see onboarding.py's suggested-plan endpoint).
+    summarize_transactions() itself stays unconverted deliberately — it's shared by
+    the weekly report and /expense, and changing its output in place would silently
+    change numbers those existing callers already show users. Every transaction row
+    carries its own `currency` column, so no join is needed to convert it."""
+    income = 0.0
+    expenses = 0.0
+    invested = 0.0
+    by_category: dict[str, float] = {}
+    for t in txns:
+        amount = convert(t["amount"], t["currency"], to_currency)
+        if amount > 0:
+            income += amount
+            continue
+        cat = t.get("category") or "Other"
+        abs_amount = abs(amount)
+        classification = classifications.get(cat, "expense")
+        if classification == "investment":
+            invested += abs_amount
+        elif classification == "expense":
+            expenses += abs_amount
+            by_category[cat] = by_category.get(cat, 0) + abs_amount
+    net = income - expenses
+    savings_rate = round((net / income * 100), 1) if income else 0
+    by_category = dict(sorted(by_category.items(), key=lambda x: x[1], reverse=True))
+
+    return {
+        "income": income,
+        "expenses": expenses,
+        "invested": invested,
+        "net": net,
+        "savings_rate": savings_rate,
+        "by_category": by_category,
+    }
+
+
 def budget_status(txns: list[dict], budgets: list[dict], classifications: dict[str, str]) -> list[dict]:
     """Month-to-date spend vs. each budgeted category's monthly_limit. `txns` should
     already be scoped to the current calendar month — shared by the finance agent's

@@ -22,6 +22,8 @@
   --shadow-card: 0 10px 30px rgba(17, 24, 39, 0.08);
 
   --font-sans: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --font-plex-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-plex-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
 }
 
 :root {

@@ -11,7 +11,7 @@ from bot.finance_agent import answer_question
 from bot.handlers import save_extraction
 from bot.router import classify_intent
 from bot.ticker_resolver import enrich_portfolio_event
-from db.supabase import get_accounts, get_categories_for_user, get_user_by_id
+from db.supabase import get_accounts, get_categories_for_user, get_category_rules, get_user_by_id
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -28,13 +28,19 @@ async def chat(payload: ChatRequest, user_id: str = Depends(get_current_user)):
     intent = await run_in_threadpool(classify_intent, payload.message)
 
     if intent == "chat":
-        reply = await run_in_threadpool(answer_question, user_id, payload.message, user_id, channel="web")
-        return ChatResponse(reply=reply)
+        envelope = await run_in_threadpool(answer_question, user_id, payload.message, user_id, channel="web")
+        return ChatResponse(
+            reply=envelope.text,
+            reply_id=envelope.reply_id,
+            blocks=envelope.blocks,
+            actions=envelope.actions,
+        )
 
     categories = get_categories_for_user(user_id)
     default_currency = (get_user_by_id(user_id) or {}).get("main_currency", "SGD")
+    rules = get_category_rules(user_id)
     try:
-        data = await run_in_threadpool(extract_from_text, payload.message, categories, default_currency)
+        data = await run_in_threadpool(extract_from_text, payload.message, categories, default_currency, rules)
     except (json.JSONDecodeError, ValueError):
         return ChatResponse(reply="Couldn't parse that — try rephrasing, e.g. 'spent 12 on lunch'.")
 
@@ -122,13 +128,16 @@ async def upload_file(file: UploadFile, user_id: str = Depends(get_current_user)
     file_bytes = await file.read()
     categories = get_categories_for_user(user_id)
     default_currency = (get_user_by_id(user_id) or {}).get("main_currency", "SGD")
+    rules = get_category_rules(user_id)
     try:
         if file.content_type == "application/pdf":
-            data = await run_in_threadpool(extract_from_pdf_images, file_bytes, categories, default_currency)
+            data = await run_in_threadpool(
+                extract_from_pdf_images, file_bytes, categories, default_currency, rules
+            )
             source = "web_pdf"
         else:
             data = await run_in_threadpool(
-                extract_from_image, file_bytes, file.content_type or "image/jpeg", categories, default_currency
+                extract_from_image, file_bytes, file.content_type or "image/jpeg", categories, default_currency, rules
             )
             source = "web_image"
     except (ValueError, KeyError):

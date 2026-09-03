@@ -15,11 +15,23 @@ from backend.routers import (  # noqa: E402
     investments,
     memories,
     meta,
+    onboarding,
+    preferences,
+    rules,
     spending,
     telegram_link,
 )
+from utils.constants import CURRENCIES  # noqa: E402
+from utils.fx import warm_cache  # noqa: E402
 
 app = FastAPI(title="Personal Finance API")
+
+
+@app.on_event("startup")
+def _warm_fx_cache() -> None:
+    """Pre-fetches FX rates for every supported currency so the first real request
+    after a deploy/restart doesn't hit a cold cache — see utils/fx.py's warm_cache."""
+    warm_cache(CURRENCIES)
 
 app.add_middleware(
     CORSMiddleware,
@@ -51,6 +63,9 @@ app.include_router(chat.router)
 app.include_router(memories.router)
 app.include_router(budgets.router)
 app.include_router(budgets.goals_router)
+app.include_router(preferences.router)
+app.include_router(onboarding.router)
+app.include_router(rules.router)
 
 
 @app.get("/health")

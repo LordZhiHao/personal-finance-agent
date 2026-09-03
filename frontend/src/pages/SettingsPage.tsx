@@ -1,16 +1,21 @@
 import { useEffect, useState } from "react";
+import { format } from "date-fns";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Card } from "../components/ui/Card";
+import { MobileSectionTabs } from "../components/MobileSectionTabs";
+import { RulesCard } from "../components/RulesCard";
 import { Button, Field, Input, Overlay, Select } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
 import { formatMoney } from "../lib/format";
 import {
   useAccounts,
+  useBalances,
   useBudgetStatus,
   useContributeToGoal,
   useCreateAccount,
+  useCreateBalanceCheckpoint,
   useCreateBudget,
   useCreateCategory,
   useCreateGoal,
@@ -26,15 +31,26 @@ import {
   useMe,
   useMemories,
   useMeta,
+  usePreferences,
   useUpdateAccount,
   useUpdateCategory,
   useUpdateHiddenDashboardSections,
   useUpdateMainCurrency,
   useUpdateMe,
+  useUpdatePreferences,
   useUpdateTheme,
 } from "../hooks/api";
 import { DASHBOARD_SECTIONS, sectionKey, type DashboardView } from "../lib/dashboardSections";
-import type { Account, BudgetStatus, CategoryClassification, CustomCategory, Goal, Memory, Meta } from "../types";
+import type {
+  Account,
+  AccountBalance,
+  BudgetStatus,
+  CategoryClassification,
+  CustomCategory,
+  Goal,
+  Memory,
+  Meta,
+} from "../types";
 
 const CATEGORY_CLASSIFICATION_LABELS: Record<CategoryClassification, string> = {
   expense: "Expense (counts as spending)",
@@ -42,6 +58,15 @@ const CATEGORY_CLASSIFICATION_LABELS: Record<CategoryClassification, string> = {
   transfer: "Transfer (between own accounts)",
   investment: "Investment (not spending)",
 };
+
+const balanceCheckpointSchema = z.object({
+  as_of: z.string().min(1, "Date is required."),
+  stated_balance: z.coerce.number(),
+});
+
+// An account past this many days since its last checkpoint gets the amber staleness
+// banner — mirrors utils/balances.py::STALE_AFTER_DAYS on the backend.
+const STALE_AFTER_DAYS = 30;
 
 const accountSchema = z.object({
   name: z.string().min(1, "Name is required."),
@@ -172,9 +197,77 @@ function AccountDialog({
   );
 }
 
-function AccountRow({ account, meta }: { account: Account; meta: Meta }) {
+function BalanceCheckpointDialog({ account, onClose }: { account: Account; onClose: () => void }) {
+  const mutation = useCreateBalanceCheckpoint();
+  const [serverError, setServerError] = useState<string | null>(null);
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm({
+    resolver: zodResolver(balanceCheckpointSchema),
+    defaultValues: { as_of: format(new Date(), "yyyy-MM-dd"), stated_balance: 0 },
+  });
+
+  return (
+    <Overlay onClose={onClose}>
+      <h2 className="text-lg font-semibold mb-1" style={{ color: "var(--text-heading)" }}>
+        Update balance
+      </h2>
+      <p className="text-sm mb-4" style={{ color: "var(--text-secondary)" }}>
+        Enter {account.name}'s real balance as of a date — Finn rolls transactions forward from there instead of
+        from zero.
+      </p>
+      <form
+        onSubmit={handleSubmit((values) => {
+          setServerError(null);
+          mutation.mutate(
+            { accountId: account.id, as_of: values.as_of, stated_balance: values.stated_balance, currency: account.currency },
+            { onSuccess: onClose, onError: (err) => setServerError(err instanceof Error ? err.message : "Failed to save.") },
+          );
+        })}
+        className="space-y-3"
+      >
+        <Field label="As of" error={errors.as_of?.message}>
+          <Input type="date" {...register("as_of")} max={format(new Date(), "yyyy-MM-dd")} className="w-full" />
+        </Field>
+        <Field label={`Real balance (${account.currency})`} error={errors.stated_balance?.message}>
+          <Input type="number" step="0.01" {...register("stated_balance")} className="w-full" />
+        </Field>
+
+        {serverError && (
+          <p className="text-sm" style={{ color: "var(--tint-red-text)" }}>
+            {serverError}
+          </p>
+        )}
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={isSubmitting || mutation.isPending}>
+            {mutation.isPending ? "Saving…" : "Save"}
+          </Button>
+        </div>
+      </form>
+    </Overlay>
+  );
+}
+
+function AccountRow({
+  account,
+  meta,
+  balanceInfo,
+}: {
+  account: Account;
+  meta: Meta;
+  balanceInfo?: AccountBalance;
+}) {
   const deleteMutation = useDeleteAccount();
   const [editing, setEditing] = useState(false);
+  const [updatingBalance, setUpdatingBalance] = useState(false);
+  const isCash = account.type !== "brokerage";
+  const stale = isCash && (balanceInfo?.days_stale ?? 0) > STALE_AFTER_DAYS;
 
   function handleDelete() {
     if (
@@ -188,30 +281,59 @@ function AccountRow({ account, meta }: { account: Account; meta: Meta }) {
 
   return (
     <>
-      <div className="flex items-center justify-between gap-2 py-2" style={{ borderBottom: "1px solid var(--gridline)" }}>
-        <div className="min-w-0">
-          <div className="text-sm font-medium truncate" style={{ color: "var(--text-primary)" }}>
-            {account.name}
+      <div className="py-2" style={{ borderBottom: "1px solid var(--gridline)" }}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-sm font-medium truncate" style={{ color: "var(--text-primary)" }}>
+              {account.name}
+            </div>
+            <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
+              {account.type} · {account.currency}
+            </div>
           </div>
-          <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
-            {account.type} · {account.currency}
+          <div className="flex items-center gap-3 shrink-0">
+            {isCash && balanceInfo?.balance != null && (
+              <div className="text-right">
+                <div className="text-sm font-medium tabular-nums" style={{ color: "var(--text-heading)" }}>
+                  {formatMoney(balanceInfo.balance, account.currency)}
+                </div>
+                <div className="text-[11px]" style={{ color: stale ? "var(--tint-amber-text)" : "var(--text-muted)" }}>
+                  {balanceInfo.last_checked_at ? `Checked ${balanceInfo.days_stale}d ago` : "Never checked"}
+                </div>
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              {isCash && (
+                <Button variant="outline" onClick={() => setUpdatingBalance(true)}>
+                  Update balance
+                </Button>
+              )}
+              <Button variant="outline" onClick={() => setEditing(true)}>
+                Edit
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={handleDelete}
+                disabled={deleteMutation.isPending}
+                style={{ color: "var(--tint-red-text)" }}
+              >
+                Delete
+              </Button>
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button variant="outline" onClick={() => setEditing(true)}>
-            Edit
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={handleDelete}
-            disabled={deleteMutation.isPending}
-            style={{ color: "var(--tint-red-text)" }}
+        {stale && (
+          <div
+            className="mt-2 px-3 py-2 text-xs"
+            style={{ background: "var(--tint-amber-bg)", color: "var(--tint-amber-text)", borderRadius: "var(--radius-control)" }}
           >
-            Delete
-          </Button>
-        </div>
+            Hasn't been checked in {balanceInfo!.days_stale} days. Confirm the real balance and Finn will reconcile
+            the gap for you.
+          </div>
+        )}
       </div>
       {editing && <AccountDialog account={account} meta={meta} onClose={() => setEditing(false)} />}
+      {updatingBalance && <BalanceCheckpointDialog account={account} onClose={() => setUpdatingBalance(false)} />}
     </>
   );
 }
@@ -219,9 +341,13 @@ function AccountRow({ account, meta }: { account: Account; meta: Meta }) {
 function AccountsCard() {
   const accountsQuery = useAccounts();
   const metaQuery = useMeta();
+  const { mainCurrency } = useAuth();
+  const balancesQuery = useBalances(mainCurrency);
   const [adding, setAdding] = useState(false);
 
   if (!metaQuery.data) return null;
+
+  const balanceByAccountId = new Map((balancesQuery.data?.balances ?? []).map((b) => [b.account_id, b]));
 
   return (
     <Card>
@@ -233,9 +359,13 @@ function AccountsCard() {
           ＋ Add Account
         </Button>
       </div>
+      <p className="text-sm mb-2" style={{ color: "var(--text-secondary)" }}>
+        You keep these balances up to date yourself. Tap "Update balance" to correct one — Finn keeps the running
+        total between corrections.
+      </p>
       <div>
         {(accountsQuery.data ?? []).map((a) => (
-          <AccountRow key={a.id} account={a} meta={metaQuery.data} />
+          <AccountRow key={a.id} account={a} meta={metaQuery.data} balanceInfo={balanceByAccountId.get(a.id)} />
         ))}
         {accountsQuery.data?.length === 0 && (
           <p className="text-sm py-1" style={{ color: "var(--text-secondary)" }}>
@@ -766,9 +896,12 @@ function MainCurrencyCard() {
   );
 }
 
-const THEME_SWATCHES: { value: string; label: string; color: string }[] = [
-  { value: "green", label: "Green", color: "#00ad6c" },
-  { value: "orange", label: "Orange", color: "#eb6834" },
+// A tiny mock net-worth hero, so choosing a theme previews the real card look
+// instead of a bare color dot — mirrors NetWorthHeroCard's gradient at a fixed
+// fake figure, at a fraction of the size.
+const THEME_PREVIEWS: { value: string; label: string; gradient: string; border: string }[] = [
+  { value: "green", label: "Green", gradient: "linear-gradient(135deg, #00ad6c 0%, #028f59 62%, #016b43 100%)", border: "#00ad6c" },
+  { value: "orange", label: "Orange", gradient: "linear-gradient(135deg, #eb6834 0%, #bc532a 62%, #93401f 100%)", border: "#eb6834" },
 ];
 
 function ThemeCard() {
@@ -788,30 +921,50 @@ function ThemeCard() {
         Theme
       </h2>
       <p className="text-sm mb-3" style={{ color: "var(--text-secondary)" }}>
-        Choose the accent color used across charts and the dashboard.
+        Pick the accent — you see the change before you commit.
       </p>
-      <div className="flex items-center gap-3">
-        {THEME_SWATCHES.map((swatch) => (
-          <button
-            key={swatch.value}
-            type="button"
-            onClick={() => setDraft(swatch.value)}
-            className="flex items-center gap-2 px-3 py-2"
-            style={{
-              borderRadius: "var(--radius-control)",
-              border: draft === swatch.value ? `2px solid ${swatch.color}` : "1px solid var(--border)",
-              background: "var(--surface-1)",
-            }}
-          >
-            <span
-              className="inline-block rounded-full"
-              style={{ width: 18, height: 18, background: swatch.color }}
-            />
-            <span className="text-sm" style={{ color: "var(--text-primary)" }}>
-              {swatch.label}
-            </span>
-          </button>
-        ))}
+      <div className="flex flex-wrap items-start gap-3">
+        {THEME_PREVIEWS.map((preview) => {
+          const active = draft === preview.value;
+          return (
+            <button
+              key={preview.value}
+              type="button"
+              onClick={() => setDraft(preview.value)}
+              className="flex flex-col gap-2 p-2 w-40 text-left"
+              style={{
+                borderRadius: "var(--radius-card)",
+                border: active ? `2px solid ${preview.border}` : "1px solid var(--border)",
+                background: "var(--surface-1)",
+              }}
+            >
+              <div
+                className="rounded-xl px-2.5 py-2 text-white"
+                style={{ background: preview.gradient }}
+              >
+                <div className="text-[9px] font-mono" style={{ color: "rgba(255,255,255,0.75)" }}>
+                  NET WORTH
+                </div>
+                <div className="text-base font-semibold tabular-nums mt-0.5">SGD 148,920</div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm" style={{ color: "var(--text-primary)" }}>
+                  {preview.label}
+                </span>
+                {active && (
+                  <span
+                    className="flex items-center justify-center rounded-full text-[10px] text-white"
+                    style={{ width: 16, height: 16, background: preview.border }}
+                  >
+                    ✓
+                  </span>
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-3">
         <Button
           variant="outline"
           disabled={!dirty || mutation.isPending}
@@ -819,6 +972,140 @@ function ThemeCard() {
         >
           {mutation.isPending ? "Saving…" : "Save"}
         </Button>
+      </div>
+    </Card>
+  );
+}
+
+function PreferencesCard() {
+  const prefsQuery = usePreferences();
+  const mutation = useUpdatePreferences();
+  const [draft, setDraft] = useState<{ budget_nudge_threshold: number; weekly_recap: boolean } | null>(null);
+  const current = draft ?? prefsQuery.data ?? null;
+  const dirty =
+    draft !== null &&
+    prefsQuery.data !== undefined &&
+    (draft.budget_nudge_threshold !== prefsQuery.data.budget_nudge_threshold ||
+      draft.weekly_recap !== prefsQuery.data.weekly_recap);
+
+  useEffect(() => {
+    if (!dirty) setDraft(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefsQuery.data]);
+
+  if (!current) return null;
+
+  return (
+    <Card>
+      <h2 className="text-sm font-semibold mb-1" style={{ color: "var(--text-heading)" }}>
+        How Finn Behaves
+      </h2>
+      <p className="text-sm mb-3" style={{ color: "var(--text-secondary)" }}>
+        Each row says what happens, not what it's called.
+      </p>
+      <div className="flex items-center justify-between gap-3 py-2.5" style={{ borderBottom: "1px solid var(--gridline)" }}>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm" style={{ color: "var(--text-primary)" }}>
+            Nudge me when a category hits a threshold
+          </div>
+          <div className="text-xs mt-0.5" style={{ color: "var(--text-secondary)" }}>
+            One message, not a stream — % of the category's monthly budget.
+          </div>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <Input
+            type="number"
+            min={1}
+            max={100}
+            value={current.budget_nudge_threshold}
+            onChange={(e) => setDraft({ ...current, budget_nudge_threshold: Number(e.target.value) })}
+            className="w-16"
+          />
+          <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+            %
+          </span>
+        </div>
+      </div>
+      <div className="flex items-center justify-between gap-3 py-2.5">
+        <div className="min-w-0 flex-1">
+          <div className="text-sm" style={{ color: "var(--text-primary)" }}>
+            Weekly Sunday recap
+          </div>
+          <div className="text-xs mt-0.5" style={{ color: "var(--text-secondary)" }}>
+            A short read of the week, in the app and on Telegram.
+          </div>
+        </div>
+        <input
+          type="checkbox"
+          checked={current.weekly_recap}
+          onChange={(e) => setDraft({ ...current, weekly_recap: e.target.checked })}
+          className="accent-[var(--brand)]"
+          style={{ width: 18, height: 18 }}
+        />
+      </div>
+      <div className="mt-3">
+        <Button
+          variant="outline"
+          disabled={!dirty || mutation.isPending}
+          onClick={() => mutation.mutate(current, { onSuccess: () => setDraft(null) })}
+        >
+          {mutation.isPending ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function TelegramCard() {
+  const { telegramLinked, refreshMe } = useAuth();
+  const mutation = useGenerateTelegramLinkCode();
+
+  async function handleGenerate() {
+    await mutation.mutateAsync();
+  }
+
+  return (
+    <Card>
+      <h2 className="text-sm font-semibold mb-2" style={{ color: "var(--text-heading)" }}>
+        Link Telegram
+      </h2>
+      {telegramLinked && !mutation.data ? (
+        <p className="text-sm" style={{ color: "var(--tint-green-text)" }}>
+          ✅ Already linked.
+        </p>
+      ) : (
+        <p className="text-sm mb-3" style={{ color: "var(--text-secondary)" }}>
+          Generate a code and send it to the bot as <code>/link &lt;code&gt;</code> to connect this account to
+          Telegram.
+        </p>
+      )}
+
+      {mutation.data && (
+        <div className="mb-3 p-3 text-center" style={{ background: "var(--brand-tint)", borderRadius: "var(--radius-control)" }}>
+          <p className="text-2xl font-mono font-semibold tracking-widest" style={{ color: "var(--brand-hover)" }}>
+            {mutation.data.code}
+          </p>
+          <p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>
+            Send <code>/link {mutation.data.code}</code> to the bot within {mutation.data.ttl_minutes} minutes.
+          </p>
+        </div>
+      )}
+
+      {mutation.isError && (
+        <p className="text-sm mb-3" style={{ color: "var(--tint-red-text)" }}>
+          Could not generate a code. Try again.
+        </p>
+      )}
+
+      <div className="flex gap-2">
+        <Button variant="outline" onClick={handleGenerate} disabled={mutation.isPending}>
+          {mutation.isPending ? "Generating…" : telegramLinked ? "Generate new code" : "Generate code"}
+        </Button>
+        {!telegramLinked && mutation.data && (
+          <Button variant="ghost" onClick={() => refreshMe()}>
+            I've sent /link — refresh status
+          </Button>
+        )}
       </div>
     </Card>
   );
@@ -1077,13 +1364,43 @@ function ProfileCard() {
   );
 }
 
-export function SettingsPage() {
-  const { email, telegramLinked, refreshMe } = useAuth();
-  const mutation = useGenerateTelegramLinkCode();
+type SettingsSection = "profile" | "accounts" | "categories" | "plans" | "finn" | "appearance";
+const SETTINGS_SECTIONS: { value: SettingsSection; label: string }[] = [
+  { value: "profile", label: "Profile" },
+  { value: "accounts", label: "Your Accounts" },
+  { value: "categories", label: "Categories" },
+  { value: "plans", label: "Spending Plans" },
+  { value: "finn", label: "How Finn Behaves" },
+  { value: "appearance", label: "Appearance" },
+];
 
-  async function handleGenerate() {
-    await mutation.mutateAsync();
-  }
+function SettingsSectionNavButton({
+  section,
+  active,
+  onClick,
+}: {
+  section: { value: SettingsSection; label: string };
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-left px-3 py-2.5 text-sm font-medium transition-colors"
+      style={{
+        borderRadius: "var(--radius-control)",
+        background: active ? "var(--brand-tint)" : "transparent",
+        color: active ? "var(--brand-hover)" : "var(--text-secondary)",
+      }}
+    >
+      {section.label}
+    </button>
+  );
+}
+
+export function SettingsPage() {
+  const [section, setSection] = useState<SettingsSection>("profile");
 
   return (
     <div className="space-y-4">
@@ -1091,74 +1408,50 @@ export function SettingsPage() {
         Settings
       </h1>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <div className="lg:col-span-4 flex flex-col gap-4">
-          <Card>
-            <h2 className="text-sm font-semibold mb-1" style={{ color: "var(--text-heading)" }}>
-              Account
-            </h2>
-            <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-              {email}
-            </p>
-          </Card>
+      <div className="md:hidden -mt-2 mb-2">
+        <MobileSectionTabs tabs={SETTINGS_SECTIONS} active={section} onChange={setSection} />
+      </div>
 
-          <MainCurrencyCard />
-          <ThemeCard />
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+        <nav className="hidden md:flex md:flex-col md:gap-1 md:col-span-3">
+          {SETTINGS_SECTIONS.map((s) => (
+            <SettingsSectionNavButton key={s.value} section={s} active={section === s.value} onClick={() => setSection(s.value)} />
+          ))}
+        </nav>
 
-          <Card>
-            <h2 className="text-sm font-semibold mb-2" style={{ color: "var(--text-heading)" }}>
-              Link Telegram
-            </h2>
-            {telegramLinked && !mutation.data ? (
-              <p className="text-sm" style={{ color: "var(--tint-green-text)" }}>
-                ✅ Already linked.
-              </p>
-            ) : (
-              <p className="text-sm mb-3" style={{ color: "var(--text-secondary)" }}>
-                Generate a code and send it to the bot as <code>/link &lt;code&gt;</code> to connect this account to
-                Telegram.
-              </p>
-            )}
-
-            {mutation.data && (
-              <div className="mb-3 p-3 text-center" style={{ background: "var(--brand-tint)", borderRadius: "var(--radius-control)" }}>
-                <p className="text-2xl font-mono font-semibold tracking-widest" style={{ color: "var(--brand-hover)" }}>
-                  {mutation.data.code}
-                </p>
-                <p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>
-                  Send <code>/link {mutation.data.code}</code> to the bot within {mutation.data.ttl_minutes} minutes.
-                </p>
-              </div>
-            )}
-
-            {mutation.isError && (
-              <p className="text-sm mb-3" style={{ color: "var(--tint-red-text)" }}>
-                Could not generate a code. Try again.
-              </p>
-            )}
-
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={handleGenerate} disabled={mutation.isPending}>
-                {mutation.isPending ? "Generating…" : telegramLinked ? "Generate new code" : "Generate code"}
-              </Button>
-              {!telegramLinked && mutation.data && (
-                <Button variant="ghost" onClick={() => refreshMe()}>
-                  I've sent /link — refresh status
-                </Button>
-              )}
-            </div>
-          </Card>
-
-          <CustomizeDashboardCard />
-        </div>
-
-        <div className="lg:col-span-8 flex flex-col gap-4">
-          <AccountsCard />
-          <CategoriesCard />
-          <ProfileCard />
-          <BudgetsCard />
-          <GoalsCard />
-          <MemoriesCard />
+        <div className="md:col-span-9 flex flex-col gap-4">
+          {section === "profile" && (
+            <>
+              <ProfileCard />
+              <MemoriesCard />
+            </>
+          )}
+          {section === "accounts" && <AccountsCard />}
+          {section === "categories" && (
+            <>
+              <CategoriesCard />
+              <RulesCard />
+            </>
+          )}
+          {section === "plans" && (
+            <>
+              <BudgetsCard />
+              <GoalsCard />
+            </>
+          )}
+          {section === "finn" && (
+            <>
+              <PreferencesCard />
+              <TelegramCard />
+            </>
+          )}
+          {section === "appearance" && (
+            <>
+              <MainCurrencyCard />
+              <ThemeCard />
+              <CustomizeDashboardCard />
+            </>
+          )}
         </div>
       </div>
     </div>

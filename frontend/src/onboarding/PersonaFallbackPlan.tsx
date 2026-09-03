@@ -5,7 +5,11 @@ import { useCreateBudget, useCreateGoal, useMe, useMeta } from "../hooks/api";
 import type { OnboardingStepProps } from "./OnboardingWizard";
 import { WizardFooter } from "./WizardFooter";
 
-export function StarterSuggestionStep({ onNext, onBack }: OnboardingStepProps) {
+/** The persona-keyed static suggestion, shown inside PlanStep when the caller doesn't
+ * have enough transaction history yet for a real-data suggested plan (see
+ * GET /api/onboarding/suggested-plan's has_enough_data). Logic is unchanged from the
+ * step this used to be on its own (formerly StarterSuggestionStep). */
+export function PersonaFallbackPlan({ onNext, onBack }: OnboardingStepProps) {
   const { mainCurrency } = useAuth();
   const meQuery = useMe();
   const metaQuery = useMeta();
@@ -39,6 +43,10 @@ export function StarterSuggestionStep({ onNext, onBack }: OnboardingStepProps) {
       <h2 className="text-lg font-semibold mb-1" style={{ color: "var(--text-heading)" }}>
         A starter suggestion
       </h2>
+      <p className="text-sm mb-4" style={{ color: "var(--text-secondary)" }}>
+        We don't have enough spending history yet to build a real plan — once you've logged a few weeks of
+        transactions, come back here for one built from your actual numbers.
+      </p>
 
       {!persona && (
         <p className="text-sm mb-4" style={{ color: "var(--text-secondary)" }}>

@@ -7,6 +7,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from bot.account_matcher import match_account
+from bot.category_rules import apply_rules
 from bot.extractor import extract_from_image, extract_from_pdf_images, extract_from_text
 from bot.finance_agent import answer_question
 from bot.router import classify_intent
@@ -19,11 +20,13 @@ from db.supabase import (
     get_accounts,
     get_categories_for_user,
     get_category_classifications_for_user,
+    get_category_rules,
     get_held_positions,
     get_latest_snapshots,
     get_recent_transactions,
     get_transactions,
     get_user_by_telegram_chat_id,
+    increment_rule_hit_counts,
     insert_portfolio_events,
     insert_transactions,
     upload_receipt,
@@ -137,6 +140,16 @@ def save_extraction(
             receipt_id = receipt["id"]
         except Exception:
             logger.exception("save_extraction: receipt upload failed for user_id=%s", user_id)
+
+    # Deterministic category-rule enforcement — the guarantee behind "edit a rule and
+    # it re-files the history": the LLM's category guess (already nudged by the same
+    # rules as prompt hints, see bot/extractor.py) is overridden here regardless, so a
+    # saved rule always wins. Runs for every commit path, since they all call this
+    # one function (bot handlers below and backend/routers/chat.py).
+    rules = get_category_rules(user_id)
+    matched_rule_ids = apply_rules(data.get("transactions", []), rules)
+    if matched_rule_ids:
+        increment_rule_hit_counts(matched_rule_ids, user_id)
 
     txn_rows = [
         {
@@ -285,6 +298,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bytes(image_bytes),
             categories=get_categories_for_user(user["id"]),
             default_currency=user.get("main_currency", "SGD"),
+            rules=get_category_rules(user["id"]),
         )
     except (json.JSONDecodeError, ValueError):
         logger.exception("handle_photo: extraction failed for user_id=%s", uid)
@@ -317,12 +331,17 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     categories = get_categories_for_user(user["id"])
     default_currency = user.get("main_currency", "SGD")
+    rules = get_category_rules(user["id"])
     try:
         if doc.mime_type == "application/pdf":
-            data = extract_from_pdf_images(bytes(file_bytes), categories=categories, default_currency=default_currency)
+            data = extract_from_pdf_images(
+                bytes(file_bytes), categories=categories, default_currency=default_currency, rules=rules
+            )
             data["source"] = "telegram_pdf"
         else:
-            data = extract_from_image(bytes(file_bytes), categories=categories, default_currency=default_currency)
+            data = extract_from_image(
+                bytes(file_bytes), categories=categories, default_currency=default_currency, rules=rules
+            )
             data["source"] = "telegram_image"
     except (json.JSONDecodeError, ValueError):
         logger.exception("handle_document: extraction failed for user_id=%s", uid)
@@ -353,8 +372,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("handle_text: intent=%s for user_id=%s", intent, uid)
 
     if intent == "chat":
-        reply = answer_question(uid, raw_text, user_id)
-        for chunk in chunk_lines(reply.split("\n")):
+        envelope = answer_question(uid, raw_text, user_id)
+        for chunk in chunk_lines(envelope.text.split("\n")):
             await update.message.reply_text(chunk)
         return
 
@@ -364,6 +383,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             raw_text,
             categories=get_categories_for_user(user_id),
             default_currency=user.get("main_currency", "SGD"),
+            rules=get_category_rules(user_id),
         )
     except (json.JSONDecodeError, ValueError):
         logger.exception("handle_text: extraction failed for user_id=%s", uid)

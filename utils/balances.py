@@ -1,33 +1,57 @@
 from datetime import date, timedelta
 
-from db.supabase import get_account_cash_totals, get_accounts, get_latest_snapshots, get_snapshot_history
+from db.supabase import (
+    get_account_cash_totals,
+    get_accounts,
+    get_latest_balance_checkpoints,
+    get_latest_snapshots,
+    get_snapshot_history,
+)
 from utils.fx import convert
+
+# An account past this many days since its last balance checkpoint gets flagged
+# stale in the accounts list (Settings' amber "hasn't been checked in N days" banner).
+STALE_AFTER_DAYS = 30
 
 
 def compute_account_balances(user_id: str, display_currency: str = "SGD", accounts: list[dict] | None = None) -> dict:
-    """Per-account balance, unified across account types: bank/ewallet balances come
-    from summed transactions.amount (get_account_cash_totals), brokerage balances come
-    from the latest asset_snapshots row instead, since brokerage cash flow isn't tracked
-    separately from invested value anywhere in this codebase. Shared by /balance and the
-    dashboard's balances view so both report the same numbers from one implementation."""
+    """Per-account balance, unified across account types. Bank/ewallet balances roll
+    forward from the latest account_balance_checkpoints row (stated_balance + activity
+    since) when one exists, falling back to summing every transaction.amount from zero
+    otherwise (today's behavior, for accounts that have never been corrected).
+    Brokerage balances come from the latest asset_snapshots row, unchanged — brokerage
+    cash flow isn't tracked separately from invested value anywhere in this codebase.
+    Shared by /balance and the dashboard's balances view so both report the same
+    numbers from one implementation."""
     accounts = accounts if accounts is not None else get_accounts(user_id=user_id)
-    cash_totals = get_account_cash_totals(user_id)
+    checkpoints = get_latest_balance_checkpoints([a["id"] for a in accounts])
+    since_by_account = {account_id: cp["as_of"] for account_id, cp in checkpoints.items()}
+    cash_totals = get_account_cash_totals(user_id, since_by_account=since_by_account)
     snapshots_by_account = {s["account_id"]: s for s in get_latest_snapshots(user_id=user_id)}
 
     balances = []
     total = 0.0
     for a in accounts:
+        checkpoint = checkpoints.get(a["id"])
         if a["type"] == "brokerage":
             snap = snapshots_by_account.get(a["id"])
             balance = convert(snap["total_value"], snap["currency"], display_currency) if snap else None
+        elif checkpoint:
+            base = convert(checkpoint["stated_balance"], checkpoint["currency"], display_currency)
+            activity_since = convert(cash_totals.get(a["id"], 0.0), a["currency"], display_currency)
+            balance = base + activity_since
         else:
             balance = convert(cash_totals.get(a["id"], 0.0), a["currency"], display_currency)
 
+        days_stale = (date.today() - date.fromisoformat(checkpoint["as_of"])).days if checkpoint else None
         balances.append({
             "account_id": a["id"],
             "account_name": a["name"],
             "type": a["type"],
             "balance": balance,
+            "last_checked_at": checkpoint["as_of"] if checkpoint else None,
+            "days_stale": days_stale,
+            "drift_amount": checkpoint["drift_amount"] if checkpoint else None,
         })
         if balance is not None:
             total += balance

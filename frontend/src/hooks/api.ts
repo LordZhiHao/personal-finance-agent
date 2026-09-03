@@ -3,6 +3,7 @@ import { api, qs } from "../api/client";
 import type {
   Account,
   AssetSnapshot,
+  BalanceCheckpoint,
   BalancesSummary,
   Budget,
   BudgetStatus,
@@ -18,7 +19,11 @@ import type {
   Memory,
   Meta,
   PortfolioEvent,
+  Preferences,
   ReceiptUrl,
+  Rule,
+  RuleMatchType,
+  SuggestedPlan,
   Transaction,
   UploadResult,
   UploadSaved,
@@ -121,6 +126,44 @@ export function useBalances(currency: string) {
   });
 }
 
+export function useBalanceHistory(accountId: string, enabled: boolean = true) {
+  return useQuery({
+    queryKey: ["balance-history", accountId],
+    queryFn: () => api.get<BalanceCheckpoint[]>(`/api/accounts/${accountId}/balance-history`),
+    enabled,
+  });
+}
+
+export function useCreateBalanceCheckpoint() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ accountId, ...payload }: { accountId: string; as_of: string; stated_balance: number; currency: string }) =>
+      api.post<BalanceCheckpoint>(`/api/accounts/${accountId}/balance`, payload),
+    onSuccess: (_result, { accountId }) => {
+      queryClient.invalidateQueries({ queryKey: ["balances"] });
+      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["balance-history", accountId] });
+    },
+  });
+}
+
+export function usePreferences() {
+  return useQuery({
+    queryKey: ["preferences"],
+    queryFn: () => api.get<Preferences>("/api/preferences"),
+  });
+}
+
+export function useUpdatePreferences() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (fields: Partial<Preferences>) => api.patch<Preferences>("/api/preferences", fields),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["preferences"] });
+    },
+  });
+}
+
 export function useDividendForecast() {
   return useQuery({
     queryKey: ["dividend-forecast"],
@@ -189,9 +232,19 @@ export function useUpdateMe() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (fields: Partial<Me>) => api.patch<Me>("/api/auth/me", fields),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["me"] });
-    },
+    // Returning (not just calling) invalidateQueries makes TanStack Query await the
+    // refetch before running a caller's own onSuccess — AboutYouStep chains a second
+    // useUpdateMe() call and navigates on success, so without this the "me" cache can
+    // still be one write behind when the next step reads it (e.g. PlanStep briefly
+    // showing the pre-update persona).
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["me"] }),
+  });
+}
+
+export function useSuggestedPlan() {
+  return useQuery({
+    queryKey: ["suggested-plan"],
+    queryFn: () => api.get<SuggestedPlan>("/api/onboarding/suggested-plan"),
   });
 }
 
@@ -266,6 +319,58 @@ export function useDeleteCategory() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["meta"] });
       queryClient.invalidateQueries({ queryKey: ["categories"] });
+    },
+  });
+}
+
+export function useRules() {
+  return useQuery({
+    queryKey: ["rules"],
+    queryFn: () => api.get<Rule[]>("/api/rules"),
+    refetchInterval: 60_000,
+  });
+}
+
+export function useCreateRule() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ match_type, pattern, category }: { match_type: RuleMatchType; pattern: string; category: string }) =>
+      api.post<Rule>("/api/rules", { match_type, pattern, category }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+    },
+  });
+}
+
+export function useUpdateRule() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...fields }: { id: string; match_type?: RuleMatchType; pattern?: string; category?: string }) =>
+      api.patch<Rule>(`/api/rules/${id}`, fields),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+    },
+  });
+}
+
+export function useDeleteRule() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/api/rules/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+    },
+  });
+}
+
+export function useApplyRule() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: { id: string }) => api.post<{ updated_count: number }>(`/api/rules/${id}/apply`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["expense-summary"] });
     },
   });
 }

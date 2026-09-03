@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 import { format, getMonth, parseISO, startOfYear, subDays, subMonths, subYears } from "date-fns";
-import { Briefcase, Coins, PieChart, Plus, Receipt, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import { Briefcase, PieChart, Plus, Receipt, TrendingDown, TrendingUp } from "lucide-react";
 import type { Holding } from "../types";
 import {
   useAccounts,
@@ -22,8 +23,10 @@ import { AddTradeDialog } from "../components/AddTradeDialog";
 import { SwipeableSections } from "../components/SwipeableSections";
 import { MobileSectionTabs } from "../components/MobileSectionTabs";
 import { SectionPairRow } from "../components/SectionPairRow";
+import { MoreInsights } from "../components/MoreInsights";
+import { FinnInsightCard } from "../components/FinnInsightCard";
+import { NetWorthHeroCard } from "../components/charts/NetWorthHeroCard";
 import { NetWorthLineChart } from "../components/charts/NetWorthLineChart";
-import { AssetAllocationDonut } from "../components/charts/AssetAllocationDonut";
 import { AllocationBarChart } from "../components/charts/AllocationBarChart";
 import { DividendCalendar } from "../components/charts/DividendCalendar";
 import { DividendsByCurrencyDonut } from "../components/charts/DividendsByCurrencyDonut";
@@ -34,9 +37,10 @@ import { MarketHoldingsTable } from "../components/charts/MarketHoldingsTable";
 import { BalancesTable } from "../components/charts/BalancesTable";
 import { LoadingFinn } from "../components/LoadingFinn";
 import { sectionKey } from "../lib/dashboardSections";
+import { sumByMonth } from "../lib/dates";
 import { formatMoney, formatPct } from "../lib/format";
 import { CURRENCY_MARKET } from "../lib/markets";
-import { Button, Fab, Input, Select, TabToggle, Card } from "../components/ui";
+import { Button, Fab, Input, TabToggle, Card } from "../components/ui";
 
 const today = format(new Date(), "yyyy-MM-dd");
 const defaultFilters: FilterValue = {
@@ -85,6 +89,7 @@ const INVESTMENTS_TABS: { value: InvestmentsTab; label: string }[] = [
 ];
 
 export function InvestmentsPage() {
+  const navigate = useNavigate();
   const [filters, setFilters] = useState<FilterValue>(defaultFilters);
   const [hasCustomFilters, setHasCustomFilters] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -246,23 +251,68 @@ export function InvestmentsPage() {
   const totalNetWorth = balancesQuery.data?.total ?? 0;
   const ytdDividends = dividendSummaryQuery.data?.total ?? 0;
 
+  // Monthly-aggregated (last-value-per-month) net worth for the hero sparkline —
+  // same reduction as OverviewPage's net-worth hero, kept local since it's the
+  // only place on this page that wants a monthly-bucketed series.
+  const monthlyNetWorthValues = useMemo(() => {
+    const byMonth = new Map<string, number>();
+    for (const p of netWorthPoints) byMonth.set(p.date.slice(0, 7), p.value);
+    return [...byMonth.values()].slice(-6);
+  }, [netWorthPoints]);
+
+  const netWorthDelta = useMemo(() => {
+    if (monthlyNetWorthValues.length < 2) return null;
+    const last = monthlyNetWorthValues[monthlyNetWorthValues.length - 1];
+    const prev = monthlyNetWorthValues[monthlyNetWorthValues.length - 2];
+    const abs = last - prev;
+    return { abs, pct: prev !== 0 ? (abs / prev) * 100 : null };
+  }, [monthlyNetWorthValues]);
+
+  // A stand-in for a real persisted portfolio-insight system (see CLAUDE.md's
+  // Finance Q&A Agent) — a client-side heuristic over holdings already on the
+  // page: flag concentration risk first, otherwise call out the best performer.
+  const portfolioInsight = useMemo(() => {
+    const list = holdingsQuery.data?.holdings ?? [];
+    if (list.length === 0 || totalMarketValue <= 0) return null;
+    const top = [...list].sort((a, b) => (b.market_value ?? 0) - (a.market_value ?? 0))[0];
+    const concentrationPct = top.market_value !== null ? (top.market_value / totalMarketValue) * 100 : 0;
+    if (concentrationPct > 30) {
+      return { kind: "concentration" as const, name: top.name ?? top.ticker, pct: concentrationPct };
+    }
+    const best = [...list]
+      .filter((h) => h.unrealized_gain_pct !== null)
+      .sort((a, b) => (b.unrealized_gain_pct ?? 0) - (a.unrealized_gain_pct ?? 0))[0];
+    if (!best) return null;
+    return { kind: "performer" as const, name: best.name ?? best.ticker, pct: best.unrealized_gain_pct ?? 0 };
+  }, [holdingsQuery.data, totalMarketValue]);
+
+  // Realized dividend $ by month from actual DIVIDEND-action events — the
+  // mockup's "dividend runway" bar chart, computed from data already fetched
+  // for the Dividends by Currency chart rather than a new endpoint.
+  const dividendMonthly = useMemo(
+    () => sumByMonth(dividendEvents, (e) => e.date, (e) => e.converted_value ?? e.quantity * e.price).slice(-6),
+    [dividendEvents],
+  );
+  const maxDividendMonth = Math.max(1, ...dividendMonthly.map((d) => d.value));
+
   const summaryPanel = (
     <div className="space-y-3">
+      <NetWorthHeroCard
+        label="Total Market Value"
+        value={formatMoney(totalMarketValue, displayCurrency)}
+        deltaText={
+          netWorthDelta
+            ? `${formatMoney(Math.abs(netWorthDelta.abs), displayCurrency)}${netWorthDelta.pct !== null ? ` (${netWorthDelta.pct >= 0 ? "+" : ""}${netWorthDelta.pct.toFixed(1)}%)` : ""} this month`
+            : undefined
+        }
+        deltaDirection={netWorthDelta && netWorthDelta.abs < 0 ? "down" : "up"}
+        sparkline={monthlyNetWorthValues}
+        secondaryStats={[
+          { label: "Total Net Worth", value: formatMoney(totalNetWorth, displayCurrency) },
+          { label: "YTD Dividends", value: formatMoney(ytdDividends, displayCurrency) },
+        ]}
+      />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <StatCard
-          label="Total Market Value"
-          value={formatMoney(totalMarketValue, displayCurrency)}
-          icon={<Briefcase size={20} />}
-          hero
-        />
-        <StatCard
-          label="Total Net Worth"
-          value={formatMoney(totalNetWorth, displayCurrency)}
-          icon={<Wallet size={20} />}
-          hero
-        />
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
           label="Total Cost Basis"
           value={formatMoney(costBasis, displayCurrency)}
@@ -276,12 +326,60 @@ export function InvestmentsPage() {
           tint={gain >= 0 ? "green" : "red"}
           delta={{ value: formatPct(gainPct), direction: gain >= 0 ? "up" : "down" }}
         />
-        <StatCard
-          label="Year to Date Dividends"
-          value={formatMoney(ytdDividends, displayCurrency)}
-          icon={<Coins size={20} />}
-          tint="peach"
-        />
+      </div>
+    </div>
+  );
+
+  const insightRow = (
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+      <div className="lg:col-span-7">
+        {portfolioInsight ? (
+          <FinnInsightCard
+            eyebrow="Finn on your portfolio"
+            body={
+              portfolioInsight.kind === "concentration" ? (
+                <>
+                  <b>{portfolioInsight.name}</b> is {portfolioInsight.pct.toFixed(0)}% of your portfolio — that's
+                  meaningful concentration in one position.
+                </>
+              ) : (
+                <>
+                  <b>{portfolioInsight.name}</b> is your best performer, up {formatPct(portfolioInsight.pct)} since you
+                  bought it.
+                </>
+              )
+            }
+            actions={[{ label: "Ask Finn about this", variant: "outline", onClick: () => navigate("/chat") }]}
+          />
+        ) : (
+          <FinnInsightCard eyebrow="Finn on your portfolio" body="Add a few trades and I'll start surfacing insights here." />
+        )}
+      </div>
+      <div className="lg:col-span-5">
+        <ChartCard title="Dividend Runway" fill>
+          {dividendMonthly.length > 0 ? (
+            <div className="flex items-end gap-2" style={{ height: 96 }}>
+              {dividendMonthly.map((d) => (
+                <div key={d.month} className="flex-1 flex flex-col items-center gap-1.5 h-full">
+                  <span className="text-xs font-medium tabular-nums" style={{ color: "var(--text-secondary)" }}>
+                    {formatMoney(d.value, displayCurrency)}
+                  </span>
+                  <div className="w-full flex-1 flex items-end">
+                    <div
+                      className="w-full rounded-t"
+                      style={{ height: `${Math.max(4, (d.value / maxDividendMonth) * 100)}%`, background: "var(--brand)" }}
+                    />
+                  </div>
+                  <span className="text-[10px] font-mono" style={{ color: "var(--text-muted)" }}>
+                    {d.label.split(" ")[0].toUpperCase()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p style={{ color: "var(--text-secondary)" }}>No dividends logged yet.</p>
+          )}
+        </ChartCard>
       </div>
     </div>
   );
@@ -292,20 +390,7 @@ export function InvestmentsPage() {
   const mobileChartHeight = "min-h-[calc(100dvh_-_400px)] md:min-h-0";
 
   const netWorthOverTimeChart = (
-    <ChartCard
-      title="Net Worth Over Time"
-      fill
-      className={mobileChartHeight}
-      headerRight={
-        <Select value={period} onChange={(e) => setPeriod(e.target.value as Period)} className="w-24">
-          {PERIODS.map((p) => (
-            <option key={p} value={p}>
-              {p}
-            </option>
-          ))}
-        </Select>
-      }
-    >
+    <ChartCard title="Net Worth Over Time" fill className={mobileChartHeight}>
       <div className="mb-3">
         <TabToggle options={brokerOptions} value={selectedBrokerAccountId} onChange={setSelectedBrokerAccountId} />
       </div>
@@ -336,7 +421,7 @@ export function InvestmentsPage() {
       }
     >
       {allocationData.length > 0 ? (
-        <AssetAllocationDonut data={allocationData} currency={displayCurrency} fill />
+        <AllocationBarChart data={allocationData} currency={displayCurrency} />
       ) : (
         <p style={{ color: "var(--text-secondary)" }}>No asset snapshots yet.</p>
       )}
@@ -522,7 +607,8 @@ export function InvestmentsPage() {
           <PieChart size={22} />
           Investments
         </h1>
-        <div className="flex items-center gap-2 shrink-0 relative">
+        <div className="flex items-center gap-2 shrink-0 relative flex-wrap">
+          <TabToggle options={PERIODS.map((p) => ({ value: p, label: p }))} value={period} onChange={setPeriod} />
           <FilterBar
             accounts={accountsQuery.data ?? []}
             value={filters}
@@ -553,6 +639,9 @@ export function InvestmentsPage() {
         desktopContent={
           <>
             {summaryPanel}
+            {insightRow}
+
+            {visible("positions") && positionsPanel}
 
             <SectionPairRow
               leftVisible={visible("netWorthOverTime")}
@@ -562,30 +651,21 @@ export function InvestmentsPage() {
               className="items-stretch"
             />
 
-            {visible("accountBalances") && accountBalancesPanel}
-            {visible("positions") && positionsPanel}
-
-            <SectionPairRow
-              leftVisible={visible("topHoldings")}
-              left={topHoldingsChart}
-              rightVisible={visible("dividendCalendar")}
-              right={dividendCalendarChart}
-              leftSpan={7}
-              rightSpan={5}
-              className="items-stretch"
-            />
-
-            <SectionPairRow
-              leftVisible={visible("dividendsByCurrency")}
-              left={dividendsByCurrencyChart}
-              rightVisible={visible("upcomingDividends")}
-              right={upcomingDividendsPanel}
-              leftSpan={7}
-              rightSpan={5}
-              className="items-stretch"
-            />
-
             {visible("trades") && tradesPanel}
+
+            {(visible("accountBalances") ||
+              visible("topHoldings") ||
+              visible("dividendCalendar") ||
+              visible("dividendsByCurrency") ||
+              visible("upcomingDividends")) && (
+              <MoreInsights>
+                {visible("accountBalances") && accountBalancesPanel}
+                {visible("topHoldings") && topHoldingsChart}
+                {visible("dividendCalendar") && dividendCalendarChart}
+                {visible("dividendsByCurrency") && dividendsByCurrencyChart}
+                {visible("upcomingDividends") && upcomingDividendsPanel}
+              </MoreInsights>
+            )}
           </>
         }
       />
