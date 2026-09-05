@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   differenceInCalendarDays,
   endOfMonth,
@@ -16,8 +16,6 @@ import { FilterBar, type FilterValue } from "../components/FilterBar";
 import { ChartCard } from "../components/ChartCard";
 import { TransactionsList } from "../components/TransactionsList";
 import { AddTransactionDialog } from "../components/AddTransactionDialog";
-import { SwipeableSections } from "../components/SwipeableSections";
-import { MobileSectionTabs } from "../components/MobileSectionTabs";
 import { SectionPairRow } from "../components/SectionPairRow";
 import { MoreInsights } from "../components/MoreInsights";
 import { FinnInsightCard } from "../components/FinnInsightCard";
@@ -71,7 +69,7 @@ const defaultFilters: FilterValue = {
   types: [],
 };
 
-type SpendingTab =
+type SpendingSectionId =
   | "summary"
   | "monthlyTrend"
   | "savingsRate"
@@ -80,23 +78,12 @@ type SpendingTab =
   | "incomeVsSpend"
   | "momComparison"
   | "transactions";
-const SPENDING_TABS: { value: SpendingTab; label: string }[] = [
-  { value: "summary", label: "Summary" },
-  { value: "monthlyTrend", label: "Monthly Trend" },
-  { value: "savingsRate", label: "Savings Rate" },
-  { value: "calendar", label: "Calendar" },
-  { value: "byCategory", label: "By Category" },
-  { value: "incomeVsSpend", label: "Income vs Spend" },
-  { value: "momComparison", label: "MoM Comparison" },
-  { value: "transactions", label: "Transactions" },
-];
 
 export function SpendingPage() {
   const { mainCurrency, hiddenDashboardSections } = useAuth();
   const [filters, setFilters] = useState<FilterValue>(defaultFilters);
   const [period, setPeriod] = useState<SpendPeriod>("6m");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [mobileTab, setMobileTab] = useState<SpendingTab>("summary");
   const [capSet, setCapSet] = useState(false);
   const accountsQuery = useAccounts(["bank", "ewallet"]);
   const metaQuery = useMeta();
@@ -109,16 +96,7 @@ export function SpendingPage() {
     setFilters((f) => ({ ...f, ...periodRange(p) }));
   }
 
-  const visible = (id: SpendingTab) => !hiddenDashboardSections.includes(sectionKey("spending", id));
-  const visibleTabs = useMemo(
-    () => SPENDING_TABS.filter((t) => t.value === "summary" || visible(t.value)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [hiddenDashboardSections],
-  );
-
-  useEffect(() => {
-    if (!visibleTabs.some((t) => t.value === mobileTab)) setMobileTab("summary");
-  }, [visibleTabs, mobileTab]);
+  const visible = (id: SpendingSectionId) => !hiddenDashboardSections.includes(sectionKey("spending", id));
 
   const filtered = useMemo(() => {
     const txns = txQuery.data ?? [];
@@ -304,13 +282,8 @@ export function SpendingPage() {
     </div>
   );
 
-  // Sized so the whole card (title + chart) fits in the space actually left over
-  // on a phone screen — viewport height minus the sticky header, subheader, page
-  // title, filter bar, and bottom nav — instead of overflowing below the fold.
-  const mobileChartHeight = "min-h-[calc(100dvh_-_400px)] md:min-h-0";
-
   const monthlySpendChart = (
-    <ChartCard title="Monthly Spend by Category" fill className={mobileChartHeight}>
+    <ChartCard title="Monthly Spend by Category" fill>
       <MonthlySpendBarChart
         transactions={spendTxns}
         categories={categories}
@@ -321,7 +294,7 @@ export function SpendingPage() {
     </ChartCard>
   );
   const spendByCategoryChart = (
-    <ChartCard title="Spend by Category" fill className={mobileChartHeight}>
+    <ChartCard title="Spend by Category">
       <SpendByCategoryDonut
         transactions={spendTxns}
         categoryColors={categoryColors}
@@ -329,34 +302,32 @@ export function SpendingPage() {
         accounts={filters.accounts}
         categories={categories}
         allAccounts={accountsQuery.data ?? []}
-        fill
       />
     </ChartCard>
   );
   const incomeVsSpendChart = (
-    <ChartCard title="Income vs Spend Over Time" fill className={mobileChartHeight}>
-      <IncomeVsSpendLineChart transactions={spendTxns} fill />
+    <ChartCard title="Income vs Spend Over Time">
+      <IncomeVsSpendLineChart transactions={spendTxns} />
     </ChartCard>
   );
   const savingsRateChart = (
-    <ChartCard title="Savings Rate Over Time (%)" fill className={mobileChartHeight}>
+    <ChartCard title="Savings Rate Over Time (%)" fill>
       <SavingsRateLineChart transactions={spendTxns} fill />
     </ChartCard>
   );
   const spendingCalendarChart = (
-    <ChartCard title="Spending Calendar" fill className={mobileChartHeight}>
+    <ChartCard title="Spending Calendar">
       <SpendingHeatmap
         accounts={filters.accounts}
         currency={mainCurrency}
         categories={categories}
         allAccounts={accountsQuery.data ?? []}
-        fill
       />
     </ChartCard>
   );
   const momComparisonChart = (
-    <ChartCard title="Month-over-Month by Category" fill className={mobileChartHeight}>
-      <MonthComparisonBarChart transactions={spendTxns} fill />
+    <ChartCard title="Month-over-Month by Category">
+      <MonthComparisonBarChart transactions={spendTxns} />
     </ChartCard>
   );
   const transactionsPanel = (
@@ -373,9 +344,6 @@ export function SpendingPage() {
 
   return (
     <div className="space-y-3">
-      <div className="md:hidden -mt-3 mb-4">
-        <MobileSectionTabs tabs={visibleTabs} active={mobileTab} onChange={setMobileTab} />
-      </div>
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <h1
           className="flex items-center gap-2 text-lg sm:text-xl font-semibold shrink-0"
@@ -402,46 +370,29 @@ export function SpendingPage() {
           No transactions found for this period. Start by sending a screenshot to your bot.
         </p>
       ) : (
-        <SwipeableSections
-          tabs={visibleTabs}
-          active={mobileTab}
-          onChange={setMobileTab}
-          panels={{
-            summary: summaryPanel,
-            monthlyTrend: monthlySpendChart,
-            byCategory: spendByCategoryChart,
-            incomeVsSpend: incomeVsSpendChart,
-            savingsRate: savingsRateChart,
-            calendar: spendingCalendarChart,
-            momComparison: momComparisonChart,
-            transactions: transactionsPanel,
-          }}
-          desktopContent={
-            <>
-              {summaryPanel}
+        <>
+          {summaryPanel}
 
-              <SectionPairRow
-                leftVisible={visible("monthlyTrend")}
-                left={monthlySpendChart}
-                rightVisible={visible("savingsRate")}
-                right={savingsRateChart}
-                className="items-stretch"
-              />
+          <SectionPairRow
+            leftVisible={visible("monthlyTrend")}
+            left={monthlySpendChart}
+            rightVisible={visible("savingsRate")}
+            right={savingsRateChart}
+            className="items-stretch"
+          />
 
-              {visible("calendar") && spendingCalendarChart}
+          {visible("calendar") && spendingCalendarChart}
 
-              {(visible("byCategory") || visible("incomeVsSpend") || visible("momComparison")) && (
-                <MoreInsights>
-                  {visible("byCategory") && spendByCategoryChart}
-                  {visible("incomeVsSpend") && incomeVsSpendChart}
-                  {visible("momComparison") && momComparisonChart}
-                </MoreInsights>
-              )}
+          {(visible("byCategory") || visible("incomeVsSpend") || visible("momComparison")) && (
+            <MoreInsights>
+              {visible("byCategory") && spendByCategoryChart}
+              {visible("incomeVsSpend") && incomeVsSpendChart}
+              {visible("momComparison") && momComparisonChart}
+            </MoreInsights>
+          )}
 
-              {visible("transactions") && transactionsPanel}
-            </>
-          }
-        />
+          {visible("transactions") && transactionsPanel}
+        </>
       )}
 
       {dialogOpen && metaQuery.data && (

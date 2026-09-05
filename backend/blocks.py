@@ -1,13 +1,16 @@
-"""backend/blocks.py — Rich-Reply Agent Envelope schema (Phase 6, Sub-phase 1).
+"""backend/blocks.py — Rich-Reply Agent Envelope schema (Phase 6).
 
-bot/finance_agent.py::answer_question() always returns AgentReply(text=..., blocks=[],
-actions=[]) as of this sub-phase — nothing populates blocks/actions yet. Later
-sub-phases add producers (evidence-capture from tool results, a `present` tool) and
-consumers (web BlockRenderer, Telegram chart/chip rendering).
+bot/finance_agent.py::answer_question() returns an AgentReply(text, blocks, actions).
+As of Sub-phase 2, `blocks` is populated for two tools (get_spending_summary ->
+BreakdownBlock, get_month_comparison -> ComparisonBlock) via bot/finance_agent.py's
+_evidence_to_block() — either deterministically (no present() call this turn) or
+model-selected (via the present tool). Every other block-producing tool mapping,
+plus consumers (web BlockRenderer, Telegram chart/chip rendering), are later
+sub-phases' work.
 
-Field shapes for the 6 block variants are this session's design (no parent-plan
-document exists in-repo with byte-exact shapes) — safe to adjust before Sub-phase 2
-starts producing real instances, since blocks is always [] until then.
+Field shapes for the remaining unused block variants are still this session's design
+(no parent-plan document exists in-repo with byte-exact shapes) — safe to keep
+adjusting as real producers are added for each one.
 """
 import uuid
 from typing import Annotated, Literal
@@ -24,14 +27,17 @@ class MetricBlock(BaseModel):
     currency: str | None = None
 
 
+class ComparisonRow(BaseModel):
+    label: str  # e.g. a category name
+    values: list[float]  # aligned positionally to ComparisonBlock.series
+
+
 class ComparisonBlock(BaseModel):
     type: Literal["comparison"] = "comparison"
     label: str
-    left_label: str
-    left_value: str
-    right_label: str
-    right_value: str
     currency: str | None = None
+    series: list[str]  # e.g. ["This month", "Last month", "A year ago"]
+    rows: list[ComparisonRow] = []
 
 
 class BreakdownItem(BaseModel):

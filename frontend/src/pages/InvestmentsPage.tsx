@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { format, getMonth, parseISO, startOfYear, subDays, subMonths, subYears } from "date-fns";
 import { Briefcase, PieChart, Plus, Receipt, TrendingDown, TrendingUp } from "lucide-react";
@@ -20,8 +20,6 @@ import { FilterBar, type FilterValue } from "../components/FilterBar";
 import { StatCard } from "../components/StatCard";
 import { ChartCard } from "../components/ChartCard";
 import { AddTradeDialog } from "../components/AddTradeDialog";
-import { SwipeableSections } from "../components/SwipeableSections";
-import { MobileSectionTabs } from "../components/MobileSectionTabs";
 import { SectionPairRow } from "../components/SectionPairRow";
 import { MoreInsights } from "../components/MoreInsights";
 import { FinnInsightCard } from "../components/FinnInsightCard";
@@ -64,7 +62,7 @@ function periodCutoff(period: Period): string | null {
 type AllocationView = "broker" | "currency";
 type HoldingFilter = "all" | "gainers" | "losers";
 
-type InvestmentsTab =
+type InvestmentsSectionId =
   | "netWorth"
   | "netWorthOverTime"
   | "assetAllocation"
@@ -75,25 +73,12 @@ type InvestmentsTab =
   | "dividendsByCurrency"
   | "upcomingDividends"
   | "trades";
-const INVESTMENTS_TABS: { value: InvestmentsTab; label: string }[] = [
-  { value: "netWorth", label: "Summary" },
-  { value: "netWorthOverTime", label: "Net Worth Over Time" },
-  { value: "assetAllocation", label: "Asset Allocation" },
-  { value: "accountBalances", label: "Account Balances" },
-  { value: "positions", label: "Positions" },
-  { value: "topHoldings", label: "Top Holdings" },
-  { value: "dividendCalendar", label: "Dividend Calendar" },
-  { value: "dividendsByCurrency", label: "Dividends by Currency" },
-  { value: "upcomingDividends", label: "Upcoming Dividends" },
-  { value: "trades", label: "Trade History" },
-];
 
 export function InvestmentsPage() {
   const navigate = useNavigate();
   const [filters, setFilters] = useState<FilterValue>(defaultFilters);
   const [hasCustomFilters, setHasCustomFilters] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [mobileTab, setMobileTab] = useState<InvestmentsTab>("netWorth");
   const [period, setPeriod] = useState<Period>("All");
   const [selectedBrokerAccountId, setSelectedBrokerAccountId] = useState<string>("");
   const [allocationView, setAllocationView] = useState<AllocationView>("broker");
@@ -124,16 +109,7 @@ export function InvestmentsPage() {
   // against eventsQuery in the common case (no custom filters applied).
   const allDividendEventsQuery = usePortfolioEvents(undefined, undefined, displayCurrency);
 
-  const visible = (id: InvestmentsTab) => !hiddenDashboardSections.includes(sectionKey("investments", id));
-  const visibleTabs = useMemo(
-    () => INVESTMENTS_TABS.filter((t) => t.value === "netWorth" || visible(t.value)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [hiddenDashboardSections],
-  );
-
-  useEffect(() => {
-    if (!visibleTabs.some((t) => t.value === mobileTab)) setMobileTab("netWorth");
-  }, [visibleTabs, mobileTab]);
+  const visible = (id: InvestmentsSectionId) => !hiddenDashboardSections.includes(sectionKey("investments", id));
 
   const snapshots = useMemo(() => {
     const rows = snapshotsQuery.data ?? [];
@@ -296,38 +272,28 @@ export function InvestmentsPage() {
   const maxDividendMonth = Math.max(1, ...dividendMonthly.map((d) => d.value));
 
   const summaryPanel = (
-    <div className="space-y-3">
-      <NetWorthHeroCard
-        label="Total Market Value"
-        value={formatMoney(totalMarketValue, displayCurrency)}
-        deltaText={
-          netWorthDelta
-            ? `${formatMoney(Math.abs(netWorthDelta.abs), displayCurrency)}${netWorthDelta.pct !== null ? ` (${netWorthDelta.pct >= 0 ? "+" : ""}${netWorthDelta.pct.toFixed(1)}%)` : ""} this month`
-            : undefined
-        }
-        deltaDirection={netWorthDelta && netWorthDelta.abs < 0 ? "down" : "up"}
-        sparkline={monthlyNetWorthValues}
-        secondaryStats={[
-          { label: "Total Net Worth", value: formatMoney(totalNetWorth, displayCurrency) },
-          { label: "YTD Dividends", value: formatMoney(ytdDividends, displayCurrency) },
-        ]}
-      />
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <StatCard
-          label="Total Cost Basis"
-          value={formatMoney(costBasis, displayCurrency)}
-          icon={<Receipt size={20} />}
-          tint="amber"
-        />
-        <StatCard
-          label="Unrealized Gain"
-          value={formatMoney(gain, displayCurrency)}
-          icon={gain >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
-          tint={gain >= 0 ? "green" : "red"}
-          delta={{ value: formatPct(gainPct), direction: gain >= 0 ? "up" : "down" }}
-        />
-      </div>
-    </div>
+    <NetWorthHeroCard
+      label="Total Market Value"
+      value={formatMoney(totalMarketValue, displayCurrency)}
+      deltaText={
+        netWorthDelta
+          ? `${formatMoney(Math.abs(netWorthDelta.abs), displayCurrency)}${netWorthDelta.pct !== null ? ` (${netWorthDelta.pct >= 0 ? "+" : ""}${netWorthDelta.pct.toFixed(1)}%)` : ""} this month`
+          : undefined
+      }
+      deltaDirection={netWorthDelta && netWorthDelta.abs < 0 ? "down" : "up"}
+      sparkline={monthlyNetWorthValues}
+      secondaryStats={[
+        { label: "Total Net Worth", value: formatMoney(totalNetWorth, displayCurrency) },
+        { label: "YTD Dividends", value: formatMoney(ytdDividends, displayCurrency) },
+        { label: "Total Cost Basis", value: formatMoney(costBasis, displayCurrency) },
+        {
+          label: "Unrealized Gain",
+          value: formatMoney(gain, displayCurrency),
+          deltaText: formatPct(gainPct),
+          deltaDirection: gain >= 0 ? "up" : "down",
+        },
+      ]}
+    />
   );
 
   const insightRow = (
@@ -384,13 +350,8 @@ export function InvestmentsPage() {
     </div>
   );
 
-  // Sized so the whole card (title + chart) fits in the space actually left over
-  // on a phone screen — viewport height minus the sticky header, subheader, page
-  // title, filter bar, and bottom nav — instead of overflowing below the fold.
-  const mobileChartHeight = "min-h-[calc(100dvh_-_400px)] md:min-h-0";
-
   const netWorthOverTimeChart = (
-    <ChartCard title="Net Worth Over Time" fill className={mobileChartHeight}>
+    <ChartCard title="Net Worth Over Time" fill>
       <div className="mb-3">
         <TabToggle options={brokerOptions} value={selectedBrokerAccountId} onChange={setSelectedBrokerAccountId} />
       </div>
@@ -408,7 +369,6 @@ export function InvestmentsPage() {
     <ChartCard
       title="Asset Allocation"
       fill
-      className={mobileChartHeight}
       headerRight={
         <TabToggle
           options={[
@@ -543,14 +503,14 @@ export function InvestmentsPage() {
   );
 
   const dividendCalendarChart = (
-    <ChartCard title="Dividend Calendar" fill className={mobileChartHeight}>
-      <DividendCalendar events={events} fill />
+    <ChartCard title="Dividend Calendar">
+      <DividendCalendar events={events} />
     </ChartCard>
   );
 
   const dividendsByCurrencyChart = (
-    <ChartCard title="Dividends by Currency" fill className={mobileChartHeight}>
-      <DividendsByCurrencyDonut events={dividendEvents} displayCurrency={displayCurrency} fill />
+    <ChartCard title="Dividends by Currency">
+      <DividendsByCurrencyDonut events={dividendEvents} displayCurrency={displayCurrency} />
     </ChartCard>
   );
 
@@ -584,24 +544,8 @@ export function InvestmentsPage() {
     </ChartCard>
   );
 
-  const panels: Record<InvestmentsTab, ReactNode> = {
-    netWorth: summaryPanel,
-    netWorthOverTime: netWorthOverTimeChart,
-    assetAllocation: assetAllocationChart,
-    accountBalances: accountBalancesPanel,
-    positions: positionsPanel,
-    topHoldings: topHoldingsChart,
-    dividendCalendar: dividendCalendarChart,
-    dividendsByCurrency: dividendsByCurrencyChart,
-    upcomingDividends: upcomingDividendsPanel,
-    trades: tradesPanel,
-  };
-
   return (
     <div className="space-y-3">
-      <div className="md:hidden -mt-3 mb-4">
-        <MobileSectionTabs tabs={visibleTabs} active={mobileTab} onChange={setMobileTab} />
-      </div>
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <h1 className="flex items-center gap-2 text-lg sm:text-xl font-semibold shrink-0" style={{ color: "var(--text-heading)" }}>
           <PieChart size={22} />
@@ -631,44 +575,34 @@ export function InvestmentsPage() {
         <Plus size={24} />
       </Fab>
 
-      <SwipeableSections
-        tabs={visibleTabs}
-        active={mobileTab}
-        onChange={setMobileTab}
-        panels={panels}
-        desktopContent={
-          <>
-            {summaryPanel}
-            {insightRow}
+      {summaryPanel}
+      {insightRow}
 
-            {visible("positions") && positionsPanel}
+      {visible("positions") && positionsPanel}
 
-            <SectionPairRow
-              leftVisible={visible("netWorthOverTime")}
-              left={netWorthOverTimeChart}
-              rightVisible={visible("assetAllocation")}
-              right={assetAllocationChart}
-              className="items-stretch"
-            />
-
-            {visible("trades") && tradesPanel}
-
-            {(visible("accountBalances") ||
-              visible("topHoldings") ||
-              visible("dividendCalendar") ||
-              visible("dividendsByCurrency") ||
-              visible("upcomingDividends")) && (
-              <MoreInsights>
-                {visible("accountBalances") && accountBalancesPanel}
-                {visible("topHoldings") && topHoldingsChart}
-                {visible("dividendCalendar") && dividendCalendarChart}
-                {visible("dividendsByCurrency") && dividendsByCurrencyChart}
-                {visible("upcomingDividends") && upcomingDividendsPanel}
-              </MoreInsights>
-            )}
-          </>
-        }
+      <SectionPairRow
+        leftVisible={visible("netWorthOverTime")}
+        left={netWorthOverTimeChart}
+        rightVisible={visible("assetAllocation")}
+        right={assetAllocationChart}
+        className="items-stretch"
       />
+
+      {visible("trades") && tradesPanel}
+
+      {(visible("accountBalances") ||
+        visible("topHoldings") ||
+        visible("dividendCalendar") ||
+        visible("dividendsByCurrency") ||
+        visible("upcomingDividends")) && (
+        <MoreInsights>
+          {visible("accountBalances") && accountBalancesPanel}
+          {visible("topHoldings") && topHoldingsChart}
+          {visible("dividendCalendar") && dividendCalendarChart}
+          {visible("dividendsByCurrency") && dividendsByCurrencyChart}
+          {visible("upcomingDividends") && upcomingDividendsPanel}
+        </MoreInsights>
+      )}
 
       {dialogOpen && metaQuery.data && (
         <AddTradeDialog

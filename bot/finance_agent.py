@@ -5,7 +5,7 @@ from datetime import date, timedelta
 
 from dateutil.relativedelta import relativedelta
 
-from backend.blocks import AgentReply
+from backend.blocks import Action, AgentReply, Block, BreakdownBlock, BreakdownItem, ComparisonBlock, ComparisonRow
 from bot.deepseek_client import client
 from db.supabase import (
     contribute_to_goal as db_contribute_to_goal,
@@ -151,7 +151,14 @@ If a question doesn't fit any tool above (e.g. filtering transactions/trades/sna
 field or value combination), use query_financial_records as a fallback — it reads raw rows from
 transactions, portfolio_events, or asset_snapshots with your own filters, always scoped to this user's
 own data. Always give it a start_date/end_date. If its result says truncated, narrow your filters and
-call it again rather than summarizing a partial result as if it were complete."""
+call it again rather than summarizing a partial result as if it were complete.
+
+After you've called the tools you need, you may optionally call present(show=[...]) to mark
+which of those tool calls are worth showing the user as a chart alongside your reply — good
+candidates are get_spending_summary (a category breakdown) or get_month_comparison (a
+month-over-month comparison). This is optional polish, not a requirement: most turns, especially
+advice-only or settings-editing ones, don't need it. If you do call it, still give your normal
+written answer right after — present() never substitutes for your text reply."""
 
 
 def _memories_block(memories: list[dict]) -> str:
@@ -904,6 +911,47 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "present",
+            "description": (
+                "Optional final step, call it at most once per turn: mark which of the tool "
+                "calls you already made this turn are worth showing the user as a chart/card "
+                "alongside your written reply, and (optionally) offer one-click follow-up "
+                "actions. Indices in `show` are 0-based, in the order you called your own "
+                "tools this turn (across this whole conversation turn, not just the most "
+                "recent round), NOT counting this present call itself. After calling this, "
+                "still give your normal written answer next — present() never replaces your "
+                "text reply, it only adds a visual. Skip this tool entirely for questions that "
+                "don't benefit from a visual (advice-only, yes/no, or settings-editing turns)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "show": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "0-based indices of your own prior tool calls this turn worth showing as a visual.",
+                    },
+                    "actions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "label": {"type": "string"},
+                                "kind": {"type": "string"},
+                            },
+                            "required": ["id", "label", "kind"],
+                        },
+                        "description": "Optional one-click follow-up suggestions to offer as buttons. Leave empty if none apply.",
+                    },
+                },
+                "required": ["show"],
+            },
+        },
+    },
 ]
 
 
@@ -1258,6 +1306,38 @@ def _run_tool(name: str, args: dict, user_id: str, currency: str, classification
     return {"error": f"unknown tool {name!r}"}
 
 
+def _evidence_to_block(ev: dict) -> Block | None:
+    """Deterministic tool-result -> Block mapping (Sub-phase 2, Part 1). Only two
+    tools produce a block today; every other tool's evidence is captured but
+    produces no block yet — extend this as more block types prove useful."""
+    tool, result, currency = ev["tool"], ev["result"], ev.get("currency")
+    if tool == "get_spending_summary":
+        by_category = result.get("by_category") or {}
+        if not by_category:
+            return None
+        total = sum(by_category.values()) or 1
+        items = [
+            BreakdownItem(label=cat, value=amount, pct=round(amount / total * 100, 1))
+            for cat, amount in by_category.items()
+        ]
+        period = result.get("period", "")
+        return BreakdownBlock(label=f"Spending by category — {period}".strip(" —"), currency=currency, items=items)
+    if tool == "get_month_comparison":
+        rows = result.get("categories") or []
+        if not rows:
+            return None
+        return ComparisonBlock(
+            label="Month-over-month spending",
+            currency=currency,
+            series=["This month", "Last month", "A year ago"],
+            rows=[
+                ComparisonRow(label=r["category"], values=[r["current"], r["previous"], r["year_ago"]])
+                for r in rows
+            ],
+        )
+    return None
+
+
 def answer_question(uid: int | str, raw_text: str, user_id: str, channel: str = "telegram") -> AgentReply:
     """Runs a bounded tool-calling loop against DeepSeek. Never raises — any failure
     (network, malformed tool call, missing user record, etc.) is caught and turned
@@ -1285,6 +1365,8 @@ def answer_question(uid: int | str, raw_text: str, user_id: str, channel: str = 
         messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": raw_text}]
 
         final_text = None
+        evidence: list[dict] = []
+        presented: dict | None = None
         for _ in range(MAX_TOOL_ROUNDS):
             response = client.chat.completions.create(
                 model=AGENT_MODEL,
@@ -1300,15 +1382,43 @@ def answer_question(uid: int | str, raw_text: str, user_id: str, channel: str = 
             for tc in msg.tool_calls:
                 args = json.loads(tc.function.arguments or "{}")
                 logger.info("answer_question: tool=%s args=%s user_id=%s", tc.function.name, args, uid)
-                result = _run_tool(tc.function.name, args, user_id, currency, classifications)
+                if tc.function.name == "present":
+                    presented = args
+                    result = {"ok": True}
+                else:
+                    result = _run_tool(tc.function.name, args, user_id, currency, classifications)
+                    evidence.append({"tool": tc.function.name, "result": result, "currency": currency})
                 messages.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(result, default=str)})
         if final_text is None:
             final_text = "Sorry, I couldn't finish answering that — try a more specific question."
 
         history = history + [{"role": "user", "content": raw_text}, {"role": "assistant", "content": final_text}]
         chat_history[uid] = history[-(MAX_HISTORY_TURNS * 2):]
+
+        blocks: list[Block] = []
+        actions: list[Action] = []
+        try:
+            if presented is not None:
+                for idx in presented.get("show") or []:
+                    if isinstance(idx, int) and 0 <= idx < len(evidence):
+                        block = _evidence_to_block(evidence[idx])
+                        if block is not None:
+                            blocks.append(block)
+                for a in presented.get("actions") or []:
+                    actions.append(Action(**a))
+            else:
+                # Part 1 fallback: no present() call this turn (the common case) —
+                # deterministically surface a block for every known-mappable tool call,
+                # so blocks aren't gated entirely behind the model remembering to ask.
+                for ev in evidence:
+                    block = _evidence_to_block(ev)
+                    if block is not None:
+                        blocks.append(block)
+        except Exception:
+            logger.exception("answer_question: block-building failed for user_id=%s", uid)
+            blocks, actions = [], []
     except Exception:
         logger.exception("answer_question: failed answering for user_id=%s", uid)
         return AgentReply(text="⚠️ Something went wrong answering that — please try again.")
 
-    return AgentReply(text=final_text)
+    return AgentReply(text=final_text, blocks=blocks, actions=actions)
