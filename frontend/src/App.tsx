@@ -6,6 +6,7 @@ import { SpendingPage } from "./pages/SpendingPage";
 import { InvestmentsPage } from "./pages/InvestmentsPage";
 import { ChatPage } from "./pages/ChatPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { ChartLabPage } from "./pages/ChartLabPage";
 
 function App() {
   return (
@@ -18,6 +19,8 @@ function App() {
           <Route path="/investments" element={<InvestmentsPage />} />
           <Route path="/chat" element={<ChatPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          {/* Hidden dev-only pilot page, not in Layout's nav — see CLAUDE.md-adjacent plan doc */}
+          <Route path="/chart-lab" element={<ChartLabPage />} />
           <Route path="*" element={<Navigate to="/overview" replace />} />
         </Route>
       </Routes>
