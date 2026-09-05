@@ -1,11 +1,11 @@
 import clsx from "clsx";
 
-/** Mobile-only sticky subheader that lets a long page (Spending/Investments/Portfolio)
- * switch between its sections instead of scrolling through all of them at once.
- * Single-select — exactly one tab is active at a time. Scrolls horizontally (rather
- * than stretching to fit) so it stays comfortable to tap with any number of tabs.
- * Desktop is unaffected — each page keeps showing every section via `SwipeableSections`'
- * `md:block` override. */
+/** Mobile-only sticky subheader that lets a "pick one section" page (currently
+ * just Settings) switch between its sections instead of scrolling through all of
+ * them at once. Single-select — exactly one tab is active at a time. Scrolls
+ * horizontally (rather than stretching to fit) so it stays comfortable to tap
+ * with any number of tabs. Not used by Spending/Investments — those are
+ * continuous-scroll dashboards, not section-switchers. */
 export function MobileSectionTabs<T extends string>({
   tabs,
   active,

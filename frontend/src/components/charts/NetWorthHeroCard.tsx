@@ -3,6 +3,8 @@ import { Sparkline } from "./Sparkline";
 export interface HeroSecondaryStat {
   label: string;
   value: string;
+  deltaText?: string;
+  deltaDirection?: "up" | "down";
 }
 
 /** The brand-gradient hero card used by both Overview (net worth) and Investments
@@ -65,6 +67,14 @@ export function NetWorthHeroCard({
                 {s.label}
               </div>
               <div className="text-base font-semibold tabular-nums mt-0.5">{s.value}</div>
+              {s.deltaText && (
+                <div
+                  className="text-xs font-medium mt-0.5"
+                  style={{ color: s.deltaDirection === "down" ? "#fecaca" : "#bbf7d0" }}
+                >
+                  {s.deltaDirection === "down" ? "▼" : "▲"} {s.deltaText}
+                </div>
+              )}
             </div>
           ))}
         </div>

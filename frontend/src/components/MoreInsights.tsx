@@ -4,9 +4,8 @@ import { Card } from "./ui/Card";
 
 /** Progressive-disclosure drawer for secondary charts that don't earn a spot in
  * the primary hero row — collapsed by default, matching the mockup's "3 primary
- * cards, the rest behind More insights" move. Desktop-only wrapper: each child
- * chart still renders on mobile via the page's existing MobileSectionTabs/
- * SwipeableSections tab, unaffected by this collapsed/expanded state. */
+ * cards, the rest behind More insights" move. Rendered identically on mobile and
+ * desktop (no viewport branching) — same as every other section on the page. */
 export function MoreInsights({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
 
