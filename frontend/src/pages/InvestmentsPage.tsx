@@ -21,7 +21,6 @@ import { StatCard } from "../components/StatCard";
 import { ChartCard } from "../components/ChartCard";
 import { AddTradeDialog } from "../components/AddTradeDialog";
 import { SectionPairRow } from "../components/SectionPairRow";
-import { MoreInsights } from "../components/MoreInsights";
 import { FinnInsightCard } from "../components/FinnInsightCard";
 import { NetWorthHeroCard } from "../components/charts/NetWorthHeroCard";
 import { NetWorthLineChart } from "../components/charts/NetWorthLineChart";
@@ -590,19 +589,11 @@ export function InvestmentsPage() {
 
       {visible("trades") && tradesPanel}
 
-      {(visible("accountBalances") ||
-        visible("topHoldings") ||
-        visible("dividendCalendar") ||
-        visible("dividendsByCurrency") ||
-        visible("upcomingDividends")) && (
-        <MoreInsights>
-          {visible("accountBalances") && accountBalancesPanel}
-          {visible("topHoldings") && topHoldingsChart}
-          {visible("dividendCalendar") && dividendCalendarChart}
-          {visible("dividendsByCurrency") && dividendsByCurrencyChart}
-          {visible("upcomingDividends") && upcomingDividendsPanel}
-        </MoreInsights>
-      )}
+      {visible("accountBalances") && accountBalancesPanel}
+      {visible("topHoldings") && topHoldingsChart}
+      {visible("dividendCalendar") && dividendCalendarChart}
+      {visible("dividendsByCurrency") && dividendsByCurrencyChart}
+      {visible("upcomingDividends") && upcomingDividendsPanel}
 
       {dialogOpen && metaQuery.data && (
         <AddTradeDialog
