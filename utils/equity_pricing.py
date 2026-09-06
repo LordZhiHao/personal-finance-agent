@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import yfinance as yf
 
-from db.supabase import get_ticker_metadata
+from db.supabase import get_ticker_metadata, get_ticker_metadata_batch
 from utils.constants import TICKER_YFINANCE_MAP
 from utils.logger import get_logger
 
@@ -17,6 +17,17 @@ def resolve_yfinance_symbol(ticker: str) -> str:
     if meta and meta.get("yfinance_symbol"):
         return meta["yfinance_symbol"]
     return TICKER_YFINANCE_MAP.get(ticker, ticker)
+
+
+def resolve_yfinance_symbols_batch(tickers: list[str]) -> dict[str, str]:
+    """Batched version of resolve_yfinance_symbol — one ticker_metadata query for
+    every ticker instead of one query each, for call sites (e.g. the dividend
+    forecast endpoint) that need to resolve several tickers at once."""
+    meta = get_ticker_metadata_batch(tickers)
+    return {
+        t: (meta.get(t) or {}).get("yfinance_symbol") or TICKER_YFINANCE_MAP.get(t, t)
+        for t in tickers
+    }
 
 
 def fetch_prices(symbols: list[str]) -> dict[str, dict]:

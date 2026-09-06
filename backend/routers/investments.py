@@ -15,7 +15,7 @@ from db.supabase import (
 )
 from scheduler.equity_price_updater import update_equity_prices
 from utils.dividends import compute_dividend_total
-from utils.equity_pricing import fetch_dividend_forecast, resolve_yfinance_symbol
+from utils.equity_pricing import fetch_dividend_forecast, resolve_yfinance_symbols_batch
 from utils.fx import convert
 from utils.portfolio import compute_holdings_summary
 
@@ -135,13 +135,23 @@ def dividends_summary(
     return compute_dividend_total(user_id, currency, start_date, end_date)
 
 
+def _compute_dividend_forecast(user_id: str) -> list[dict]:
+    """Synchronous body of GET /dividend-forecast — held-position lookup, ticker
+    resolution, and the yfinance call are all blocking I/O, so this whole function
+    must run inside a threadpool rather than directly on the event loop (previously
+    only the yfinance call was threadpooled, while the blocking Supabase calls ran
+    inline in an `async def` route — stalling the event loop, and every other
+    request in the process, for their duration)."""
+    positions = get_held_positions(user_id)
+    tickers = sorted({p["ticker"] for p in positions})
+    symbols = resolve_yfinance_symbols_batch(tickers)
+    forecast = fetch_dividend_forecast(sorted(set(symbols.values())))
+    return [{"ticker": t, **forecast.get(symbols[t], {})} for t in tickers]
+
+
 @router.get("/dividend-forecast")
 async def dividend_forecast(user_id: str = Depends(get_current_user)):
     """Next-known ex-dividend date/rate/yield per currently held ticker, where
     Yahoo Finance has that data. Runs in a threadpool since it's blocking yfinance
     I/O, same as /refresh-prices."""
-    positions = get_held_positions(user_id)
-    tickers = sorted({p["ticker"] for p in positions})
-    symbols = {t: resolve_yfinance_symbol(t) for t in tickers}
-    forecast = await run_in_threadpool(fetch_dividend_forecast, sorted(set(symbols.values())))
-    return [{"ticker": t, **forecast.get(symbols[t], {})} for t in tickers]
+    return await run_in_threadpool(_compute_dividend_forecast, user_id)

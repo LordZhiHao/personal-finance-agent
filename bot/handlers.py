@@ -64,9 +64,12 @@ NO_ACCOUNTS_MSG = (
 )
 
 
-def _resolve_user(update: Update) -> dict | None:
-    """Looks up the web account (a `users` row) linked to this Telegram chat, if any."""
-    return get_user_by_telegram_chat_id(update.effective_user.id)
+async def _resolve_user(update: Update) -> dict | None:
+    """Looks up the web account (a `users` row) linked to this Telegram chat, if any.
+    Offloaded via asyncio.to_thread since get_user_by_telegram_chat_id is a blocking
+    Supabase call — called bare inside async def it would otherwise stall the bot's
+    single event loop (and every other user's messages) for the round-trip."""
+    return await asyncio.to_thread(get_user_by_telegram_chat_id, update.effective_user.id)
 
 
 def _escape_md(text: str) -> str:
@@ -124,6 +127,7 @@ def save_extraction(
     account_id: str,
     receipt_bytes: bytes | None = None,
     receipt_content_type: str | None = None,
+    rules: list[dict] | None = None,
 ) -> dict:
     """Builds transaction/portfolio_event rows from extracted `data` and commits them
     immediately to Supabase against `account_id` — no confirm step. Shared by the
@@ -132,7 +136,13 @@ def save_extraction(
 
     If `receipt_bytes` is provided, the original photo/PDF is uploaded to Supabase
     Storage and every inserted row is linked to it via receipt_id — best-effort only,
-    a failed upload is logged and swallowed rather than blocking the actual save."""
+    a failed upload is logged and swallowed rather than blocking the actual save.
+
+    `rules` lets a caller that already fetched get_category_rules(user_id) (e.g. for
+    the extraction prompt hint) pass it straight through instead of this function
+    fetching the same rows again — a real, duplicate round-trip otherwise, since every
+    commit path already fetches rules once upstream. Callers with no rules on hand
+    (e.g. backend/routers/chat.py's commit endpoint) can omit it and it's fetched here."""
     receipt_id = None
     if receipt_bytes:
         try:
@@ -146,7 +156,8 @@ def save_extraction(
     # rules as prompt hints, see bot/extractor.py) is overridden here regardless, so a
     # saved rule always wins. Runs for every commit path, since they all call this
     # one function (bot handlers below and backend/routers/chat.py).
-    rules = get_category_rules(user_id)
+    if rules is None:
+        rules = get_category_rules(user_id)
     matched_rule_ids = apply_rules(data.get("transactions", []), rules)
     if matched_rule_ids:
         increment_rule_hit_counts(matched_rule_ids, user_id)
@@ -200,11 +211,16 @@ async def _finalize(
     account_id: str,
     receipt_bytes: bytes | None = None,
     receipt_content_type: str | None = None,
+    rules: list[dict] | None = None,
 ) -> None:
     """Commits via save_extraction, records ids in last_saved for /undo, and replies with
     a summary. Shared tail end of both the confident-match path and the account-choice
     callback below."""
-    result = save_extraction(data, user_id, account_id, receipt_bytes, receipt_content_type)
+    # save_extraction does several blocking Supabase calls — offloaded so it doesn't
+    # stall the bot's single event loop (and every other user's messages) while it runs.
+    result = await asyncio.to_thread(
+        save_extraction, data, user_id, account_id, receipt_bytes, receipt_content_type, rules
+    )
     last_saved[uid] = {
         "transaction_ids": result["transaction_ids"],
         "portfolio_event_ids": result["portfolio_event_ids"],
@@ -223,18 +239,23 @@ async def _commit_and_reply(
     uid: int,
     receipt_bytes: bytes | None = None,
     receipt_content_type: str | None = None,
+    rules: list[dict] | None = None,
 ) -> None:
     """Shared tail end of handle_photo/handle_document/handle_text's record path:
     resolves the caller's accounts, uses match_account to pick one (or asks via an
     inline-keyboard prompt if unsure), then auto-commits (no confirm step for the
     entry's contents — only the account can be ambiguous)."""
-    accounts = get_accounts(user_id=user_id)
+    accounts = await asyncio.to_thread(get_accounts, user_id=user_id)
     if not accounts:
         logger.info("_commit_and_reply: no accounts for user_id=%s", uid)
         await update.message.reply_text(NO_ACCOUNTS_MSG)
         return
     if data.get("portfolio_events"):
-        enriched = [enrich_portfolio_event(e) for e in data["portfolio_events"]]
+        # Each event's ticker-resolution/price-lookup is independent of the others —
+        # run them concurrently instead of one at a time.
+        enriched = await asyncio.gather(
+            *(asyncio.to_thread(enrich_portfolio_event, e) for e in data["portfolio_events"])
+        )
         data["portfolio_events"] = [e for e in enriched if e.get("quantity")]
         if len(data["portfolio_events"]) < len(enriched):
             await update.message.reply_text(
@@ -243,15 +264,16 @@ async def _commit_and_reply(
             )
         if not data.get("transactions") and not data["portfolio_events"]:
             return
-    match = match_account(data, accounts)
+    match = await asyncio.to_thread(match_account, data, accounts)
     if match["account_id"]:
-        await _finalize(update, data, user_id, uid, match["account_id"], receipt_bytes, receipt_content_type)
+        await _finalize(update, data, user_id, uid, match["account_id"], receipt_bytes, receipt_content_type, rules)
         return
     pending_account_choice[uid] = {
         "data": data,
         "user_id": user_id,
         "receipt_bytes": receipt_bytes,
         "receipt_content_type": receipt_content_type,
+        "rules": rules,
     }
     keyboard = InlineKeyboardMarkup(
         [[InlineKeyboardButton(a["name"], callback_data=f"acct:{a['id']}")] for a in match["candidates"]]
@@ -280,11 +302,12 @@ async def handle_account_choice_callback(update: Update, context: ContextTypes.D
         account_id,
         pending.get("receipt_bytes"),
         pending.get("receipt_content_type"),
+        pending.get("rules"),
     )
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = _resolve_user(update)
+    user = await _resolve_user(update)
     if not user:
         await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
@@ -292,13 +315,22 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("handle_photo: received photo from user_id=%s", uid)
     await update.message.reply_text("⏳ Extracting transactions...")
     photo = await update.message.photo[-1].get_file()
-    image_bytes = await photo.download_as_bytearray()
+    image_bytes = bytes(await photo.download_as_bytearray())
+    # categories/rules are independent Supabase reads — fetched concurrently instead
+    # of one after another.
+    categories, rules = await asyncio.gather(
+        asyncio.to_thread(get_categories_for_user, user["id"]),
+        asyncio.to_thread(get_category_rules, user["id"]),
+    )
     try:
-        data = extract_from_image(
-            bytes(image_bytes),
-            categories=get_categories_for_user(user["id"]),
+        # Blocking Gemini call — offloaded so it doesn't stall the bot's single event
+        # loop (and every other user's messages) while it runs.
+        data = await asyncio.to_thread(
+            extract_from_image,
+            image_bytes,
+            categories=categories,
             default_currency=user.get("main_currency", "SGD"),
-            rules=get_category_rules(user["id"]),
+            rules=rules,
         )
     except (json.JSONDecodeError, ValueError):
         logger.exception("handle_photo: extraction failed for user_id=%s", uid)
@@ -313,11 +345,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "handle_photo: extracted %d transaction(s), %d portfolio event(s) for user_id=%s",
         len(data.get("transactions", [])), len(data.get("portfolio_events", [])), uid,
     )
-    await _commit_and_reply(update, data, user["id"], uid, bytes(image_bytes), "image/jpeg")
+    await _commit_and_reply(update, data, user["id"], uid, image_bytes, "image/jpeg", rules)
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = _resolve_user(update)
+    user = await _resolve_user(update)
     if not user:
         await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
@@ -325,22 +357,27 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     doc = update.message.document
     logger.info("handle_document: received %s from user_id=%s", doc.mime_type, uid)
     file = await doc.get_file()
-    file_bytes = await file.download_as_bytearray()
+    file_bytes = bytes(await file.download_as_bytearray())
 
     await update.message.reply_text("⏳ Processing document...")
 
-    categories = get_categories_for_user(user["id"])
+    categories, rules = await asyncio.gather(
+        asyncio.to_thread(get_categories_for_user, user["id"]),
+        asyncio.to_thread(get_category_rules, user["id"]),
+    )
     default_currency = user.get("main_currency", "SGD")
-    rules = get_category_rules(user["id"])
     try:
+        # Blocking Gemini/Poppler calls — offloaded so they don't stall the bot's single
+        # event loop (and every other user's messages) while they run. Multi-page PDFs
+        # are further parallelized page-by-page inside extract_from_pdf_images itself.
         if doc.mime_type == "application/pdf":
-            data = extract_from_pdf_images(
-                bytes(file_bytes), categories=categories, default_currency=default_currency, rules=rules
+            data = await asyncio.to_thread(
+                extract_from_pdf_images, file_bytes, categories=categories, default_currency=default_currency, rules=rules
             )
             data["source"] = "telegram_pdf"
         else:
-            data = extract_from_image(
-                bytes(file_bytes), categories=categories, default_currency=default_currency, rules=rules
+            data = await asyncio.to_thread(
+                extract_from_image, file_bytes, categories=categories, default_currency=default_currency, rules=rules
             )
             data["source"] = "telegram_image"
     except (json.JSONDecodeError, ValueError):
@@ -356,11 +393,11 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "handle_document: extracted %d transaction(s), %d portfolio event(s) for user_id=%s",
         len(data.get("transactions", [])), len(data.get("portfolio_events", [])), uid,
     )
-    await _commit_and_reply(update, data, user["id"], uid, bytes(file_bytes), doc.mime_type)
+    await _commit_and_reply(update, data, user["id"], uid, file_bytes, doc.mime_type, rules)
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = _resolve_user(update)
+    user = await _resolve_user(update)
     if not user:
         await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
@@ -368,22 +405,31 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_text = update.message.text.strip()
     uid = update.effective_user.id
 
-    intent = classify_intent(raw_text)
+    # Blocking DeepSeek call — offloaded so it doesn't stall the bot's single event
+    # loop (and every other user's messages) while it runs.
+    intent = await asyncio.to_thread(classify_intent, raw_text)
     logger.info("handle_text: intent=%s for user_id=%s", intent, uid)
 
     if intent == "chat":
-        envelope = answer_question(uid, raw_text, user_id)
+        # answer_question runs a multi-round DeepSeek tool-calling loop internally —
+        # offloaded for the same reason as classify_intent above.
+        envelope = await asyncio.to_thread(answer_question, uid, raw_text, user_id)
         for chunk in chunk_lines(envelope.text.split("\n")):
             await update.message.reply_text(chunk)
         return
 
     logger.info("handle_text: parsing free-text entry from user_id=%s", uid)
+    categories, rules = await asyncio.gather(
+        asyncio.to_thread(get_categories_for_user, user_id),
+        asyncio.to_thread(get_category_rules, user_id),
+    )
     try:
-        data = extract_from_text(
+        data = await asyncio.to_thread(
+            extract_from_text,
             raw_text,
-            categories=get_categories_for_user(user_id),
+            categories=categories,
             default_currency=user.get("main_currency", "SGD"),
-            rules=get_category_rules(user_id),
+            rules=rules,
         )
     except (json.JSONDecodeError, ValueError):
         logger.exception("handle_text: extraction failed for user_id=%s", uid)
@@ -404,7 +450,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "handle_text: extracted %d transaction(s), %d portfolio event(s) for user_id=%s",
         len(data.get("transactions", [])), len(data.get("portfolio_events", [])), uid,
     )
-    await _commit_and_reply(update, data, user_id, uid)
+    await _commit_and_reply(update, data, user_id, uid, rules=rules)
 
 
 async def handle_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -417,7 +463,7 @@ async def handle_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return
     code = context.args[0].strip()
-    user = consume_telegram_link_code(code, update.effective_user.id)
+    user = await asyncio.to_thread(consume_telegram_link_code, code, update.effective_user.id)
     if not user:
         await update.message.reply_text("❌ That code is invalid or expired. Generate a new one from the dashboard.")
         return
@@ -426,7 +472,7 @@ async def handle_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def handle_newaccount_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = _resolve_user(update)
+    user = await _resolve_user(update)
     if not user:
         await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
@@ -444,13 +490,13 @@ async def handle_newaccount_command(update: Update, context: ContextTypes.DEFAUL
     if currency not in CURRENCIES:
         await update.message.reply_text(f"Currency must be one of: {', '.join(CURRENCIES)}")
         return
-    account = create_account(user["id"], name, type_, currency)
+    account = await asyncio.to_thread(create_account, user["id"], name, type_, currency)
     logger.info("handle_newaccount_command: user_id=%s created account_id=%s", user["id"], account["id"])
     await update.message.reply_text(f"✅ Created account '{account['name']}' ({account['type']}, {account['currency']})")
 
 
 async def handle_expense_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = _resolve_user(update)
+    user = await _resolve_user(update)
     if not user:
         await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
@@ -458,8 +504,11 @@ async def handle_expense_command(update: Update, context: ContextTypes.DEFAULT_T
     currency = user.get("main_currency", DEFAULT_CURRENCY)
     arg = context.args[0] if context.args else None
     start, end, label = parse_period(arg)
-    txns = get_transactions(start.isoformat(), end.isoformat(), user["id"])
-    classifications = get_category_classifications_for_user(user["id"])
+    # Independent Supabase reads — fetched concurrently instead of one after another.
+    txns, classifications = await asyncio.gather(
+        asyncio.to_thread(get_transactions, start.isoformat(), end.isoformat(), user["id"]),
+        asyncio.to_thread(get_category_classifications_for_user, user["id"]),
+    )
     summary = summarize_transactions(txns, classifications)
 
     lines = [f"📊 *Expense Summary* — {label}", ""]
@@ -482,15 +531,18 @@ async def handle_expense_command(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def handle_compare_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = _resolve_user(update)
+    user = await _resolve_user(update)
     if not user:
         await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
     uid = update.effective_user.id
     currency = user.get("main_currency", DEFAULT_CURRENCY)
     start = date.today() - relativedelta(months=13)
-    txns = get_transactions(start.isoformat(), date.today().isoformat(), user["id"])
-    rows = month_comparison(txns, get_category_classifications_for_user(user["id"]))[:8]
+    txns, classifications = await asyncio.gather(
+        asyncio.to_thread(get_transactions, start.isoformat(), date.today().isoformat(), user["id"]),
+        asyncio.to_thread(get_category_classifications_for_user, user["id"]),
+    )
+    rows = month_comparison(txns, classifications)[:8]
     if not rows:
         await update.message.reply_text("No expenses in the last 13 months to compare.")
         return
@@ -509,13 +561,13 @@ async def handle_compare_command(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def handle_portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = _resolve_user(update)
+    user = await _resolve_user(update)
     if not user:
         await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
     uid = update.effective_user.id
     currency = user.get("main_currency", DEFAULT_CURRENCY)
-    summary = compute_holdings_summary(user["id"], currency)
+    summary = await asyncio.to_thread(compute_holdings_summary, user["id"], currency)
     if not summary["holdings"]:
         await update.message.reply_text("No holdings found.")
         return
@@ -543,18 +595,18 @@ async def handle_portfolio_command(update: Update, context: ContextTypes.DEFAULT
 
 
 async def handle_dividends_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = _resolve_user(update)
+    user = await _resolve_user(update)
     if not user:
         await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
     uid = update.effective_user.id
-    positions = get_held_positions(user["id"])
+    positions = await asyncio.to_thread(get_held_positions, user["id"])
     tickers = sorted({p["ticker"] for p in positions})
     if not tickers:
         await update.message.reply_text("No holdings found.")
         return
 
-    symbols = {t: resolve_yfinance_symbol(t) for t in tickers}
+    symbols = await asyncio.to_thread(lambda: {t: resolve_yfinance_symbol(t) for t in tickers})
     await update.message.reply_text("⏳ Checking dividend forecasts...")
     # Blocking yfinance I/O — offloaded to a thread so it doesn't stall the bot's
     # single asyncio event loop (and every other user's messages) while it runs.
@@ -583,7 +635,7 @@ ALLOCATION_GROUPS = {"ticker": "ticker", "account": "account_name", "currency": 
 
 
 async def handle_allocation_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = _resolve_user(update)
+    user = await _resolve_user(update)
     if not user:
         await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
@@ -595,7 +647,7 @@ async def handle_allocation_command(update: Update, context: ContextTypes.DEFAUL
         return
     group_key = ALLOCATION_GROUPS[group_arg]
 
-    summary = compute_holdings_summary(user["id"], currency)
+    summary = await asyncio.to_thread(compute_holdings_summary, user["id"], currency)
     if not summary["holdings"] or not summary["total_market_value"]:
         await update.message.reply_text("No priced holdings to allocate.")
         return
@@ -619,13 +671,13 @@ async def handle_allocation_command(update: Update, context: ContextTypes.DEFAUL
 
 
 async def handle_assets_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = _resolve_user(update)
+    user = await _resolve_user(update)
     if not user:
         await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
     uid = update.effective_user.id
     currency = user.get("main_currency", DEFAULT_CURRENCY)
-    snapshots = get_latest_snapshots(user_id=user["id"])
+    snapshots = await asyncio.to_thread(get_latest_snapshots, user_id=user["id"])
     if not snapshots:
         await update.message.reply_text("No asset snapshots found.")
         return
@@ -639,7 +691,7 @@ async def handle_assets_command(update: Update, context: ContextTypes.DEFAULT_TY
     lines.append("")
     lines.append(f"Total: {format_money(total, currency)}")
 
-    trend = compute_net_worth_trend(user["id"], currency, lookback_days=7)
+    trend = await asyncio.to_thread(compute_net_worth_trend, user["id"], currency, lookback_days=7)
     if trend["delta"] is not None:
         arrow = "▲" if trend["delta"] >= 0 else "▼"
         lines.append(
@@ -653,7 +705,7 @@ async def handle_assets_command(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def handle_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = _resolve_user(update)
+    user = await _resolve_user(update)
     if not user:
         await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
@@ -661,14 +713,14 @@ async def handle_balance_command(update: Update, context: ContextTypes.DEFAULT_T
     currency = user.get("main_currency", DEFAULT_CURRENCY)
     query = " ".join(context.args).strip().lower() if context.args else None
 
-    accounts = get_accounts(user_id=user["id"])
+    accounts = await asyncio.to_thread(get_accounts, user_id=user["id"])
     if query:
         accounts = [a for a in accounts if query in a["name"].lower()]
         if not accounts:
             await update.message.reply_text(f"No account matching '{query}'.")
             return
 
-    result = compute_account_balances(user["id"], currency, accounts=accounts)
+    result = await asyncio.to_thread(compute_account_balances, user["id"], currency, accounts=accounts)
 
     lines = [f"💳 *Balances* — {currency}", ""]
     for b in result["balances"]:
@@ -685,7 +737,7 @@ async def handle_balance_command(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def handle_recent_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = _resolve_user(update)
+    user = await _resolve_user(update)
     if not user:
         await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
@@ -696,7 +748,7 @@ async def handle_recent_command(update: Update, context: ContextTypes.DEFAULT_TY
         n = 10
     n = max(1, min(n, 30))  # cap to stay comfortably under the Telegram message limit
 
-    txns = get_recent_transactions(n, user["id"])
+    txns = await asyncio.to_thread(get_recent_transactions, n, user["id"])
     if not txns:
         await update.message.reply_text("No transactions found.")
         return
@@ -716,7 +768,7 @@ async def handle_recent_command(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def handle_undo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = _resolve_user(update)
+    user = await _resolve_user(update)
     if not user:
         await update.message.reply_text(UNLINKED_MSG, parse_mode="Markdown")
         return
@@ -727,9 +779,9 @@ async def handle_undo_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     if saved["transaction_ids"]:
-        delete_transactions(saved["transaction_ids"], user["id"])
+        await asyncio.to_thread(delete_transactions, saved["transaction_ids"], user["id"])
     if saved["portfolio_event_ids"]:
-        delete_portfolio_events(saved["portfolio_event_ids"], user["id"])
+        await asyncio.to_thread(delete_portfolio_events, saved["portfolio_event_ids"], user["id"])
     total = len(saved["transaction_ids"]) + len(saved["portfolio_event_ids"])
 
     logger.info("handle_undo_command: user_id=%s reverted %d entries", uid, total)

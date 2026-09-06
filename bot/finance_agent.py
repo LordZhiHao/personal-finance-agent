@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 
 from dateutil.relativedelta import relativedelta
@@ -1352,15 +1353,23 @@ def answer_question(uid: int | str, raw_text: str, user_id: str, channel: str = 
     exactly as they rendered the old plain-string return."""
     history = chat_history.get(uid, [])
     try:
-        memories = get_user_memories(user_id)
-    except Exception:
-        logger.exception("answer_question: get_user_memories failed for user_id=%s", user_id)
-        memories = []
+        # These three reads are independent of each other — fetched concurrently
+        # instead of one after another (this function is synchronous and already
+        # runs inside a worker thread via asyncio.to_thread/run_in_threadpool, so a
+        # small thread pool is used here rather than asyncio).
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            memories_future = pool.submit(get_user_memories, user_id)
+            user_future = pool.submit(get_user_by_id, user_id)
+            classifications_future = pool.submit(get_category_classifications_for_user, user_id)
+            try:
+                memories = memories_future.result()
+            except Exception:
+                logger.exception("answer_question: get_user_memories failed for user_id=%s", user_id)
+                memories = []
+            user = user_future.result()
+            classifications = classifications_future.result()
 
-    try:
-        user = get_user_by_id(user_id)
         currency = (user or {}).get("main_currency") or DEFAULT_CURRENCY
-        classifications = get_category_classifications_for_user(user_id)
         system_prompt = _build_system_prompt(channel, memories, currency, user or {})
         messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": raw_text}]
 
@@ -1379,14 +1388,27 @@ def answer_question(uid: int | str, raw_text: str, user_id: str, channel: str = 
                 final_text = msg.content
                 break
             messages.append(msg.model_dump(exclude_unset=True))
-            for tc in msg.tool_calls:
-                args = json.loads(tc.function.arguments or "{}")
+
+            # A round can request several independent tools at once (e.g. get_holdings
+            # + get_spending_summary) — dispatch them concurrently instead of one at a
+            # time. "present" is a meta-tool handled inline, never sent to _run_tool.
+            calls = [(tc, json.loads(tc.function.arguments or "{}")) for tc in msg.tool_calls]
+            for tc, args in calls:
                 logger.info("answer_question: tool=%s args=%s user_id=%s", tc.function.name, args, uid)
-                if tc.function.name == "present":
-                    presented = args
-                    result = {"ok": True}
-                else:
-                    result = _run_tool(tc.function.name, args, user_id, currency, classifications)
+            results: list[dict | None] = [None] * len(calls)
+            with ThreadPoolExecutor(max_workers=max(1, len(calls))) as pool:
+                futures = {}
+                for i, (tc, args) in enumerate(calls):
+                    if tc.function.name == "present":
+                        presented = args
+                        results[i] = {"ok": True}
+                    else:
+                        futures[pool.submit(_run_tool, tc.function.name, args, user_id, currency, classifications)] = i
+                for future, i in futures.items():
+                    results[i] = future.result()
+
+            for (tc, _args), result in zip(calls, results):
+                if tc.function.name != "present":
                     evidence.append({"tool": tc.function.name, "result": result, "currency": currency})
                 messages.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(result, default=str)})
         if final_text is None:

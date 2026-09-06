@@ -1,7 +1,6 @@
 from db.supabase import (
     get_accounts,
     get_all_portfolio_events,
-    get_held_positions,
     get_latest_equity_prices,
     get_ticker_metadata_batch,
 )
@@ -38,7 +37,16 @@ def compute_holdings_summary(user_id: str, display_currency: str = "SGD") -> dic
     row per ticker) and unrealized gain/loss vs average-cost basis, all converted
     to display_currency. Holdings with no price available report market_value=None
     rather than being dropped, so a stale/unmapped ticker is still visible."""
-    positions = get_held_positions(user_id)
+    # A single full-history fetch (already fully decrypted) backs both the net
+    # held-quantity-per-position derivation below and the cost-basis roll-up —
+    # avoids fetching and AES-GCM-decrypting the same portfolio_events history
+    # twice per request (previously also called get_held_positions separately).
+    cost_state = _build_cost_basis_state(get_all_portfolio_events(user_id))
+    positions = [
+        {"account_id": account_id, "ticker": ticker, "quantity": s["qty"]}
+        for (account_id, ticker), s in cost_state.items()
+        if s["qty"] > 0
+    ]
     if not positions:
         return {"holdings": [], "total_market_value": 0.0, "total_cost_basis": 0.0,
                  "total_unrealized_gain": 0.0, "currency": display_currency}
@@ -47,7 +55,6 @@ def compute_holdings_summary(user_id: str, display_currency: str = "SGD") -> dic
     tickers = sorted({p["ticker"] for p in positions})
     prices = get_latest_equity_prices(tickers)
     ticker_meta = get_ticker_metadata_batch(tickers)
-    cost_state = _build_cost_basis_state(get_all_portfolio_events(user_id))
 
     holdings = []
     total_market_value = 0.0
@@ -59,7 +66,7 @@ def compute_holdings_summary(user_id: str, display_currency: str = "SGD") -> dic
 
         ticker = p["ticker"]
         qty = p["quantity"]
-        state = cost_state.get((p["account_id"], ticker), {"avg_cost": 0.0, "currency": display_currency})
+        state = cost_state[(p["account_id"], ticker)]
         native_cost_basis = qty * state["avg_cost"]
         cost_basis = convert(native_cost_basis, state["currency"], display_currency)
 

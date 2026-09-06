@@ -1,5 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, qs } from "../api/client";
+
+// Snapshots/holdings/balances/portfolio-events/dividends don't change second-to-second,
+// and each is expensive server-side (full trade-history decryption, yfinance calls) —
+// a longer staleTime keeps ordinary navigation (e.g. leaving and returning to the
+// Investments page) from re-firing the whole burst of queries. "Refresh Prices"
+// (useRefreshPrices) explicitly invalidates snapshots/holdings/balances when the user
+// wants a forced update.
+const INVESTMENTS_STALE_TIME = 5 * 60_000;
 import type {
   Account,
   AssetSnapshot,
@@ -74,7 +82,8 @@ export function useExpenseSummary(startDate: string, endDate: string) {
 export function useSnapshots(currency: string) {
   return useQuery({
     queryKey: ["snapshots", currency],
-    queryFn: () => api.get<AssetSnapshot[]>(`/api/snapshots${qs({ currency })}`),
+    queryFn: ({ signal }) => api.get<AssetSnapshot[]>(`/api/snapshots${qs({ currency })}`, signal),
+    staleTime: INVESTMENTS_STALE_TIME,
   });
 }
 
@@ -86,20 +95,30 @@ export function useSnapshotHistory(
 ) {
   return useQuery({
     queryKey: ["snapshots-history", currency, accountId, startDate, endDate],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       api.get<AssetSnapshot[]>(
         `/api/snapshots/history${qs({ currency, account_id: accountId, start_date: startDate, end_date: endDate })}`,
+        signal,
       ),
+    staleTime: INVESTMENTS_STALE_TIME,
   });
 }
 
-export function usePortfolioEvents(startDate?: string, endDate?: string, currency?: string) {
+export function usePortfolioEvents(
+  startDate?: string,
+  endDate?: string,
+  currency?: string,
+  enabled: boolean = true,
+) {
   return useQuery({
     queryKey: ["portfolio-events", startDate, endDate, currency],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       api.get<PortfolioEvent[]>(
         `/api/portfolio-events${qs({ start_date: startDate, end_date: endDate, currency })}`,
+        signal,
       ),
+    staleTime: INVESTMENTS_STALE_TIME,
+    enabled,
   });
 }
 
@@ -115,14 +134,16 @@ export function useResolveTicker() {
 export function useHoldings(currency: string) {
   return useQuery({
     queryKey: ["holdings", currency],
-    queryFn: () => api.get<HoldingsSummary>(`/api/holdings${qs({ currency })}`),
+    queryFn: ({ signal }) => api.get<HoldingsSummary>(`/api/holdings${qs({ currency })}`, signal),
+    staleTime: INVESTMENTS_STALE_TIME,
   });
 }
 
 export function useBalances(currency: string) {
   return useQuery({
     queryKey: ["balances", currency],
-    queryFn: () => api.get<BalancesSummary>(`/api/accounts/balances${qs({ currency })}`),
+    queryFn: ({ signal }) => api.get<BalancesSummary>(`/api/accounts/balances${qs({ currency })}`, signal),
+    staleTime: INVESTMENTS_STALE_TIME,
   });
 }
 
@@ -167,15 +188,20 @@ export function useUpdatePreferences() {
 export function useDividendForecast() {
   return useQuery({
     queryKey: ["dividend-forecast"],
-    queryFn: () => api.get<DividendForecast[]>("/api/dividend-forecast"),
+    queryFn: ({ signal }) => api.get<DividendForecast[]>("/api/dividend-forecast", signal),
+    staleTime: INVESTMENTS_STALE_TIME,
   });
 }
 
 export function useDividendSummary(currency: string, startDate?: string, endDate?: string) {
   return useQuery({
     queryKey: ["dividend-summary", currency, startDate, endDate],
-    queryFn: () =>
-      api.get<DividendSummary>(`/api/dividends/summary${qs({ currency, start_date: startDate, end_date: endDate })}`),
+    queryFn: ({ signal }) =>
+      api.get<DividendSummary>(
+        `/api/dividends/summary${qs({ currency, start_date: startDate, end_date: endDate })}`,
+        signal,
+      ),
+    staleTime: INVESTMENTS_STALE_TIME,
   });
 }
 

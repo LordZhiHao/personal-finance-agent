@@ -1,4 +1,5 @@
 import os
+import threading
 import uuid
 from datetime import date, datetime, timezone
 
@@ -20,12 +21,24 @@ from utils.logger import get_logger
 load_dotenv()
 logger = get_logger(__name__)
 
+# One client per key type, built lazily and reused across every call — avoids paying
+# fresh-client-construction overhead (and losing httpx connection-pool reuse) on every
+# single one of the ~60 functions below. httpx.Client (which supabase-py wraps) is
+# documented as safe to share across threads, so this is safe under the concurrent
+# asyncio.to_thread calls now made from bot/handlers.py.
+_clients: dict[bool, object] = {}
+_clients_lock = threading.Lock()
+
 
 def get_client(use_service_key: bool = False):
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_SERVICE_KEY") if use_service_key \
-        else os.getenv("SUPABASE_ANON_KEY")
-    return create_client(url, key)
+    if use_service_key not in _clients:
+        with _clients_lock:
+            if use_service_key not in _clients:
+                url = os.getenv("SUPABASE_URL")
+                key = os.getenv("SUPABASE_SERVICE_KEY") if use_service_key \
+                    else os.getenv("SUPABASE_ANON_KEY")
+                _clients[use_service_key] = create_client(url, key)
+    return _clients[use_service_key]
 
 
 def get_account_ids_for_user(user_id: str) -> list[str]:
