@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import {
-  addMonths,
   eachDayOfInterval,
   endOfMonth,
   endOfWeek,
@@ -9,14 +8,14 @@ import {
   parseISO,
   startOfMonth,
   startOfWeek,
-  subMonths,
 } from "date-fns";
 import type { Account } from "../../types";
 import { useMeta, useTransactions } from "../../hooks/api";
 import { dailySpendTotals, type DailyTotal } from "../../lib/dates";
 import { SEQUENTIAL } from "../../lib/palette";
 import { formatCompact, formatMoney } from "../../lib/format";
-import { Overlay, Table, Thead, Tbody, Tr, Th, Td } from "../ui";
+import { MonthStepper } from "../MonthStepper";
+import { TransactionDrillDownOverlay } from "../TransactionDrillDownOverlay";
 import { EditTransactionDialog } from "../EditTransactionDialog";
 import type { Transaction } from "../../types";
 
@@ -94,27 +93,7 @@ export function SpendingHeatmap({
 
   return (
     <div className={fill ? "flex-1 min-h-0 flex flex-col justify-center" : undefined}>
-      <div className="flex items-center justify-between mb-3">
-        <button
-          type="button"
-          onClick={() => setMonth((m) => subMonths(m, 1))}
-          className="px-2 py-1 text-sm rounded"
-          style={{ color: "var(--text-secondary)" }}
-        >
-          ‹
-        </button>
-        <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-          {format(month, "MMMM yyyy")}
-        </span>
-        <button
-          type="button"
-          onClick={() => setMonth((m) => addMonths(m, 1))}
-          className="px-2 py-1 text-sm rounded"
-          style={{ color: "var(--text-secondary)" }}
-        >
-          ›
-        </button>
-      </div>
+      <MonthStepper value={month} onChange={(d) => setMonth(d ?? new Date())} className="mb-3" />
 
       <div className="grid grid-cols-7 gap-1 text-center">
         {WEEKDAYS.map((w, i) => (
@@ -169,37 +148,18 @@ export function SpendingHeatmap({
       )}
 
       {selected && (
-        <Overlay onClose={() => setSelected(null)} maxHeightVh={70}>
-          <h2 className="text-lg font-semibold mb-1" style={{ color: "var(--text-heading)" }}>
-            {format(parseISO(selected.date), "d MMMM yyyy")}
-          </h2>
-          <p className="text-sm mb-4" style={{ color: "var(--text-secondary)" }}>
-            Total spent: {formatMoney(selected.total, currency)}
-          </p>
-          <Table>
-            <Thead>
-              <Th>Description</Th>
-              <Th>Category</Th>
-              <Th align="right">Amount</Th>
-            </Thead>
-            <Tbody>
-              {selectedTransactions.map((t) => (
-                <Tr
-                  key={t.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setEditingTransaction(t)}
-                  onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setEditingTransaction(t)}
-                  className="cursor-pointer hover:bg-black/[0.02]"
-                >
-                  <Td>{t.description}</Td>
-                  <Td>{t.category}</Td>
-                  <Td align="right">{formatMoney(Math.abs(t.amount), t.currency)}</Td>
-                </Tr>
-              ))}
-            </Tbody>
-          </Table>
-        </Overlay>
+        <TransactionDrillDownOverlay
+          title={format(parseISO(selected.date), "d MMMM yyyy")}
+          subtitle={`Total spent: ${formatMoney(selected.total, currency)}`}
+          rows={selectedTransactions}
+          onClose={() => setSelected(null)}
+          onRowClick={setEditingTransaction}
+          columns={[
+            { header: "Description", render: (t) => t.description },
+            { header: "Category", render: (t) => t.category },
+            { header: "Amount", align: "right", render: (t) => formatMoney(Math.abs(t.amount), t.currency) },
+          ]}
+        />
       )}
 
       {editingTransaction && (
