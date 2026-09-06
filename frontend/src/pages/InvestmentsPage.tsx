@@ -93,20 +93,28 @@ export function InvestmentsPage() {
   const balancesQuery = useBalances(displayCurrency);
   const refreshPricesMutation = useRefreshPrices();
   const dividendForecastQuery = useDividendForecast();
+  // Always unbounded (independent of the page's FilterBar date range) so the
+  // Dividends by Currency chart's own year/month picker can browse any year in
+  // history, not just whatever range the filter bar happens to cover. This is the
+  // superset of what the trade-history view below needs in the common (no custom
+  // filter) case, so it's the only unbounded portfolio-events fetch on the page —
+  // see `events` below, which reuses this data instead of firing a second,
+  // duplicate unbounded request.
+  const allDividendEventsQuery = usePortfolioEvents(undefined, undefined, displayCurrency);
+  // Only actually hits the network when the user has applied a custom (narrower)
+  // date range — otherwise `events` below is derived from allDividendEventsQuery,
+  // which already covers full unfiltered history.
   const eventsQuery = usePortfolioEvents(
-    hasCustomFilters ? filters.startDate : undefined,
-    hasCustomFilters ? filters.endDate : undefined,
+    filters.startDate,
+    filters.endDate,
+    undefined,
+    hasCustomFilters,
   );
   const dividendSummaryQuery = useDividendSummary(
     displayCurrency,
     format(startOfYear(new Date()), "yyyy-MM-dd"),
     today,
   );
-  // Always unbounded (independent of the page's FilterBar date range) so the
-  // Dividends by Currency chart's own year/month picker can browse any year in
-  // history, not just whatever range the filter bar happens to cover. Dedupes
-  // against eventsQuery in the common case (no custom filters applied).
-  const allDividendEventsQuery = usePortfolioEvents(undefined, undefined, displayCurrency);
 
   const visible = (id: InvestmentsSectionId) => !hiddenDashboardSections.includes(sectionKey("investments", id));
 
@@ -120,13 +128,13 @@ export function InvestmentsPage() {
   }, [snapshotsQuery.data, filters.accounts, filters.months]);
 
   const events = useMemo(() => {
-    const rows = eventsQuery.data ?? [];
+    const rows = (hasCustomFilters ? eventsQuery.data : allDividendEventsQuery.data) ?? [];
     return rows.filter((e) => {
       if (filters.accounts.length > 0 && !filters.accounts.includes(e.accounts?.name ?? "")) return false;
       if (filters.months.length > 0 && !filters.months.includes(getMonth(parseISO(e.date)))) return false;
       return true;
     });
-  }, [eventsQuery.data, filters.accounts, filters.months]);
+  }, [hasCustomFilters, eventsQuery.data, allDividendEventsQuery.data, filters.accounts, filters.months]);
 
   const netWorthPoints = useMemo(() => {
     const totals = new Map<string, number>();
