@@ -1,13 +1,17 @@
 import { useMemo, useState } from "react";
-import { addMonths, endOfMonth, format, parseISO, startOfMonth, subMonths } from "date-fns";
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { endOfMonth, format, parseISO, startOfMonth } from "date-fns";
+// See echarts-pilot/SpendByCategoryDonutEcharts.tsx (still present until this
+// migration's later phases) for why /esm/core is used instead of /lib/core.
+import ReactEChartsCore from "echarts-for-react/esm/core";
 import type { Account, Transaction } from "../../types";
 import { useMeta, useTransactions } from "../../hooks/api";
 import { colorForKey } from "../../lib/palette";
 import { formatMoney } from "../../lib/format";
-import { tooltipStyle } from "./chartTheme";
+import { resolveCssVar, useEchartsPalette } from "../../lib/echartsTheme";
+import { echarts } from "./echartsCore";
 import { ChartLegend } from "./ChartLegend";
-import { Overlay, Table, Thead, Tbody, Tr, Th, Td } from "../ui";
+import { MonthStepper } from "../MonthStepper";
+import { TransactionDrillDownOverlay } from "../TransactionDrillDownOverlay";
 import { EditTransactionDialog } from "../EditTransactionDialog";
 
 function categoryTotals(transactions: Transaction[]) {
@@ -42,6 +46,7 @@ export function SpendByCategoryDonut({
   const [monthFilter, setMonthFilter] = useState<Date | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const palette = useEchartsPalette();
 
   // Independent per-month fetch once a month is picked, mirroring
   // SpendingHeatmap — so any month in history works immediately, not just
@@ -72,42 +77,45 @@ export function SpendByCategoryDonut({
         .sort((a, b) => a.amount - b.amount)
     : [];
 
+  const option = {
+    animationDuration: 700,
+    animationEasing: "elasticOut" as const,
+    tooltip: {
+      trigger: "item" as const,
+      backgroundColor: palette.surface,
+      borderColor: palette.border,
+      borderWidth: 1,
+      textStyle: { color: palette.textSecondary, fontSize: 12 },
+      formatter: (params: { name: string; value: number }) => `${params.name}: ${formatMoney(params.value, currency)}`,
+    },
+    series: [
+      {
+        type: "pie" as const,
+        radius: ["45%", "75%"],
+        padAngle: 2,
+        itemStyle: {
+          borderColor: palette.surface,
+          borderWidth: 2,
+          borderRadius: 6,
+        },
+        emphasis: {
+          scale: true,
+          scaleSize: 6,
+          itemStyle: { shadowBlur: 12, shadowColor: "rgba(0, 0, 0, 0.25)" },
+        },
+        label: { show: false },
+        data: data.map((d) => ({
+          name: d.name,
+          value: d.value,
+          itemStyle: { color: resolveCssVar(colorForKey(d.name, categoryColors)) },
+        })),
+      },
+    ],
+  };
+
   return (
     <div className={fill ? "flex-1 min-h-0 flex flex-col" : undefined}>
-      <div className="flex items-center justify-center gap-3 mb-2 text-sm">
-        <button
-          type="button"
-          onClick={() => setMonthFilter(null)}
-          className="px-2 py-1 rounded font-medium"
-          style={{
-            color: monthFilter === null ? "var(--brand)" : "var(--text-secondary)",
-            background: monthFilter === null ? "var(--brand-tint)" : "transparent",
-          }}
-        >
-          All Time
-        </button>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setMonthFilter((m) => subMonths(m ?? new Date(), 1))}
-            className="px-2 py-1"
-            style={{ color: "var(--text-secondary)" }}
-          >
-            ‹
-          </button>
-          <span style={{ color: "var(--text-primary)", minWidth: 110, textAlign: "center" }}>
-            {format(monthFilter ?? new Date(), "MMMM yyyy")}
-          </span>
-          <button
-            type="button"
-            onClick={() => setMonthFilter((m) => addMonths(m ?? new Date(), 1))}
-            className="px-2 py-1"
-            style={{ color: "var(--text-secondary)" }}
-          >
-            ›
-          </button>
-        </div>
-      </div>
+      <MonthStepper value={monthFilter} onChange={setMonthFilter} allowAllTime className="mb-2" />
 
       {isLoading ? (
         <div className="flex-1 flex items-center justify-center text-sm" style={{ color: "var(--text-secondary)" }}>
@@ -118,30 +126,14 @@ export function SpendByCategoryDonut({
           {monthFilter ? `No spending in ${format(monthFilter, "MMMM yyyy")}.` : "No spending in this period."}
         </div>
       ) : (
-        <ResponsiveContainer width="100%" height={fill ? "100%" : 280} minHeight={fill ? 280 : undefined}>
-          <PieChart>
-            <Pie
-              data={data}
-              dataKey="value"
-              nameKey="name"
-              innerRadius={60}
-              outerRadius={100}
-              paddingAngle={1}
-              onClick={(entry) => setSelectedCategory(entry.name as string)}
-            >
-              {data.map((d) => (
-                <Cell
-                  key={d.name}
-                  fill={colorForKey(d.name, categoryColors)}
-                  stroke="var(--surface-1)"
-                  strokeWidth={2}
-                  style={{ cursor: "pointer" }}
-                />
-              ))}
-            </Pie>
-            <Tooltip {...tooltipStyle} />
-          </PieChart>
-        </ResponsiveContainer>
+        <ReactEChartsCore
+          echarts={echarts}
+          option={option}
+          notMerge
+          lazyUpdate
+          onEvents={{ click: (params: { name: string }) => setSelectedCategory(params.name) }}
+          style={{ width: "100%", height: fill ? "100%" : 280, minHeight: fill ? 280 : undefined }}
+        />
       )}
 
       {data.length > 0 && (
@@ -154,37 +146,18 @@ export function SpendByCategoryDonut({
       )}
 
       {selectedCategory && (
-        <Overlay onClose={() => setSelectedCategory(null)} maxHeightVh={70}>
-          <h2 className="text-lg font-semibold mb-1" style={{ color: "var(--text-heading)" }}>
-            {selectedCategory}
-          </h2>
-          <p className="text-sm mb-4" style={{ color: "var(--text-secondary)" }}>
-            Total spent: {formatMoney(selectedTotal, currency)}
-          </p>
-          <Table>
-            <Thead>
-              <Th>Description</Th>
-              <Th>Date</Th>
-              <Th align="right">Amount</Th>
-            </Thead>
-            <Tbody>
-              {selectedTransactions.map((t) => (
-                <Tr
-                  key={t.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setEditingTransaction(t)}
-                  onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setEditingTransaction(t)}
-                  className="cursor-pointer hover:bg-black/[0.02]"
-                >
-                  <Td>{t.description}</Td>
-                  <Td>{format(parseISO(t.date), "d MMM yyyy")}</Td>
-                  <Td align="right">{formatMoney(Math.abs(t.amount), t.currency)}</Td>
-                </Tr>
-              ))}
-            </Tbody>
-          </Table>
-        </Overlay>
+        <TransactionDrillDownOverlay
+          title={selectedCategory}
+          subtitle={`Total spent: ${formatMoney(selectedTotal, currency)}`}
+          rows={selectedTransactions}
+          onClose={() => setSelectedCategory(null)}
+          onRowClick={setEditingTransaction}
+          columns={[
+            { header: "Description", render: (t) => t.description },
+            { header: "Date", render: (t) => format(parseISO(t.date), "d MMM yyyy") },
+            { header: "Amount", align: "right", render: (t) => formatMoney(Math.abs(t.amount), t.currency) },
+          ]}
+        />
       )}
 
       {editingTransaction && (

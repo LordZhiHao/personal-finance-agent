@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import {
-  addMonths,
   eachDayOfInterval,
   endOfMonth,
   endOfWeek,
@@ -10,11 +9,11 @@ import {
   parseISO,
   startOfMonth,
   startOfWeek,
-  subMonths,
 } from "date-fns";
 import type { PortfolioEvent } from "../../types";
 import { formatMoney } from "../../lib/format";
-import { Overlay, Table, Thead, Tbody, Tr, Th, Td } from "../ui";
+import { MonthStepper } from "../MonthStepper";
+import { TransactionDrillDownOverlay } from "../TransactionDrillDownOverlay";
 
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
 
@@ -43,27 +42,7 @@ export function DividendCalendar({ events, fill = false }: { events: PortfolioEv
 
   return (
     <div className={fill ? "flex-1 min-h-0 flex flex-col justify-center" : undefined}>
-      <div className="flex items-center justify-between mb-3">
-        <button
-          type="button"
-          onClick={() => setMonth((m) => subMonths(m, 1))}
-          className="px-2 py-1 text-sm rounded"
-          style={{ color: "var(--text-secondary)" }}
-        >
-          ‹
-        </button>
-        <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-          {format(month, "MMMM yyyy")}
-        </span>
-        <button
-          type="button"
-          onClick={() => setMonth((m) => addMonths(m, 1))}
-          className="px-2 py-1 text-sm rounded"
-          style={{ color: "var(--text-secondary)" }}
-        >
-          ›
-        </button>
-      </div>
+      <MonthStepper value={month} onChange={(d) => setMonth(d ?? new Date())} className="mb-3" />
       <div className="grid grid-cols-7 gap-1 text-center">
         {WEEKDAYS.map((w, i) => (
           <div key={i} className="text-xs font-medium py-1" style={{ color: "var(--text-muted)" }}>
@@ -113,29 +92,17 @@ export function DividendCalendar({ events, fill = false }: { events: PortfolioEv
         </p>
       )}
       {selectedDate && (
-        <Overlay onClose={() => setSelectedDate(null)} maxHeightVh={70}>
-          <h2 className="text-lg font-semibold mb-4" style={{ color: "var(--text-heading)" }}>
-            Dividends — {format(parseISO(selectedDate), "d MMM yyyy")}
-          </h2>
-          <Table>
-            <Thead>
-              <Th>Ticker</Th>
-              <Th align="right">Quantity</Th>
-              <Th align="right">Price</Th>
-              <Th align="right">Amount</Th>
-            </Thead>
-            <Tbody>
-              {selectedEvents.map((e) => (
-                <Tr key={e.id}>
-                  <Td>{e.ticker}</Td>
-                  <Td align="right">{e.quantity}</Td>
-                  <Td align="right">{formatMoney(e.price, e.currency)}</Td>
-                  <Td align="right">{formatMoney(e.quantity * e.price, e.currency)}</Td>
-                </Tr>
-              ))}
-            </Tbody>
-          </Table>
-        </Overlay>
+        <TransactionDrillDownOverlay
+          title={`Dividends — ${format(parseISO(selectedDate), "d MMM yyyy")}`}
+          rows={selectedEvents}
+          onClose={() => setSelectedDate(null)}
+          columns={[
+            { header: "Ticker", render: (e) => e.ticker },
+            { header: "Quantity", align: "right", render: (e) => e.quantity },
+            { header: "Price", align: "right", render: (e) => formatMoney(e.price, e.currency) },
+            { header: "Amount", align: "right", render: (e) => formatMoney(e.quantity * e.price, e.currency) },
+          ]}
+        />
       )}
     </div>
   );

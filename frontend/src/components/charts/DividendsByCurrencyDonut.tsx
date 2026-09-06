@@ -1,12 +1,17 @@
 import { useMemo, useState } from "react";
-import { addMonths, format, parseISO, subMonths } from "date-fns";
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { format, parseISO } from "date-fns";
+// See echarts-pilot/SpendByCategoryDonutEcharts.tsx (still present until this
+// migration's later phases) for why /esm/core is used instead of /lib/core.
+import ReactEChartsCore from "echarts-for-react/esm/core";
 import type { PortfolioEvent } from "../../types";
 import { colorForKey } from "../../lib/palette";
 import { formatMoney } from "../../lib/format";
-import { tooltipStyle } from "./chartTheme";
+import { resolveCssVar, useEchartsPalette } from "../../lib/echartsTheme";
+import { echarts } from "./echartsCore";
 import { ChartLegend } from "./ChartLegend";
-import { Overlay, Table, Thead, Tbody, Tr, Th, Td, Select, TabToggle } from "../ui";
+import { MonthStepper } from "../MonthStepper";
+import { TransactionDrillDownOverlay } from "../TransactionDrillDownOverlay";
+import { Select, TabToggle } from "../ui";
 
 function currencyTotals(events: PortfolioEvent[]) {
   const totals = new Map<string, { native: number; converted: number }>();
@@ -39,6 +44,7 @@ export function DividendsByCurrencyDonut({
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(() => new Date());
   const [selectedCurrency, setSelectedCurrency] = useState<string | null>(null);
+  const palette = useEchartsPalette();
 
   // Stable, alphabetically-sorted currency order across all history (not just the
   // filtered period) so a currency keeps the same color as the user switches
@@ -70,6 +76,43 @@ export function DividendsByCurrencyDonut({
 
   const periodLabel = viewMode === "year" ? String(selectedYear) : format(selectedMonth, "MMMM yyyy");
 
+  const option = {
+    animationDuration: 700,
+    animationEasing: "elasticOut" as const,
+    tooltip: {
+      trigger: "item" as const,
+      backgroundColor: palette.surface,
+      borderColor: palette.border,
+      borderWidth: 1,
+      textStyle: { color: palette.textSecondary, fontSize: 12 },
+      formatter: (params: { name: string; value: number }) =>
+        `${params.name}: ${formatMoney(params.value, displayCurrency)}`,
+    },
+    series: [
+      {
+        type: "pie" as const,
+        radius: ["45%", "75%"],
+        padAngle: 2,
+        itemStyle: {
+          borderColor: palette.surface,
+          borderWidth: 2,
+          borderRadius: 6,
+        },
+        emphasis: {
+          scale: true,
+          scaleSize: 6,
+          itemStyle: { shadowBlur: 12, shadowColor: "rgba(0, 0, 0, 0.25)" },
+        },
+        label: { show: false },
+        data: data.map((d) => ({
+          name: d.name,
+          value: d.value,
+          itemStyle: { color: resolveCssVar(colorForKey(d.name, knownCurrencies)) },
+        })),
+      },
+    ],
+  };
+
   return (
     <div className={fill ? "flex-1 min-h-0 flex flex-col" : undefined}>
       <div className="flex flex-wrap items-center justify-center gap-3 mb-2">
@@ -94,27 +137,7 @@ export function DividendsByCurrencyDonut({
             ))}
           </Select>
         ) : (
-          <div className="flex items-center gap-1 text-sm">
-            <button
-              type="button"
-              onClick={() => setSelectedMonth((m) => subMonths(m, 1))}
-              className="px-2 py-1"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              ‹
-            </button>
-            <span style={{ color: "var(--text-primary)", minWidth: 110, textAlign: "center" }}>
-              {format(selectedMonth, "MMMM yyyy")}
-            </span>
-            <button
-              type="button"
-              onClick={() => setSelectedMonth((m) => addMonths(m, 1))}
-              className="px-2 py-1"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              ›
-            </button>
-          </div>
+          <MonthStepper value={selectedMonth} onChange={(d) => setSelectedMonth(d ?? new Date())} />
         )}
       </div>
 
@@ -123,33 +146,14 @@ export function DividendsByCurrencyDonut({
           No dividends in {periodLabel}.
         </div>
       ) : (
-        <ResponsiveContainer width="100%" height={fill ? "100%" : 280} minHeight={fill ? 280 : undefined}>
-          <PieChart>
-            <Pie
-              data={data}
-              dataKey="value"
-              nameKey="name"
-              innerRadius={60}
-              outerRadius={100}
-              paddingAngle={1}
-              onClick={(entry) => setSelectedCurrency(entry.name as string)}
-            >
-              {data.map((d) => (
-                <Cell
-                  key={d.name}
-                  fill={colorForKey(d.name, knownCurrencies)}
-                  stroke="var(--surface-1)"
-                  strokeWidth={2}
-                  style={{ cursor: "pointer" }}
-                />
-              ))}
-            </Pie>
-            <Tooltip
-              {...tooltipStyle}
-              formatter={(value) => (typeof value === "number" ? formatMoney(value, displayCurrency) : String(value))}
-            />
-          </PieChart>
-        </ResponsiveContainer>
+        <ReactEChartsCore
+          echarts={echarts}
+          option={option}
+          notMerge
+          lazyUpdate
+          onEvents={{ click: (params: { name: string }) => setSelectedCurrency(params.name) }}
+          style={{ width: "100%", height: fill ? "100%" : 280, minHeight: fill ? 280 : undefined }}
+        />
       )}
 
       {data.length > 0 && (
@@ -162,30 +166,17 @@ export function DividendsByCurrencyDonut({
       )}
 
       {selectedCurrency && (
-        <Overlay onClose={() => setSelectedCurrency(null)} maxHeightVh={70}>
-          <h2 className="text-lg font-semibold mb-1" style={{ color: "var(--text-heading)" }}>
-            {selectedCurrency} Dividends — {periodLabel}
-          </h2>
-          <p className="text-sm mb-4" style={{ color: "var(--text-secondary)" }}>
-            Total received: {formatMoney(selectedTotal, selectedCurrency)}
-          </p>
-          <Table>
-            <Thead>
-              <Th>Ticker</Th>
-              <Th>Date</Th>
-              <Th align="right">Amount</Th>
-            </Thead>
-            <Tbody>
-              {selectedEvents.map((e) => (
-                <Tr key={e.id}>
-                  <Td>{e.ticker}</Td>
-                  <Td>{format(parseISO(e.date), "d MMM yyyy")}</Td>
-                  <Td align="right">{formatMoney(e.quantity * e.price, e.currency)}</Td>
-                </Tr>
-              ))}
-            </Tbody>
-          </Table>
-        </Overlay>
+        <TransactionDrillDownOverlay
+          title={`${selectedCurrency} Dividends — ${periodLabel}`}
+          subtitle={`Total received: ${formatMoney(selectedTotal, selectedCurrency)}`}
+          rows={selectedEvents}
+          onClose={() => setSelectedCurrency(null)}
+          columns={[
+            { header: "Ticker", render: (e) => e.ticker },
+            { header: "Date", render: (e) => format(parseISO(e.date), "d MMM yyyy") },
+            { header: "Amount", align: "right", render: (e) => formatMoney(e.quantity * e.price, e.currency) },
+          ]}
+        />
       )}
     </div>
   );
