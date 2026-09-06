@@ -1,6 +1,8 @@
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
+from functools import partial
 
 from dotenv import load_dotenv
 from google import genai
@@ -18,6 +20,11 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 MODEL = "gemini-3.5-flash"  # multimodal extraction (extract_from_image / extract_from_pdf_images)
 DEEPSEEK_EXTRACTOR_MODEL = os.getenv("DEEPSEEK_EXTRACTOR_MODEL", "deepseek-v4-pro")  # text-only extraction
+
+# Cap on concurrent per-page Gemini calls when extracting a multi-page PDF — bounds
+# API load while still letting an N-page statement's latency scale with N/concurrency
+# instead of linearly with N (each page was previously extracted one at a time).
+PDF_PAGE_CONCURRENCY = 4
 
 def _build_system_prompt(categories: list[str], default_currency: str = "SGD", rules: list[dict] | None = None) -> str:
     rules_block = format_rules_for_prompt(rules or [])
@@ -155,10 +162,19 @@ def extract_from_pdf_images(
     logger.info("extract_from_pdf_images: %d page(s) to process with %s", len(page_images), MODEL)
 
     merged: dict = {"document_type": None, "account_hint": None, "currency": None, "transactions": [], "portfolio_events": []}
-    for i, img in enumerate(page_images, 1):
-        page_data = extract_from_image(
-            img, mime_type="image/jpeg", categories=categories, default_currency=default_currency, rules=rules
-        )
+
+    # Each page is an independent Gemini call — run them concurrently (bounded by
+    # PDF_PAGE_CONCURRENCY) instead of one after another, so an N-page statement's
+    # latency scales with N/concurrency rather than linearly with N. ThreadPoolExecutor
+    # (not asyncio) is used because this function is itself synchronous and already
+    # invoked from a worker thread (via asyncio.to_thread/run_in_threadpool) by every
+    # caller — pool.map preserves page order, so the "first page that reports it" merge
+    # logic below is unaffected.
+    page_fn = partial(extract_from_image, mime_type="image/jpeg", categories=categories, default_currency=default_currency, rules=rules)
+    with ThreadPoolExecutor(max_workers=min(PDF_PAGE_CONCURRENCY, len(page_images) or 1)) as pool:
+        page_results = list(pool.map(page_fn, page_images))
+
+    for i, page_data in enumerate(page_results, 1):
         logger.info("extract_from_pdf_images: page %d — %d txn(s), %d event(s)", i, len(page_data.get("transactions", [])), len(page_data.get("portfolio_events", [])))
         for key in ("document_type", "account_hint", "currency"):
             if merged[key] is None and page_data.get(key):
