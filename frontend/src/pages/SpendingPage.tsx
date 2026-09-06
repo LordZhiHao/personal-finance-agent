@@ -17,7 +17,6 @@ import { ChartCard } from "../components/ChartCard";
 import { TransactionsList } from "../components/TransactionsList";
 import { AddTransactionDialog } from "../components/AddTransactionDialog";
 import { SectionPairRow } from "../components/SectionPairRow";
-import { MoreInsights } from "../components/MoreInsights";
 import { FinnInsightCard } from "../components/FinnInsightCard";
 import { SpendRingCard, type RingCategoryRow } from "../components/charts/SpendRingCard";
 import { MonthlySpendBarChart } from "../components/charts/MonthlySpendBarChart";
@@ -383,13 +382,9 @@ export function SpendingPage() {
 
           {visible("calendar") && spendingCalendarChart}
 
-          {(visible("byCategory") || visible("incomeVsSpend") || visible("momComparison")) && (
-            <MoreInsights>
-              {visible("byCategory") && spendByCategoryChart}
-              {visible("incomeVsSpend") && incomeVsSpendChart}
-              {visible("momComparison") && momComparisonChart}
-            </MoreInsights>
-          )}
+          {visible("byCategory") && spendByCategoryChart}
+          {visible("incomeVsSpend") && incomeVsSpendChart}
+          {visible("momComparison") && momComparisonChart}
 
           {visible("transactions") && transactionsPanel}
         </>
